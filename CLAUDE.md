@@ -27,6 +27,28 @@ their own browsers.
 - The PC version wins where versions disagree. Other versions fill in only where
   the PC manual is silent, and the row names the source it used.
 
+## The look comes from the screenshots, not from memory
+
+- **Nothing about how the game looks is drawn from an impression either.** The
+  first renderer had a dusk sky, red-and-white kerbs and pixel riders, none of
+  which the game has. The Look rows of `docs/ledger.md` are measured off 137
+  captures, in `docs/road-rash-visuals.md`; a visual change starts from a row.
+- **Compare frame beside frame.** `node scripts/shoot.ts` screenshots the real
+  game in the installed Chrome at 1920x1080 and 390x844 while riding with real
+  keys. Put a frame beside the matching original capture before calling a look
+  done; the captures are EA's and stay in the workspace's `.scratch/rr-img/`,
+  never in this repo.
+- **When a picture looks wrong, measure it before changing anything.** A strip
+  once seemed to show the road bending the wrong way; measured, the renderer
+  was right and the reading was wrong. The flat, low mountains were the
+  opposite: exporting the panorama texture showed a mesa and a 1.9x
+  horizontal stretch, both real.
+- World axes follow three.js: y is up and, facing +z, the rider's right is -x.
+  `game/world.ts` turns road coordinates into world ones and
+  `spec/world.test.ts` holds its directions. Three sign errors (lean, limbs,
+  face winding) were made in the first version of the scene; check a new
+  model's handedness against that file, not by eye.
+
 ## Feel is tuned by riding, not by reasoning
 
 - **Every change to how the bike handles is ridden before it is committed**, in
@@ -34,9 +56,8 @@ their own browsers.
   plays it itself; a tuning value nobody has ridden is a guess.
 - **Ride it as numbers as well as pictures.** The simulation is pure and
   deterministic, so a scripted ride (keys held for given times) can be replayed
-  in Node and printed as speed, lateral position, lean and build-up over time,
-  and the renderer can draw any frame of it without a browser. A screenshot of a
-  running game is one frame; the preview pane also throttles
+  in Node (`scripts/ride.ts`, `scripts/lap.ts`) and printed as speed, lateral
+  position, lean and build-up over time. The preview pane throttles
   `requestAnimationFrame` to about 1fps when it is not on screen, so timing is
   never measured through it.
 - **Write a feel down as a number once it is right** — seconds from the grid to

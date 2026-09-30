@@ -40,7 +40,8 @@ top-three finish qualifies you on that road at that level for good.
 | Every mechanic of the original has a sourced decision | `spec/ledger.test.ts` |
 | The pools start, wait and take people in as described | `spec/lobby.test.ts` |
 | A qualification survives a restart | `spec/persistence.test.ts` |
-| The road does not jump sideways between frames | `spec/render.test.ts` |
+| The road is where the simulation says: a right-hand bend turns right, a metre is a metre | `spec/world.test.ts` |
+| It looks like the original | Judged against 137 screenshots of it, frame beside frame |
 | Handling feels right | Judged by riding it: every handling change is ridden in the browser, then the result is pinned as a number in `spec/` |
 | It plays like the original | Judged against the ledger, row by row |
 
@@ -57,10 +58,9 @@ top-three finish qualifies you on that road at that level for good.
 - The *Road Rash* manuals for Windows (1996), 3DO (1994), Saturn and Sega CD,
   the Mega Drive manuals, and GameFAQs guides by Jatin Bhatia, Arguro and
   fade84. Each is cited per mechanic in [the ledger](docs/ledger.md), and my
-  notes on them are in [the research file](docs/road-rash-research.md).
-- Louis Gorenfeld, [Lou's Pseudo 3D Page](http://www.extentofthejam.com/pseudo/)
-  (2013), for how the road is drawn: projected segments, near to far, hidden
-  behind each crest.
+  notes on them are in [the research file](docs/road-rash-research.md). How it
+  looks is measured off 137 screenshots of the PC and 3DO versions in
+  [the visuals file](docs/road-rash-visuals.md).
 - Gabriel Gambetta, [Fast-Paced Multiplayer](https://www.gabrielgambetta.com/client-server-game-architecture.html),
   for predicting your own rider and interpolating everyone else.
 - Robin Sloan, [An app can be a home-cooked meal](https://www.robinsloan.com/notes/home-cooked-app/)

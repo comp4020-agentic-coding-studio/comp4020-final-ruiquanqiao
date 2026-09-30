@@ -29,6 +29,8 @@ const TYPES: Record<string, string> = {
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".txt": "text/plain; charset=utf-8",
   ".map": "application/json",
 };
 
@@ -81,6 +83,7 @@ const server = createServer((req, res) => {
     res.writeHead(200, { "content-type": TYPES[".html"] }).end(readme());
     return;
   }
+  if (path === "/favicon.ico") return void res.writeHead(204).end();
   if (path === "/healthz") {
     res.writeHead(200, { "content-type": "text/plain" }).end("ok");
     return;

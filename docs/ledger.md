@@ -148,10 +148,46 @@ versions and the conflicts between sources that the table only summarises.
 | H6 | Resolution and detail-level options | PCM | omitted | omitted: the road is drawn at one fixed low resolution and scaled up, so there is nothing to trade | — |
 | H7 | The name Road Rash, the riders, bike brands and track names | PCM | omitted | omitted: they are EA's. Mechanics are copied; names are my own, and the README credits the original | — |
 
+## Look
+
+The first renderer here was drawn from nothing: a dusk sky, red-and-white
+kerbs, hand-drawn pixel riders, a web-page HUD. None of it came from the
+game, because the research behind the rows above was text only. These rows
+come from 137 screenshots of the PC and 3DO versions, measured in
+[road-rash-visuals.md](road-rash-visuals.md). Fractions are of the screen.
+
+| ID | Mechanic (PC 1996) | Source | Status | Treatment | Due / proof |
+|---|---|---|---|---|---|
+| V1 | Real 3D world: texture-mapped polygons for road, hills, buildings, cliffs and tunnels, drawn to the horizon with no fog | YT1, A2023 | planned | adapted: WebGL, with every texture generated in code rather than painted, since the originals are EA's | C8 |
+| V2 | Low chase camera dead behind the rider; rider about 9% of screen width and 22% of height, centred; horizon at .33–.38; the camera never rolls | YT1 | planned | same | C8 |
+| V3 | 640×480, 4:3 | A2023 | planned | adapted: the window's own shape, since both marking viewports are 16:9 or taller; the camera keeps the rider's size and the horizon's height | C8 |
+| V4 | Low-resolution textures that break into big square texels near the camera | YT1 | planned | same, with nearest-neighbour filtering on small generated textures | C8 |
+| V5 | Riders are pre-rendered 3D sprites in bright two-colour leathers and full-face helmets; the whole bike leans up to 30–40° | YT1, TE | planned | adapted: low-poly models built in code and lit in real time, in the same bright leathers; the same lean | C8 |
+| V6 | Only the closest opponent is named, in the HUD; no names float over riders | YT1 | planned | same | C8 |
+| V7 | A black glossy fairing arch over the bottom quarter: cream MPH and RPM dials, the position in a black box, the odometer beneath, a red-yellow-green bar, and both riders' names with curved stamina wedges; the closest opponent's distance in red ↑ or green ↓ | YT1, PCM | planned | same, laid out across a wider screen; the phone gets the same instruments over its touch controls | C8 |
+| V8 | Tall condensed white type for every name and number in the HUD | YT1 | planned | same, in Oswald (SIL Open Font Licence), self-hosted | C8 |
+| V9 | Purple-grey asphalt (#56505e), a double solid yellow centre line, white dashed lane lines, solid white edges, no kerbs or rumble strips | YT1 | planned | same | C8 |
+| V10 | Brown dirt shoulders on rural roads, grey pavement in towns | YT1 | planned | same | C8 |
+| V11 | A flat periwinkle sky (#94aefa) with hard-edged white cartoon clouds, the same on every track | YT1 | planned | same | C8 |
+| V12 | One silhouette per track: city canyons, coastal cliff and sea, snow peaks and pines, hazy vineyard hills, green rolling hills | YT1, TE | planned | adapted: Ridge Road takes the alpine silhouette — jagged snow peaks, pine clumps, meadows, a guardrail on the outside of bends — without copying the Sierra Nevada's art | C8 |
+| V13 | Crashes play in the game view: the bike tumbles free, the rider lands, stands and walks back to it | YT1, TE | planned | same | C8 |
+| V14 | The winner crosses the line sitting up with both arms raised | YT1 | planned | same | C9 |
+| V15 | A swing throws an arm straight out sideways; a chain is raised above the helmet | YT1, APOST | planned | same | C9 |
+| V16 | Start: the picture darkened, a big white countdown in the road ahead; the finish is a chequered band across the road | YT1, A3DO | planned | same | C9 |
+| V17 | Traffic and police are texture-mapped box models: grey sedans, a yellow taxi, a black-and-white patrol car, a white police bike | YT1, A2023 | planned | same, alongside T4 and P2 | C9 |
+| V18 | Menus in claymation caricature and a corkboard with a pinned photo postcard per track; orange-red condensed titles (#f05030), a yellow arrow cursor | A2023, APOST | planned | adapted: the corkboard and postcards drawn by me, in the same type and colours; no claymation, which I cannot make | final |
+| V19 | Race end: a spiked "WINNER" star, then a still with the finishing place | YT2 | planned | adapted: with H4, drawn rather than filmed | C9 |
+
 ## Sources
 
 | Tag | Source | URL |
 |---|---|---|
+| YT1 | "Road Rash (1994) All Five Levels 1080p60 PC Full Gameplay", YouTube | https://www.youtube.com/watch?v=sJ0U2BYjDGQ |
+| YT2 | "Road Rash for Windows 95", YouTube | https://www.youtube.com/watch?v=O0F7q3j33Zc |
+| A2023 | Road Rash PC captures, archive.org | https://archive.org/details/road-rash_202307 |
+| APOST | Road Rash 1996 PC poster, archive.org | https://archive.org/details/road_rash_1996_pc_manual |
+| A3DO | Road Rash 3DO longplay, archive.org | https://archive.org/details/road-rash-panasonic-3-do-pal-60-gameplay-full-game-longplay |
+| TE | Time Extension, Road Rash (3DO) | https://www.timeextension.com/games/3do/road_rash |
 | PCM | Road Rash, Windows 95 manual (EA, 1996) | https://oldgamesdownload.com/wp-content/uploads/manuals/road-rash_win_manual_en_m4x.pdf |
 | POSTER | Road Rash, 1996 PC manual and poster scan | https://archive.org/details/road_rash_1996_pc_manual |
 | 3DOM | Road Rash, 3DO manual (1994) | https://archive.org/details/Road_Rash_1994_Electronic_Arts_US |

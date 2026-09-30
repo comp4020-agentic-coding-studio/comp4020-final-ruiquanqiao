@@ -54,21 +54,9 @@
   <section id="race" aria-label="Race">
     <div id="stage">
       <canvas id="road" aria-hidden="true"></canvas>
-      <div id="hud">
-        <div class="hud-left">
-          <div class="meter" data-meter="stamina"><span>Stamina</span><i><b></b></i></div>
-          <div class="meter" data-meter="damage"><span>Bike</span><i><b></b></i></div>
-        </div>
-        <div class="hud-mid">
-          <div id="position" aria-live="polite"></div>
-          <div id="opponent"><span class="who"></span><i><b></b></i><span class="gap"></span></div>
-        </div>
-        <div class="hud-right">
-          <div id="speed"><b>0</b> mph</div>
-          <div id="revs"><i><b></b></i></div>
-          <div id="odo"></div>
-        </div>
-      </div>
+      <canvas id="dash" aria-hidden="true"></canvas>
+      <div id="flash"></div>
+      <p id="position" class="sr" aria-live="polite"></p>
       <div id="banner" aria-live="assertive"></div>
     </div>
     <div id="touch" aria-hidden="true">

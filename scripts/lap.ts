@@ -29,7 +29,7 @@ while (!humansDone(race) && race.t < 900) {
   const input: Input = { ...NO_INPUT, throttle: true };
   // aim for the centre of the right lane, leaning into what the bend will do
   const ahead = curveAt(track, me.z + me.speed * 0.8);
-  const want = 2.5 - me.x + TUNE.centrifugal * me.speed * me.speed * ahead * 0.35;
+  const want = 3.5 - me.x + TUNE.centrifugal * me.speed * me.speed * ahead * 0.35;
   if (want > margin) input.right = true;
   if (want < -margin) input.left = true;
   if (input.left || input.right) steerSteps++;

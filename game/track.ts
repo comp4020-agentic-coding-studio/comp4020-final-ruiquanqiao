@@ -3,8 +3,8 @@
 // sideways from the centre line (positive to the right), y is height.
 
 export const SEGMENT = 4; // metres per segment
-export const ROAD_HALF = 5; // asphalt from -5 m to +5 m: one lane each way
-export const SHOULDER = 6.5; // gravel out to here, then grass and trees
+export const ROAD_HALF = 7; // asphalt from -7 m to +7 m: two lanes each way (ledger V9)
+export const SHOULDER = 9.5; // dirt out to here, then meadow and trees (V10)
 export const MILE = 1609.344;
 
 export type Section = {
@@ -62,12 +62,21 @@ export function bake(name: string, sections: Section[], length: number, seed: nu
     r = (r * 1664525 + 1013904223) >>> 0;
     return r / 2 ** 32;
   };
-  for (let z = 30; z < length; z += 12 + rand() * 30) {
+  // pines in clumps on both sides (V12)
+  for (let z = 40; z < length; z += 25 + rand() * 45) {
     const side = rand() < 0.5 ? -1 : 1;
-    const kind = rand() < 0.8 ? "tree" : rand() < 0.5 ? "pole" : "sign";
-    const x = side * (SHOULDER + 1.5 + rand() * 14);
-    scenery.push({ z, x, kind });
+    const base = SHOULDER + 3 + rand() * 22;
+    const n = 1 + Math.floor(rand() * 5);
+    for (let i = 0; i < n; i++) scenery.push({ z: z + (rand() - 0.5) * 14, x: side * (base + rand() * 8), kind: "tree" });
   }
+  // a telephone line down the left side
+  for (let z = 20; z < length; z += 60) scenery.push({ z, x: -(SHOULDER + 1.8), kind: "pole" });
+  // chevron signs on the outside of every real bend
+  for (let z = 0; z < length; z += 36) {
+    const k = curve[Math.min(segments - 1, Math.floor(z / SEGMENT))];
+    if (Math.abs(k) > 1 / 300) scenery.push({ z, x: -Math.sign(k) * (SHOULDER + 0.9), kind: "sign" });
+  }
+  scenery.sort((a, b) => a.z - b.z);
 
   return { name, length, segments, curve, height, scenery };
 }

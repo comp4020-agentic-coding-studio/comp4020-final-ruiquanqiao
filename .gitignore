@@ -25,3 +25,4 @@ mise.local.toml
 .frames/
 .data/
 .data-test-*/
+.cache/

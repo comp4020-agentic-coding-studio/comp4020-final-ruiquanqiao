@@ -4,7 +4,8 @@
 // a tenth of a second in the past, between two snapshots.
 
 import { type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
-import { drawFrame, makeView, type View } from "../game/render.ts";
+import { drawDash } from "./dash.ts";
+import { RaceScene } from "./scene.ts";
 import { DT, type Input, MPH, NO_INPUT, type Race, type Rider, beginAttack, cap, nearest, packInput, positionOf, ride, startRace, topSpeed, TUNE } from "../game/sim.ts";
 import { MILE, makeTrack } from "../game/track.ts";
 
@@ -55,11 +56,14 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   current = { id: msg.race, level: msg.level, race, you: msg.you, snaps: [], history: new Map(), steps: 0, offset: null, ended: false };
   if (msg.you !== null) {
     show("race");
+    roadScene.setTrack(track);
     resize();
     banner(`Level ${msg.level} · ${(track.length / MILE).toFixed(1)} miles`, 2500);
     $("#touch").querySelectorAll("button").forEach((b) => b.classList.remove("down"));
   } else {
     $("#watch").hidden = false;
+    watchScene.setTrack(track);
+    watchScene.resize(watch.clientWidth || 480, watch.clientHeight || 270);
   }
 }
 
@@ -313,26 +317,21 @@ function sendKeys(now: number): void {
 // ---- drawing ----
 
 const road = $<HTMLCanvasElement>("#road");
-const roadCtx = road.getContext("2d")!;
+const dash = $<HTMLCanvasElement>("#dash");
+const dashCtx = dash.getContext("2d")!;
 const watch = $<HTMLCanvasElement>("#watch-canvas");
-const watchCtx = watch.getContext("2d")!;
-let view: View = makeView(480, 270);
-let image: ImageData = roadCtx.createImageData(480, 270);
-const watchView = makeView(480, 270);
-const watchImage = watchCtx.createImageData(480, 270);
+const roadScene = new RaceScene(road);
+const watchScene = new RaceScene(watch);
+let dashCover = 0;
 
 function resize(): void {
-  // a fixed 270 rows, as wide as the stage's shape asks: the road is always
-  // drawn at one low resolution and scaled up (ledger H6)
-  const rect = road.getBoundingClientRect();
-  const aspect = rect.width > 0 && rect.height > 0 ? rect.width / rect.height : 16 / 9;
-  const h = 270;
-  const w = Math.max(180, Math.min(620, Math.round(h * aspect)));
-  if (w === view.w) return;
-  view = makeView(w, h);
-  road.width = w;
-  road.height = h;
-  image = roadCtx.createImageData(w, h);
+  const stage = $("#stage").getBoundingClientRect();
+  const w = Math.max(1, Math.round(stage.width));
+  const h = Math.max(1, Math.round(stage.height));
+  roadScene.resize(w, h);
+  const dpr = Math.min(2, devicePixelRatio);
+  dash.width = Math.round(w * dpr);
+  dash.height = Math.round(h * dpr);
 }
 addEventListener("resize", resize);
 
@@ -396,34 +395,19 @@ function frame(): void {
     if (c.you !== null) sendKeys(now);
     interpolate(c, now);
     if (c.you !== null) {
-      drawFrame(view, { track: c.race.track, riders: c.race.riders, me: c.you, t: c.race.t });
-      if (hitFlash > 0) {
-        tint(view, hitFlash);
-        hitFlash = Math.max(0, hitFlash - dt * 4);
-      }
-      new Uint32Array(image.data.buffer).set(view.px);
-      roadCtx.putImageData(image, 0, 0);
+      roadScene.draw(c.race.riders, c.you, dashCover / Math.max(1, dash.height));
       hud(c);
     } else if (!$("#watch").hidden) {
       // watching: ride along behind whoever is leading
       const lead = [...c.race.riders].sort((p, q) => q.z - p.z)[0];
-      drawFrame(watchView, { track: c.race.track, riders: c.race.riders, me: lead.id, t: c.race.t });
-      new Uint32Array(watchImage.data.buffer).set(watchView.px);
-      watchCtx.putImageData(watchImage, 0, 0);
+      watchScene.draw(c.race.riders, lead.id, 0);
+    }
+    if (hitFlash > 0) {
+      hitFlash = Math.max(0, hitFlash - dt * 4);
+      $("#flash").style.opacity = String(hitFlash * 0.45);
     }
   }
   requestAnimationFrame(frame);
-}
-
-function tint(v: View, f: number): void {
-  const a = Math.min(0.5, f * 0.5);
-  for (let i = 0; i < v.px.length; i++) {
-    const p = v.px[i];
-    const r = (p & 255) * (1 - a) + 255 * a;
-    const g = ((p >> 8) & 255) * (1 - a);
-    const b = ((p >> 16) & 255) * (1 - a);
-    v.px[i] = ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
-  }
 }
 
 function flash(): void {
@@ -440,29 +424,29 @@ function banner(text: string, ms = 1500): void {
 
 // ---- HUD (H1) ----
 
-function bar(el: Element | null, frac: number): void {
-  const b = el?.querySelector("b") as HTMLElement | null;
-  if (b) b.style.width = `${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%`;
-}
+let lastSaid = "";
 
 function hud(c: Current): void {
   const r = c.race.riders.find((x) => x.id === c.you) as Rider;
-  bar($('[data-meter="stamina"] i'), r.stamina / 100);
-  bar($('[data-meter="damage"] i'), r.damage / 100);
-  $("#speed b").textContent = String(Math.round(r.speed / MPH));
-  // revs climb through the build-up: the only place R17 shows itself
-  bar($("#revs i"), (r.speed / cap(r)) * (0.75 + 0.25 * r.build));
-  // no progress bar and no timer: the odometer and the course length (T3)
-  $("#odo").textContent = `${(Math.max(0, r.z) / MILE).toFixed(1)} of ${(c.race.track.length / MILE).toFixed(1)} mi`;
-  $("#position").textContent = `${r.place || positionOf(c.race, r.id)} / ${c.race.riders.length}`;
   const o = nearest(c.race, r);
-  const opp = $("#opponent");
-  if (o) {
-    (opp.querySelector(".who") as HTMLElement).textContent = o.name;
-    bar(opp.querySelector("i"), o.stamina / 100);
-    (opp.querySelector(".gap") as HTMLElement).textContent = `${Math.abs(o.z - r.z).toFixed(0)} m ${o.z > r.z ? "ahead" : "behind"}`;
-    opp.style.visibility = "visible";
-  } else opp.style.visibility = "hidden";
+  const position = r.place || positionOf(c.race, r.id);
+  dashCover = drawDash(dashCtx, dash.width, dash.height, {
+    name: r.name,
+    mph: r.speed / MPH,
+    // no gears (R4): the needle climbs with speed and the build-up (R17)
+    rpm: 0.15 + 0.8 * Math.min(1, (r.speed / cap(r)) * (0.8 + 0.2 * r.build)),
+    position,
+    miles: Math.max(0, r.z) / MILE, // an odometer, never a progress bar (T3)
+    damage: r.damage / 100,
+    stamina: r.stamina / 100,
+    opponent: o ? { name: o.name, stamina: o.stamina / 100, gap: o.z - r.z } : null,
+  });
+  // the same facts for a screen reader, spoken only when they change
+  const said = `Position ${position} of ${c.race.riders.length}`;
+  if (said !== lastSaid) {
+    $("#position").textContent = said;
+    lastSaid = said;
+  }
   void topSpeed;
 }
 
@@ -478,7 +462,7 @@ window.__rash = {
     const c = current;
     const r = c?.race.riders.find((x) => x.id === c.you);
     return c && r
-      ? { race: c.id, you: c.you, t: c.race.t, mph: r.speed / MPH, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, stamina: r.stamina, damage: r.damage, view: [view.w, view.h] }
+      ? { race: c.id, you: c.you, t: c.race.t, mph: r.speed / MPH, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, stamina: r.stamina, damage: r.damage }
       : { screen: app.dataset.screen, queued };
   },
   press: (k: keyof Input, down: boolean) => setKey(k, down),
