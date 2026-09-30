@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Knuckle Road</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main id="app" data-screen="lobby">
+
+  <section id="lobby" aria-labelledby="title">
+    <header class="masthead">
+      <h1 id="title">Knuckle Road</h1>
+      <p class="tag">Fifteen bikes, one ridge road, no rules worth the name.</p>
+    </header>
+
+    <div class="panel" id="signup">
+      <label class="field">
+        <span>Rider</span>
+        <input id="name" maxlength="20" autocomplete="nickname" spellcheck="false">
+      </label>
+      <fieldset class="field" id="levels">
+        <legend>Level</legend>
+        <label><input type="radio" name="level" value="1" checked> 1</label>
+        <label><input type="radio" name="level" value="2"> 2</label>
+        <label><input type="radio" name="level" value="3"> 3</label>
+        <label><input type="radio" name="level" value="4"> 4</label>
+        <label><input type="radio" name="level" value="5"> 5</label>
+      </fieldset>
+      <div class="queue">
+        <button id="queue-ai" data-mode="ai">Race with AI <small>starts in 5s</small></button>
+        <button id="queue-human" data-mode="human">Humans only <small>needs two</small></button>
+      </div>
+      <p id="pool" role="status" aria-live="polite"></p>
+      <button id="leave" hidden>Leave the queue</button>
+    </div>
+
+    <div class="panel" id="board">
+      <h2>Qualified</h2>
+      <p class="hint">Finish in the top three to qualify on a road. Every level has its own board.</p>
+      <table id="quals"><thead><tr><th scope="col">Road</th><th scope="col">1</th><th scope="col">2</th><th scope="col">3</th><th scope="col">4</th><th scope="col">5</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="panel" id="watch" hidden>
+      <h2>On the road now</h2>
+      <canvas id="watch-canvas" width="480" height="270" aria-label="The race in progress, seen from the leader's bike"></canvas>
+    </div>
+
+    <p class="keys">W throttle · S brake · A D steer · J hand · K foot</p>
+    <p class="credit">A remake of the arcade mode of <cite>Road Rash</cite> (EA, 1996). <a href="/readme/">Read me</a>.</p>
+  </section>
+
+  <section id="race" aria-label="Race">
+    <div id="stage">
+      <canvas id="road" aria-hidden="true"></canvas>
+      <div id="hud">
+        <div class="hud-left">
+          <div class="meter" data-meter="stamina"><span>Stamina</span><i><b></b></i></div>
+          <div class="meter" data-meter="damage"><span>Bike</span><i><b></b></i></div>
+        </div>
+        <div class="hud-mid">
+          <div id="position" aria-live="polite"></div>
+          <div id="opponent"><span class="who"></span><i><b></b></i><span class="gap"></span></div>
+        </div>
+        <div class="hud-right">
+          <div id="speed"><b>0</b> mph</div>
+          <div id="revs"><i><b></b></i></div>
+          <div id="odo"></div>
+        </div>
+      </div>
+      <div id="banner" aria-live="assertive"></div>
+    </div>
+    <div id="touch" aria-hidden="true">
+      <div class="pad left">
+        <button data-key="left">◀</button>
+        <button data-key="right">▶</button>
+      </div>
+      <div class="pad right">
+        <button data-key="hand">J<small>hand</small></button>
+        <button data-key="foot">K<small>foot</small></button>
+        <button data-key="brake">S<small>brake</small></button>
+        <button data-key="throttle">W<small>gas</small></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="result" aria-labelledby="ending">
+    <div class="panel">
+      <h2 id="ending"></h2>
+      <p id="ending-line"></p>
+      <table id="standings"><thead><tr><th scope="col">#</th><th scope="col">Rider</th><th scope="col">Time</th><th scope="col"></th></tr></thead><tbody></tbody></table>
+      <button id="again">Back to the board</button>
+    </div>
+  </section>
+
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -36,22 +36,22 @@ versions and the conflicts between sources that the table only summarises.
 | S1 | Big Game career: money, a bike shop, repair bills and fines, game over when broke | PCM, SATM | omitted | omitted: I chose the arcade mode alone. A career is a single-player economy, and it would make a race you join for five minutes carry a debt into tomorrow | — |
 | S2 | Thrash: pick a level (1–5) and a track, race on a preset bike for that level; no money, no shop | PCM, SATM, FADE | planned | same | C8 |
 | S3 | Thrash preset bikes per level: L1 Swallow, L2 Sport 450, L3 ZYX 750, L4 Raven N, L5 Assassino N | FADE | planned | adapted: five bikes of my own naming, with the originals' horsepower, weight and top speed | C8 |
-| S4 | Finishing 1st–3rd qualifies you on that track; all five tracks qualified completes the level | PCM, ZHWP | planned | same; qualifications are kept against the rider and survive across days | C8 |
+| S4 | Finishing 1st–3rd qualifies you on that track; all five tracks qualified completes the level | PCM, ZHWP | built | same; qualifications are kept against the rider and survive across days | `spec/persistence.test.ts › keeps a rider and a qualification across a restart` |
 | S5 | In Thrash, being Wrecked or Busted revokes your qualifications on the current level | SATM | planned | same | C9 |
 | S6 | Five levels; each lengthens the courses, adds traffic and cops, toughens opponents | PCM, ZHWP | planned | same | final |
 | S7 | Higher levels extend the same road rather than replacing it | ARGURO | planned | same | final |
 | S8 | Street hub between races: sign-up board, shop, schmooze, restroom | PCM, 3DOM | planned | adapted: one lobby page with the matchmaking buttons, the rider's qualification board and the grudge list (O3); no shop, because there is no money | C8 |
-| S9 | Named save files through Load / Save / Save As | PCM | planned | adapted: nothing to manage — the rider is remembered by the browser, and everything saves as it happens | C8 |
+| S9 | Named save files through Load / Save / Save As | PCM | built | adapted: nothing to manage — the rider is remembered by the browser, and everything saves as it happens | `spec/persistence.test.ts › keeps a rider and a qualification across a restart` |
 
 ## Multiplayer
 
 | ID | Mechanic (PC 1996) | Source | Status | Treatment | Due / proof |
 |---|---|---|---|---|---|
 | N1 | Mano a Mano: up to 8 players over a network; the host picks the level and sets traffic on or off | PCM | planned | adapted: no host and no player cap. Matchmaking pools replace the host (N2, N3) | C8 |
-| N2 | Host option LIMITED AI BIKERS | PCM | planned | adapted: an AI pool. It gathers for 5 seconds, takes everyone who joins in that window, and fills the grid to 15 with AI riders | C8 |
-| N3 | Host option HUMANS ONLY | PCM | planned | adapted: a human pool. It gathers for 10 seconds and starts if two or more people are in it; alone, it keeps waiting, and each newcomer restarts the 10 seconds | C9 |
-| N4 | The track is chosen by majority vote of the players | PCM | planned | same, and the level is voted the same way; a tie is broken at random. No balancing by level — a level-1 rider may race level 5 | C8 |
-| N5 | Once a race starts, its riders leave matchmaking | — | planned | adapted: added by me, since the original had no pool. People still waiting in a pool can watch a race in progress | C9 |
+| N2 | Host option LIMITED AI BIKERS | PCM | built | adapted: an AI pool. It gathers for 5 seconds, takes everyone who joins in that window, and fills the grid to 15 with AI riders | `spec/lobby.test.ts › takes everyone who joins in the five seconds after the first, and fills the grid to fifteen` |
+| N3 | Host option HUMANS ONLY | PCM | built | adapted: a human pool. It gathers for 10 seconds and starts if two or more people are in it; alone, it keeps waiting, and each newcomer restarts the 10 seconds | `spec/lobby.test.ts › restarts the ten seconds for each newcomer, then races only the humans` |
+| N4 | The track is chosen by majority vote of the players | PCM | built | same, and the level is voted the same way; a tie is broken at random. No balancing by level — a level-1 rider may race level 5 | `spec/lobby.test.ts › is run at the level most riders voted for` |
+| N5 | Once a race starts, its riders leave matchmaking | — | built | adapted: added by me, since the original had no pool. People still waiting in a pool can watch a race in progress | `spec/lobby.test.ts › lets someone who joins after the start watch the race instead` |
 | N6 | Upper-left indicator of every human's position, scrollable | PCM | planned | same | C9 |
 | N7 | Chat: canned messages on F1–F8, free typing on F9; status events (busted, wrecked, quit) posted to it | PCM | planned | adapted: canned taunts and the status events only. Free text on an open public site would need moderation this game has no one to do | C9 |
 
