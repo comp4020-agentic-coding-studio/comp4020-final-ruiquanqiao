@@ -412,21 +412,49 @@ function scenery(race: Race, r: Rider): void {
   }
 }
 
+/** A bike and its rider as a box on the road, the same size the scene draws. */
+export const BIKE = { length: 2.1, width: 0.8 };
+
+/**
+ * Push two overlapping bikes apart along whichever axis they overlap less —
+ * sideways when they rub, lengthways when one runs into the back of the other
+ * — and return which it was, or null if they do not touch. `share` is how
+ * much of the separation `a` takes: 0.5 on the server, 1 when a client moves
+ * only its own predicted rider.
+ */
+export function separate(a: Rider, b: Rider, share = 0.5): "side" | "rear" | null {
+  const dz = b.z - a.z;
+  const dx = b.x - a.x;
+  const oz = BIKE.length - Math.abs(dz);
+  const ox = BIKE.width - Math.abs(dx);
+  if (oz <= 0 || ox <= 0) return null;
+  if (ox < oz) {
+    const s = dx >= 0 ? 1 : -1;
+    a.x -= s * ox * share;
+    b.x += s * ox * (1 - share);
+    return "side";
+  }
+  const s = dz >= 0 ? 1 : -1;
+  a.z -= s * oz * share;
+  b.z += s * oz * (1 - share);
+  return "rear";
+}
+
 /** Bikes do not pass through each other; a faster bike behind pushes (R7). */
 function contact(race: Race): void {
   const riding = race.riders.filter((r) => r.phase === "riding");
+  // a few passes: pushing one pair apart can push one of them into a third
+  for (let pass = 0; pass < 4; pass++) contactPass(riding, pass === 0);
+}
+
+function contactPass(riding: Rider[], transfer: boolean): void {
   for (let i = 0; i < riding.length; i++) {
     for (let j = i + 1; j < riding.length; j++) {
       const a = riding[i];
       const b = riding[j];
-      const dz = b.z - a.z;
-      const dx = b.x - a.x;
-      if (Math.abs(dz) > 1.8 || Math.abs(dx) > 0.8) continue;
-      const push = (0.8 - Math.abs(dx)) / 2;
-      const s = dx >= 0 ? 1 : -1;
-      a.x -= s * push;
-      b.x += s * push;
-      const [back, front] = dz >= 0 ? [a, b] : [b, a];
+      const kind = separate(a, b);
+      if (kind !== "rear" || !transfer) continue;
+      const [back, front] = b.z >= a.z ? [a, b] : [b, a];
       if (back.speed > front.speed) {
         const diff = back.speed - front.speed;
         front.speed += Math.min(7 * MPH, diff * 0.5);

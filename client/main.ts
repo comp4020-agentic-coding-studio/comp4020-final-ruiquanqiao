@@ -6,7 +6,7 @@
 import { type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
 import { RaceScene } from "./scene.ts";
-import { DT, type Input, MPH, NO_INPUT, type Race, type Rider, beginAttack, cap, nearest, packInput, positionOf, ride, startRace, topSpeed, TUNE } from "../game/sim.ts";
+import { DT, type Input, MPH, NO_INPUT, type Race, type Rider, beginAttack, cap, nearest, separate, packInput, positionOf, ride, startRace, topSpeed, TUNE } from "../game/sim.ts";
 import { MILE, makeTrack } from "../game/track.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -383,6 +383,9 @@ function frame(): void {
         const r = c.race.riders.find((x) => x.id === c.you);
         if (r) {
           ride(r, keys, c.race.track);
+          // the predicted bike stops at other bikes too, instead of passing
+          // through them until the server's correction arrives
+          if (r.phase === "riding") for (const o of c.race.riders) if (o !== r && o.phase === "riding") separate(r, o, 1);
           if (r.attack) {
             r.attack.t += DT;
             if (r.attack.t >= TUNE.windup + 0.2) r.attack = null;
