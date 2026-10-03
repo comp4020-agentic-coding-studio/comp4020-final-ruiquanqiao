@@ -148,6 +148,29 @@ versions and the conflicts between sources that the table only summarises.
 | H6 | Resolution and detail-level options | PCM | omitted | omitted: the road is drawn at one fixed low resolution and scaled up, so there is nothing to trade | — |
 | H7 | The name Road Rash, the riders, bike brands and track names | PCM | omitted | omitted: they are EA's. Mechanics are copied; names are my own, and the README credits the original | — |
 
+## Contact
+
+None of the research above asked what happens when a bike touches something,
+and riding the first build through other bikes was how that showed. These rows
+come from frame sheets of the PC playthroughs and the manuals and FAQs, in
+[road-rash-collisions.md](road-rash-collisions.md). Where the PC footage could
+not settle a question, the row says which source filled it.
+
+| ID | Mechanic (PC 1996) | Source | Status | Treatment | Due / proof |
+|---|---|---|---|---|---|
+| K0 | Bikes are solid: no bike passes through another, on any screen | YT1 | built | same | `spec/contact.test.ts › never leaves two bikes overlapping, at any step of a full-field race` |
+| K1 | Side contact between two riders shoves the other bike sideways without a crash, the same as a kick | RR3FAQ2, YT1 | planned | same. Road Rash 3's FAQ states it; the PC footage agrees | C9 |
+| K2 | A harder side rub, at a steeper angle or higher closing speed, puts the other rider down in a lean-and-slide knockdown, unlike the full throw off a car | YT1 | planned | same | C9 |
+| K3 | Hitting a car or fixed obstacle head-on throws the rider clear of the bike in a spread-eagle tumble, with a flash on impact | YT1 | planned | same | C9 |
+| K4 | After a crash the rider lies in the road while others ride past, then stands and jogs back to the bike | YT1, PCM | planned | same | C8 |
+| K5 | Knocked off by another rider, the bike coasts on riderless, so the run back is longer than after a crash of your own | RR3FAQ2 | planned | adapted: the PC footage does not show it; taken from Road Rash 3 because it makes a knockdown cost something different from a crash | C9 |
+| K6 | A knockdown by an opponent costs no bike damage; only crashes do | RR3FAQ2 | planned | adapted: from Road Rash 3, for the same reason as K5 | C9 |
+| K7 | Running into the back of slow traffic in your lane is nearly as damaging as a head-on crash | PCM | planned | same, with T4 | C9 |
+| K8 | The kick is for knocking a rival sideways into oncoming traffic | PCM | planned | same, once T4 puts traffic in the other lane | C9 |
+| K9 | Each obstacle always does one of three things: nothing, a small jump, or a crash | RR3FAQ2, FADE | planned | same | final |
+| K10 | Contact with a motorcycle cop or a blocking cop car is an instant bust; a parked roadblock car is not | RR3FAQ2 | planned | adapted: Road Rash 3's rule; the PC footage never shows a cop collision, so it is decided with P1 | C9 |
+| K11 | A downed rider and the separated bike stay in the lane as hazards for several seconds | YT1 | planned | same, with C9 | C9 |
+
 ## Look
 
 The first renderer here was drawn from nothing: a dusk sky, red-and-white
@@ -194,6 +217,7 @@ come from 137 screenshots of the PC and 3DO versions, measured in
 | SCDM | Road Rash, Sega CD manual (1995) | https://archive.org/details/Road_Rash_1995_Electronic_Arts_US |
 | SATM | Road Rash, Saturn manual (1996), whose text is near-identical to the PC manual | https://archive.org/details/Road_Rash_1996_U |
 | RR1M | Road Rash, Mega Drive manual (1991) | https://segaretro.org/images/9/99/Road_Rash_MD_US_Manual.pdf |
+| RR3FAQ2 | Road Rash 3 (Mega Drive) FAQ, GameFAQs | https://gamefaqs.gamespot.com/genesis/586427-road-rash-3/faqs/29823 |
 | RR1FAQ | snazzyhoppy, Road Rash Mega Drive FAQ | https://gamefaqs.gamespot.com/genesis/586425-road-rash/faqs/55386 |
 | JATIN | Jatin Bhatia, Road Rash PC FAQ | https://gamefaqs.gamespot.com/pc/198492-road-rash/faqs/30821 |
 | ARGURO | Arguro, Road Rash 3DO/Saturn/PS/PC FAQ | https://gamefaqs.gamespot.com/pc/198492-road-rash/faqs/76468 |
