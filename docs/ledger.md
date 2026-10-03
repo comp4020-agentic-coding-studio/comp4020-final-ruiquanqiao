@@ -73,10 +73,10 @@ adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of th
 
 | ID | Mechanic (PC 1996) | Source | Status | Treatment | Due / proof |
 |---|---|---|---|---|---|
-| P1 | Stopping near a cop, by crashing or being pulled over, gets you Busted; the race is over for you | SATM, SCDM, ZHWP | planned | same | C9 |
-| P2 | Motorcycle cops appear at fixed mile markers on each track and try to club you off or pull you over | ARGURO, FADE | planned | same | C9 |
+| P1 | Stopping near a cop, by crashing or being pulled over, gets you Busted; the race is over for you | SATM, SCDM, ZHWP | built | same | `spec/traffic.test.ts › stopping beside a cop is Busted, and the race is over for that rider (P1)` |
+| P2 | Motorcycle cops appear at fixed mile markers on each track and try to club you off or pull you over | ARGURO, FADE | built | same | `spec/traffic.test.ts › a cop waits on the shoulder until a human comes by, then gives chase (P2)` |
 | P3 | Cops are slow at the low levels | FADE | planned | same | final |
-| P4 | AI riders are never Busted | FADE | planned | adapted: to decide by C9 alongside the AI's other advantages (O6). A rule that exempts only some riders reads differently once the riders beside you are people | C9 |
+| P4 | AI riders are never Busted | FADE | built | same. Kept after weighing it against O6: the cops are the road's hazard for the people racing, and an AI rider pulled over would only thin the field they race against | `spec/traffic.test.ts › never busts an AI rider (P4)` |
 | P5 | Police roadblocks from level 4, passed on the centre line or over the sand mounds | FADE | planned | same | final |
 | P6 | Cheat codes (XYZZY, then weapon, speed and police cheats) | CHEAT | omitted | omitted: in a shared race a cheat is a thing done to other people | — |
 
@@ -87,7 +87,7 @@ adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of th
 | T1 | Five real Northern California roads, each with its own character | PCM | planned | adapted: fictional roads of my own, each given a character in the same spirit; one road for C8, five by the end | C8 |
 | T2 | Course lengths per level, from about 5 miles at level 1 to about 17 at level 5 | JATIN | planned | same | C8 |
 | T3 | No race timer and no progress bar: the course length is shown before the race and the odometer counts up | PCM | planned | same | C8 |
-| T4 | Oncoming and same-direction traffic; drivers change lanes | FADE, 3DOM | planned | same | C9 |
+| T4 | Oncoming and same-direction traffic; drivers change lanes | FADE, 3DOM | built | same | `spec/traffic.test.ts › keeps every car in a lane of its own direction for a whole race (T4)` |
 | T5 | Cross traffic from side roads at intersections | CJH, PCM | planned | same | final |
 | T6 | Pedestrians on and beside the road, and a flagger at the start who can be run over | 3DOM, CJH | planned | same | final |
 | T7 | Host can turn traffic off | PCM | omitted | omitted: there is no host, and traffic is half of what the road does to you | — |
@@ -127,13 +127,13 @@ not settle a question, the row says which source filled it.
 | ID | Mechanic (PC 1996) | Source | Status | Treatment | Due / proof |
 |---|---|---|---|---|---|
 | K0 | Bikes are solid: no bike passes through another, on any screen | YT1 | built | same | `spec/contact.test.ts › never leaves two bikes overlapping, at any step of a full-field race` |
-| K1 | Side contact between two riders shoves the other bike sideways without a crash, the same as a kick | RR3FAQ2, YT1 | planned | same. Road Rash 3's FAQ states it; the PC footage agrees | C9 |
-| K2 | A harder side rub, at a steeper angle or higher closing speed, puts the other rider down in a lean-and-slide knockdown, unlike the full throw off a car | YT1 | planned | same | C9 |
-| K3 | Hitting a car or fixed obstacle head-on throws the rider clear of the bike in a spread-eagle tumble, with a flash on impact | YT1 | planned | same | C9 |
+| K1 | Side contact between two riders shoves the other bike sideways without a crash, the same as a kick | RR3FAQ2, YT1 | built | same. Road Rash 3's FAQ states it; the PC footage agrees | `spec/traffic.test.ts › a gentle side rub shoves the other bike over without a crash (K1)` |
+| K2 | A harder side rub, at a steeper angle or higher closing speed, puts the other rider down in a lean-and-slide knockdown, unlike the full throw off a car | YT1 | built | same | `spec/traffic.test.ts › a hard rub at speed puts the other rider down, and costs that bike nothing (K2, K6)` |
+| K3 | Hitting a car or fixed obstacle head-on throws the rider clear of the bike in a spread-eagle tumble, with a flash on impact | YT1 | built | same | `spec/traffic.test.ts › meeting an oncoming car is a head-on crash (K3)` |
 | K4 | After a crash the rider lies in the road while others ride past, then stands and jogs back to the bike | YT1, PCM | planned | same | C8 |
-| K5 | Knocked off by another rider, the bike coasts on riderless, so the run back is longer than after a crash of your own | RR3FAQ2 | planned | adapted: the PC footage does not show it; taken from Road Rash 3 because it makes a knockdown cost something different from a crash | C9 |
-| K6 | A knockdown by an opponent costs no bike damage; only crashes do | RR3FAQ2 | planned | adapted: from Road Rash 3, for the same reason as K5 | C9 |
-| K7 | Running into the back of slow traffic in your lane is nearly as damaging as a head-on crash | PCM | planned | same, with T4 | C9 |
+| K5 | Knocked off by another rider, the bike coasts on riderless, so the run back is longer than after a crash of your own | RR3FAQ2 | built | adapted: the PC footage does not show it; taken from Road Rash 3 because it makes a knockdown cost something different from a crash | `spec/traffic.test.ts › knocked off by another rider, the bike coasts on further than one its rider dropped (K5)` |
+| K6 | A knockdown by an opponent costs no bike damage; only crashes do | RR3FAQ2 | built | adapted: from Road Rash 3, for the same reason as K5 | `spec/traffic.test.ts › a hard rub at speed puts the other rider down, and costs that bike nothing (K2, K6)` |
+| K7 | Running into the back of slow traffic in your lane is nearly as damaging as a head-on crash | PCM | built | same, with T4 | `spec/traffic.test.ts › running into the back of a slower car is a crash, and costs about a head-on's damage (K7)` |
 | K8 | The kick is for knocking a rival sideways into oncoming traffic | PCM | planned | same, once T4 puts traffic in the other lane | C9 |
 | K9 | Each obstacle always does one of three things: nothing, a small jump, or a crash | RR3FAQ2, FADE | planned | same | final |
 | K10 | Contact with a motorcycle cop or a blocking cop car is an instant bust; a parked roadblock car is not | RR3FAQ2 | planned | adapted: Road Rash 3's rule; the PC footage never shows a cop collision, so it is decided with P1 | C9 |

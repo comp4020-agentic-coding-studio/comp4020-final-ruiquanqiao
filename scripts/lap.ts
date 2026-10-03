@@ -5,7 +5,7 @@
 //
 //   node scripts/lap.ts [--level 1] [--seed 7] [--margin 0.3]
 
-import { DT, MPH, NO_INPUT, type Input, TUNE, standings, startRace, step, humansDone } from "../game/sim.ts";
+import { DT, MPH, NO_INPUT, type Input, TUNE, clearLine, standings, startRace, step, humansDone } from "../game/sim.ts";
 import { MILE, curveAt, makeTrack } from "../game/track.ts";
 
 const args = process.argv.slice(2);
@@ -29,7 +29,13 @@ while (!humansDone(race) && race.t < 900) {
   const input: Input = { ...NO_INPUT, throttle: true };
   // aim for the centre of the right lane, leaning into what the bend will do
   const ahead = curveAt(track, me.z + me.speed * 0.8);
-  const want = 3.5 - me.x + TUNE.centrifugal * me.speed * me.speed * ahead * 0.35;
+  // a player looks ahead for traffic too
+  const line = clearLine(race, me, 3.5);
+  const want = (line ?? me.x) - me.x + TUNE.centrifugal * me.speed * me.speed * ahead * 0.35;
+  if (line === null) {
+    input.throttle = false;
+    input.brake = true;
+  }
   if (want > margin) input.right = true;
   if (want < -margin) input.left = true;
   if (input.left || input.right) steerSteps++;

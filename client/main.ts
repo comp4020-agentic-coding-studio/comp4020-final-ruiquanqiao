@@ -3,7 +3,7 @@
 // server runs, so the bike answers the keys at once, and draws everyone else
 // a tenth of a second in the past, between two snapshots.
 
-import { type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
+import { type CarState, type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
 import { RaceScene } from "./scene.ts";
 import { DT, type Input, MPH, NO_INPUT, type Race, type Rider, beginAttack, cap, nearest, separate, packInput, positionOf, ride, startRace, topSpeed, TUNE } from "../game/sim.ts";
@@ -34,7 +34,7 @@ function connect(): void {
 
 // ---- a race as this tab sees it ----
 
-type Snapshot = { at: number; time: number; riders: RiderState[] };
+type Snapshot = { at: number; time: number; riders: RiderState[]; cars: CarState[] };
 
 type Current = {
   id: number;
@@ -71,7 +71,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
   const c = current;
   if (!c || c.id !== msg.race) return;
   const now = performance.now() / 1000;
-  c.snaps.push({ at: now, time: msg.time, riders: msg.riders });
+  c.snaps.push({ at: now, time: msg.time, riders: msg.riders, cars: msg.cars });
   if (c.snaps.length > 30) c.snaps.shift();
   const localTime = c.steps * DT;
   const offset = msg.time - localTime;
@@ -105,6 +105,9 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     if (e.kind === "hit" && e.on === c.you) flash();
     if (e.kind === "crash" && e.rider === c.you) banner(e.cause === "knockdown" ? "Knocked off" : "Down!", 1200);
     if (e.kind === "wrecked" && e.rider === c.you) banner("Wrecked", 3000);
+    // hitting a car flashes the screen white (K3)
+    if (e.kind === "crash" && e.rider === c.you && (e.cause === "rearEnd" || e.cause === "headOn")) flash("#ffffff");
+    if (e.kind === "busted" && e.rider === c.you) banner("Busted", 3000);
     if (e.kind === "finished" && e.rider === c.you) banner(e.place <= 3 ? `${ordinal(e.place)}: qualified` : ordinal(e.place), 3000);
   }
 }
@@ -218,6 +221,7 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
     qualified: ["Qualified", `${ordinal(mine!.place)} across the line. Ridge Road, level ${c.level}, goes on your board.`],
     placed: ["Placed", `${ordinal(mine?.place ?? 0)}. You finished, but only the top three qualify.`],
     wrecked: ["Wrecked", "The bike gave out before the line."],
+    busted: ["Busted", "You came off with a cop beside you. The race is over for you."],
     unfinished: ["Out of time", "The race closed before you reached the line."],
     quit: ["Left the race", ""],
   };
@@ -352,6 +356,17 @@ function interpolate(c: Current, now: number): void {
   }
   const span = b.at - a.at;
   const f = span > 0 ? Math.min(1, Math.max(0, (t - a.at) / span)) : 1;
+  // a car the server stopped sending is nowhere near anyone: hide it
+  for (const car of c.race.cars) if (!b.cars.some((x) => x[0] === car.id)) car.z = -1e6;
+  for (const cb of b.cars) {
+    const ca = a.cars.find((x) => x[0] === cb[0]);
+    const car = c.race.cars.find((x) => x.id === cb[0]);
+    if (!car) continue;
+    // a car that wrapped round the road between snapshots jumps, not slides
+    const near = ca && Math.abs(cb[1] - ca[1]) < 50;
+    car.z = near ? ca[1] + (cb[1] - ca[1]) * f : cb[1];
+    car.x = near ? ca[2] + (cb[2] - ca[2]) * f : cb[2];
+  }
   for (const r of c.race.riders) {
     if (r.id === c.you) continue;
     const sa = a.riders.find((s) => s[0] === r.id);
@@ -398,12 +413,12 @@ function frame(): void {
     if (c.you !== null) sendKeys(now);
     interpolate(c, now);
     if (c.you !== null) {
-      roadScene.draw(c.race.riders, c.you, dashCover / Math.max(1, dash.height));
+      roadScene.draw(c.race.riders, c.you, dashCover / Math.max(1, dash.height), c.race.cars);
       hud(c);
     } else if (!$("#watch").hidden) {
       // watching: ride along behind whoever is leading
-      const lead = [...c.race.riders].sort((p, q) => q.z - p.z)[0];
-      watchScene.draw(c.race.riders, lead.id, 0);
+      const lead = c.race.riders.filter((r) => !r.cop).sort((p, q) => q.z - p.z)[0];
+      watchScene.draw(c.race.riders, lead.id, 0, c.race.cars);
     }
     if (hitFlash > 0) {
       hitFlash = Math.max(0, hitFlash - dt * 4);
@@ -413,7 +428,8 @@ function frame(): void {
   requestAnimationFrame(frame);
 }
 
-function flash(): void {
+function flash(colour = "#ff2010"): void {
+  $("#flash").style.background = colour;
   hitFlash = 1;
 }
 
@@ -445,7 +461,7 @@ function hud(c: Current): void {
     opponent: o ? { name: o.name, stamina: o.stamina / 100, gap: o.z - r.z } : null,
   });
   // the same facts for a screen reader, spoken only when they change
-  const said = `Position ${position} of ${c.race.riders.length}`;
+  const said = `Position ${position} of ${c.race.riders.filter((x) => !x.cop).length}`;
   if (said !== lastSaid) {
     $("#position").textContent = said;
     lastSaid = said;

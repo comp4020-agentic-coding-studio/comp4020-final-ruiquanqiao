@@ -289,9 +289,158 @@ export function crouch(rig: RiderRig, tuck = 1): void {
   // and the head back up, eyes on the road
   bend(rig, b.neck_01, RIGHT, 0.6 * tuck);
   bend(rig, b.Head, RIGHT, 0.45 * tuck);
-  for (const s of ["l", "r"]) {
-    bend(rig, b[`thigh_${s}`], RIGHT, -0.35);
-    bend(rig, b[`calf_${s}`], RIGHT, -1.25);
-    bend(rig, b[`foot_${s}`], RIGHT, 0.6);
+  bend(rig, b.thigh_l, RIGHT, -0.35);
+  bend(rig, b.calf_l, RIGHT, -1.25);
+  bend(rig, b.foot_l, RIGHT, 0.6);
+  // the clip is a car driver's, right foot out on the pedal; solve the right
+  // leg's bends so its foot lands where the left one's mirror image is
+  const fix = legFix ?? (legFix = solveRightLeg(rig));
+  bend(rig, b.thigh_r, RIGHT, fix[0]);
+  bend(rig, b.thigh_r, FWD, fix[1]);
+  bend(rig, b.calf_r, RIGHT, fix[2]);
+  bend(rig, b.foot_r, RIGHT, 0.6);
+}
+
+const FWD = new THREE.Vector3(0, 0, 1);
+let legFix: [number, number, number] | null = null;
+
+/**
+ * Search the right thigh's pitch and splay and the knee's bend for the pose
+ * that puts the right foot and knee on the mirror image of the left ones.
+ * Done once, on the first rider posed; every rider shares the clip frame.
+ */
+function solveRightLeg(rig: RiderRig): [number, number, number] {
+  const b = rig.bones;
+  const foot = new THREE.Vector3();
+  const knee = new THREE.Vector3();
+  rig.root.updateMatrixWorld(true);
+  b.foot_l.getWorldPosition(foot);
+  b.calf_l.getWorldPosition(knee);
+  const wantFoot = new THREE.Vector3(-foot.x + 2 * rigCentre(rig), foot.y, foot.z);
+  const wantKnee = new THREE.Vector3(-knee.x + 2 * rigCentre(rig), knee.y, knee.z);
+  const saved = [b.thigh_r, b.calf_r].map((bone) => bone.quaternion.clone());
+  let best: [number, number, number] = [0, 0, 0];
+  let bestErr = Infinity;
+  const tryPose = (p: number, sp: number, k: number): void => {
+    b.thigh_r.quaternion.copy(saved[0]);
+    b.calf_r.quaternion.copy(saved[1]);
+    turnBone(b.thigh_r, RIGHT, p);
+    turnBone(b.thigh_r, FWD, sp);
+    turnBone(b.calf_r, RIGHT, k);
+    b.foot_r.updateWorldMatrix(true, false);
+    const f = new THREE.Vector3();
+    const kn = new THREE.Vector3();
+    b.foot_r.getWorldPosition(f);
+    b.calf_r.getWorldPosition(kn);
+    const err = f.distanceToSquared(wantFoot) + kn.distanceToSquared(wantKnee);
+    if (err < bestErr) {
+      bestErr = err;
+      best = [p, sp, k];
+    }
+  };
+  // coarse grid, then a finer one round the best
+  for (let p = -2; p <= 1; p += 0.15) for (let sp = -0.8; sp <= 0.8; sp += 0.15) for (let k = -2.4; k <= 0.6; k += 0.15) tryPose(p, sp, k);
+  const [p0, s0, k0] = best;
+  for (let p = p0 - 0.15; p <= p0 + 0.15; p += 0.025) for (let sp = s0 - 0.15; sp <= s0 + 0.15; sp += 0.025) for (let k = k0 - 0.15; k <= k0 + 0.15; k += 0.025) tryPose(p, sp, k);
+  b.thigh_r.quaternion.copy(saved[0]);
+  b.calf_r.quaternion.copy(saved[1]);
+  return best;
+}
+
+/** The rider's centre line in world x, from the pelvis. */
+function rigCentre(rig: RiderRig): number {
+  const p = new THREE.Vector3();
+  rig.bones.pelvis.getWorldPosition(p);
+  return p.x;
+}
+
+// ---- traffic (T4, V17) ----
+
+const CAR_PAINT = ["#8a8f96", "#b8bcc0", "#5a2a2a", "#26384e", "#d8d4c8", "#3c4a34", "#7a6440"];
+
+/** A car about 4.6 m long, facing +z: body, glasshouse, roof, wheels, lights. */
+export function buildCar(kind: "sedan" | "taxi" | "pickup" | "police", id: number): THREE.Group {
+  const paint = kind === "taxi" ? "#e8b818" : kind === "police" ? "#141418" : CAR_PAINT[id % CAR_PAINT.length];
+  const m = {
+    paint: new THREE.MeshPhysicalMaterial({ color: paint, roughness: 0.3, metalness: 0.3, clearcoat: 1, clearcoatRoughness: 0.1 }),
+    white: new THREE.MeshPhysicalMaterial({ color: "#f2f2f2", roughness: 0.3, clearcoat: 1 }),
+    glass: new THREE.MeshPhysicalMaterial({ color: "#1c2430", roughness: 0.05, metalness: 0.4, clearcoat: 1 }),
+    tyre: new THREE.MeshStandardMaterial({ color: "#141414", roughness: 0.9 }),
+    rim: new THREE.MeshStandardMaterial({ color: "#a8a8b0", roughness: 0.3, metalness: 0.9 }),
+    trim: new THREE.MeshStandardMaterial({ color: "#1a1a1a", roughness: 0.6 }),
+    head: new THREE.MeshStandardMaterial({ color: "#fff6e0", emissive: "#fff0c8", emissiveIntensity: 0.8 }),
+    tail: new THREE.MeshStandardMaterial({ color: "#c01010", emissive: "#ff1000", emissiveIntensity: 0.8 }),
+  };
+  const car = new THREE.Group();
+  // the lower body, shoulder line at about 0.95 m
+  car.add(panel([[-2.3, 0.3], [-2.34, 0.78], [-2.1, 0.96], [2.05, 0.92], [2.32, 0.7], [2.3, 0.3]], 1.86, 0.1, m.paint));
+  if (kind === "pickup") {
+    // a cab forward and an open bed behind it
+    car.add(panel([[-0.25, 0.9], [-0.15, 1.5], [0.7, 1.5], [1.2, 0.92]], 1.66, 0.05, m.glass));
+    car.add(panel([[-0.2, 1.46], [0.68, 1.46], [0.68, 1.53], [-0.2, 1.53]], 1.7, 0.03, m.paint));
+    for (const side of [-1, 1]) {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.28, 1.9), m.paint);
+      wall.position.set(side * 0.88, 1.08, -1.3);
+      car.add(wall);
+    }
+  } else {
+    car.add(panel([[-1.4, 0.92], [-1.0, 1.42], [0.55, 1.44], [1.18, 0.92]], 1.62, 0.06, m.glass));
+    car.add(panel([[-0.95, 1.4], [0.5, 1.42], [0.5, 1.49], [-0.95, 1.47]], 1.66, 0.03, kind === "police" ? m.white : m.paint));
   }
+  if (kind === "police") {
+    // white doors on the black-and-white, a light bar on the roof
+    for (const side of [-1, 1]) {
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.42, 1.9), m.white);
+      door.position.set(side * 0.94, 0.66, 0.05);
+      car.add(door);
+    }
+    const bar = new THREE.Group();
+    const red = new THREE.MeshStandardMaterial({ color: "#d01010", emissive: "#ff0000", emissiveIntensity: 1.5 });
+    const blue = new THREE.MeshStandardMaterial({ color: "#1030d0", emissive: "#0030ff", emissiveIntensity: 1.5 });
+    const l = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.12, 0.22), red);
+    l.position.x = 0.3;
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.12, 0.22), blue);
+    r.position.x = -0.3;
+    bar.add(l, r);
+    bar.position.set(0, 1.56, -0.2);
+    car.add(bar);
+  }
+  if (kind === "taxi") {
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.18, 0.25), new THREE.MeshStandardMaterial({ color: "#f8f0d0", emissive: "#f0e0a0", emissiveIntensity: 0.4 }));
+    sign.position.set(0, 1.58, -0.2);
+    car.add(sign);
+  }
+  for (const z of [-1.45, 1.4]) {
+    for (const side of [-1, 1]) {
+      const w = new THREE.Group();
+      w.add(new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.24, 20).rotateZ(Math.PI / 2), m.tyre));
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.25, 14).rotateZ(Math.PI / 2), m.rim);
+      w.add(hub);
+      w.position.set(side * 0.82, 0.33, z);
+      car.add(w);
+    }
+  }
+  for (const side of [-1, 1]) {
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.05), m.head);
+    hl.position.set(side * 0.62, 0.72, 2.31);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.05), m.tail);
+    tl.position.set(side * 0.62, 0.78, -2.33);
+    car.add(hl, tl);
+  }
+  const bumper = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.16, 0.12), m.trim);
+  bumper.position.set(0, 0.38, 2.34);
+  const rearBumper = bumper.clone();
+  rearBumper.position.z = -2.36;
+  car.add(bumper, rearBumper);
+  car.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+  });
+  return car;
+}
+
+/** A cop's club, held in the right hand (C7). */
+export function buildClub(): THREE.Mesh {
+  const club = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.6, 8), new THREE.MeshStandardMaterial({ color: "#1a1a1a", roughness: 0.5 }));
+  club.geometry.translate(0, 0.25, 0);
+  return club;
 }

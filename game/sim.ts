@@ -60,7 +60,23 @@ export const TUNE = {
   staminaRest: 2.5, // seconds without a hit
   thrownTime: 1.1, // s airborne and tumbling
   runSpeed: 6.5, // m/s back to the bike
-  crashDamage: { tree: 34, lowside: 16, knockdown: 8 },
+  // a knockdown by another rider costs the bike nothing (K6); running into
+  // the back of traffic is "almost as damaging as a head-on collision" (K7)
+  crashDamage: { tree: 34, lowside: 16, knockdown: 0, rub: 0, rearEnd: 30, headOn: 40 },
+  /** sideways closing speed at which a rub puts the other rider down (K2) */
+  rubKnock: 6.5,
+  /** sideways shove from a rub that does not (K1), m/s */
+  rubShove: 4,
+  /** closing speed along the road above which hitting a car is a crash */
+  carCrash: 7,
+  /** a riderless bike coasts on and slows at this rate (K5); m/s² */
+  coastDecel: 7.5,
+  /** a bike dropped by its own rider slides and stops quickly */
+  slideDecel: 14,
+  clubReach: { z: 2.0, x: 2.1 },
+  clubStamina: 26,
+  /** stopped or off the bike this close to a cop is Busted (P1), m */
+  bustRange: 12,
 };
 
 // ---- state ----
@@ -88,7 +104,9 @@ export const unpackInput = (n: number): Input => ({
   foot: !!(n & 32),
 });
 
-export type Phase = "riding" | "thrown" | "running" | "finished" | "wrecked";
+export type Phase = "riding" | "thrown" | "running" | "finished" | "wrecked" | "busted";
+
+export type CrashCause = "tree" | "lowside" | "knockdown" | "rub" | "rearEnd" | "headOn";
 
 export type AttackKind = "punch" | "backhand" | "kick";
 
@@ -114,6 +132,10 @@ export type Rider = {
   phaseT: number;
   bikeZ: number; // where the bike lies while the rider is off it
   bikeX: number;
+  bikeSpeed: number; // a riderless bike still moving (K5)
+  cop: boolean; // a motorcycle cop (P2): never finishes, never placed
+  weapon: "club" | null; // cops carry a club (C7)
+  chase: number; // the rider a cop is after, or -1 while waiting
   attack: Attack | null;
   cooldown: number;
   sinceHit: number;
@@ -129,14 +151,31 @@ export type Rider = {
 
 export type RaceEvent =
   | { t: number; kind: "hit"; by: number; on: number; move: AttackKind }
-  | { t: number; kind: "crash"; rider: number; cause: "tree" | "lowside" | "knockdown" }
+  | { t: number; kind: "crash"; rider: number; cause: CrashCause }
+  | { t: number; kind: "busted"; rider: number; cop: number }
   | { t: number; kind: "wrecked"; rider: number }
   | { t: number; kind: "finished"; rider: number; place: number };
+
+/** Traffic (T4): same-direction cars in the right lanes, oncoming in the left. */
+export type Car = {
+  id: number;
+  kind: "sedan" | "taxi" | "pickup" | "police";
+  z: number;
+  x: number;
+  lane: number; // target x
+  dir: 1 | -1; // +1 travels with the race, -1 towards it
+  speed: number; // m/s, always positive
+  changeT: number; // seconds until it next thinks about changing lane
+};
+
+export const CAR = { length: 4.6, width: 1.9 };
+export const LANES = { with: [1.75, 5.25], against: [-1.75, -5.25] } as const;
 
 export type Race = {
   track: Track;
   t: number;
   riders: Rider[];
+  cars: Car[];
   events: RaceEvent[];
   rng: number;
   finishers: number;
@@ -164,7 +203,7 @@ export type Entrant = { id: number; name: string; human: boolean; lbs?: number }
 export function startRace(track: Track, level: number, entrants: Entrant[], seed: number): Race {
   const bike = BIKES[level - 1];
   const ordered = [...entrants.filter((e) => !e.human), ...entrants.filter((e) => e.human)];
-  const race: Race = { track, t: 0, riders: [], events: [], rng: seed >>> 0 || 1, finishers: 0 };
+  const race: Race = { track, t: 0, riders: [], cars: [], events: [], rng: seed >>> 0 || 1, finishers: 0 };
   ordered.forEach((e, i) => {
     const row = Math.floor(i / 3);
     const col = (i % 3) - 1;
@@ -189,6 +228,10 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       phaseT: 0,
       bikeZ: z,
       bikeX: col * 2.8,
+      bikeSpeed: 0,
+      cop: false,
+      weapon: null,
+      chase: -1,
       attack: null,
       cooldown: 0,
       sinceHit: 99,
@@ -207,7 +250,64 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
     r.aggression = 0.15 + random(race) * 0.5;
     r.line = (random(race) * 2 - 1) * (ROAD_HALF - 1.5);
   }
+  placeCops(race, level, bike);
+  placeTraffic(race, level);
   return race;
+}
+
+/**
+ * Motorcycle cops wait at fixed points along the road (P2), parked on the
+ * right shoulder, more of them at higher levels. Everything here comes off
+ * the seeded generator, so every browser builds the same race.
+ */
+function placeCops(race: Race, level: number, bike: Bike): void {
+  const marks = [0.13, 0.51, 0.85, 0.32, 0.68].slice(0, 2 + level);
+  marks.forEach((m, i) => {
+    const z = m * race.track.length;
+    const template = race.riders[0];
+    race.riders.push({
+      ...template,
+      id: 1000 + i,
+      name: "Police",
+      human: false,
+      bike,
+      lbs: 200,
+      z,
+      x: ROAD_HALF + 1.2,
+      bikeZ: z,
+      bikeX: ROAD_HALF + 1.2,
+      cop: true,
+      weapon: "club",
+      chase: -1,
+      line: ROAD_HALF - 1,
+      // slow at the low levels (P3)
+      skill: 0.82 + 0.04 * level,
+      aggression: 2.5,
+      attack: null,
+    });
+  });
+}
+
+function placeTraffic(race: Race, level: number): void {
+  const kinds: Car["kind"][] = ["sedan", "sedan", "taxi", "pickup", "sedan", "police"];
+  let id = 0;
+  // more traffic at each level (S6)
+  const gap = 260 - level * 25;
+  for (let z = 300; z < race.track.length; z += gap * (0.6 + random(race) * 0.8)) {
+    const dir: 1 | -1 = random(race) < 0.5 ? 1 : -1;
+    const lanes = dir > 0 ? LANES.with : LANES.against;
+    const lane = lanes[random(race) < 0.5 ? 0 : 1];
+    race.cars.push({
+      id: id++,
+      kind: kinds[Math.floor(random(race) * kinds.length)],
+      z,
+      x: lane,
+      lane,
+      dir,
+      speed: (dir > 0 ? 16 : 20) + random(race) * 8,
+      changeT: 2 + random(race) * 8,
+    });
+  }
 }
 
 // ---- one rider's own physics (also what the client predicts) ----
@@ -217,14 +317,21 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT): void {
   r.phaseT += dt;
   r.cooldown = Math.max(0, r.cooldown - dt);
   r.sinceHit += dt;
-  if (r.phase === "finished" || r.phase === "wrecked") {
+  if (r.phase === "finished" || r.phase === "wrecked" || r.phase === "busted") {
     r.speed = Math.max(0, r.speed - TUNE.brake * dt);
     r.z += r.speed * dt;
     return;
   }
 
+  if (r.phase === "thrown" || r.phase === "running") {
+    // a bike its rider was knocked off coasts on riderless (K5); one its
+    // rider dropped slides and stops
+    r.bikeZ += r.bikeSpeed * dt;
+    r.bikeSpeed = Math.max(0, r.bikeSpeed - (r.bikeSpeed > 0 ? decelOf(r) : 0) * dt);
+  }
+
   if (r.phase === "thrown") {
-    // the rider tumbles on ahead; the bike slides to a stop where it fell
+    // the rider tumbles on ahead
     r.speed = Math.max(0, r.speed - 18 * dt);
     r.z += r.speed * dt;
     r.x += r.vx * dt;
@@ -303,16 +410,24 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT): void {
   if (r.leanHeld > TUNE.leanLimit) crash(r, "lowside", null);
 }
 
+/** A coasting riderless bike slows gently; a sliding dropped one quickly. */
+const decelOf = (r: Rider): number => (r.bikeSpeed > 6 ? TUNE.coastDecel : TUNE.slideDecel);
+
 function setPhase(r: Rider, phase: Phase): void {
   r.phase = phase;
   r.phaseT = 0;
 }
 
-/** Off the bike: it stays where it fell, the rider is thrown on (M2, M4). */
-function crash(r: Rider, cause: "tree" | "lowside" | "knockdown", race: Race | null): void {
+/**
+ * Off the bike (M2, M4). Knocked off by another rider, the bike coasts on
+ * without you (K5); come off by your own doing, it slides a little and stops.
+ */
+function crash(r: Rider, cause: CrashCause, race: Race | null): void {
   r.damage = Math.max(0, r.damage - TUNE.crashDamage[cause]);
   r.bikeZ = r.z;
   r.bikeX = r.x;
+  const byRider = cause === "knockdown" || cause === "rub";
+  r.bikeSpeed = byRider ? r.speed * 0.9 : Math.min(r.speed * 0.2, 6);
   r.vx = r.vx * 0.5 + Math.sign(r.x || 1) * 1.5;
   r.lean = 0;
   r.leanHeld = 0;
@@ -366,7 +481,7 @@ function resolveAttack(race: Race, r: Rider): void {
   a.t += DT;
   if (!a.landed && a.t >= TUNE.windup) {
     a.landed = true;
-    const reach = a.kind === "kick" ? TUNE.kickReach : TUNE.punchReach;
+    const reach = a.kind === "kick" ? TUNE.kickReach : r.weapon ? TUNE.clubReach : TUNE.punchReach;
     // whoever is within reach on that side when the blow arrives takes it
     for (const o of race.riders) {
       if (o === r || o.phase !== "riding") continue;
@@ -384,7 +499,8 @@ function resolveAttack(race: Race, r: Rider): void {
 
 function hit(race: Race, by: Rider, on: Rider, move: AttackKind): void {
   const weight = by.lbs / 180; // heavier riders hit harder (R6)
-  const loss = (move === "kick" ? TUNE.kickStamina : TUNE.punchStamina) * weight;
+  const blow = move === "kick" ? TUNE.kickStamina : by.weapon ? TUNE.clubStamina : TUNE.punchStamina;
+  const loss = blow * weight;
   on.stamina = Math.max(0, on.stamina - loss);
   on.sinceHit = 0;
   on.build = Math.max(0, on.build - TUNE.buildHitLoss);
@@ -444,16 +560,21 @@ export function separate(a: Rider, b: Rider, share = 0.5): "side" | "rear" | nul
 function contact(race: Race): void {
   const riding = race.riders.filter((r) => r.phase === "riding");
   // a few passes: pushing one pair apart can push one of them into a third
-  for (let pass = 0; pass < 4; pass++) contactPass(riding, pass === 0);
+  for (let pass = 0; pass < 4; pass++) contactPass(race, riding, pass === 0);
 }
 
-function contactPass(riding: Rider[], transfer: boolean): void {
+function contactPass(race: Race, riding: Rider[], transfer: boolean): void {
   for (let i = 0; i < riding.length; i++) {
     for (let j = i + 1; j < riding.length; j++) {
       const a = riding[i];
       const b = riding[j];
+      const closing = a.vx + a.shove - (b.vx + b.shove);
       const kind = separate(a, b);
-      if (kind !== "rear" || !transfer) continue;
+      if (!kind || !transfer) continue;
+      if (kind === "side") {
+        rub(race, a, b, closing);
+        continue;
+      }
       const [back, front] = b.z >= a.z ? [a, b] : [b, a];
       if (back.speed > front.speed) {
         const diff = back.speed - front.speed;
@@ -471,14 +592,161 @@ function recover(r: Rider): void {
 }
 
 /** What an AI rider does this step. Humans' inputs come from their keys. */
-export function aiInput(race: Race, r: Rider): Input {
-  const input: Input = { ...NO_INPUT, throttle: true };
-  const curve = curveAt(race.track, r.z + r.speed * 1.2);
-  // hold the line against the bend
-  const want = r.line - r.x + TUNE.centrifugal * r.speed * r.speed * curve * 0.25;
+/**
+ * Two bikes rubbing side by side (K1, K2). The one moving into the other
+ * shoves it over, the same as a kick; hard enough, the shoved rider goes down
+ * in a slide, which costs no bike damage (K6).
+ */
+function rub(race: Race, a: Rider, b: Rider, closing: number): void {
+  if (Math.abs(closing) < 0.5) return;
+  // the mover is whichever is travelling towards the other
+  const aLeft = a.x < b.x;
+  const aMoving = aLeft ? closing > 0 : closing < 0;
+  const [mover, struck] = aMoving ? [a, b] : [b, a];
+  const away = struck.x >= mover.x ? 1 : -1;
+  const fast = Math.min(mover.speed, struck.speed) > 15;
+  if (fast && Math.abs(closing) >= TUNE.rubKnock) {
+    crash(struck, "rub", race);
+    return;
+  }
+  struck.shove = away * Math.max(Math.abs(struck.shove), TUNE.rubShove * Math.min(1, Math.abs(closing) / TUNE.rubKnock));
+  mover.vx *= 0.5;
+}
+
+/** What a cop does: wait on the shoulder, then ride down a human (P2). */
+function copInput(race: Race, r: Rider): Input {
+  const input: Input = { ...NO_INPUT };
+  let target = race.riders.find((o) => o.id === r.chase);
+  if (r.chase < 0) {
+    // the first human to come by within 30 m sets him off; AI riders are
+    // never chased, as in the original (P4)
+    target = race.riders.find((o) => o.human && o.phase === "riding" && Math.abs(o.z - r.z) < 30);
+    if (!target) return input;
+    r.chase = target.id;
+  }
+  if (!target || target.phase === "finished" || target.phase === "wrecked" || target.phase === "busted" || target.z - r.z > 150) {
+    // lost them: pull over
+    r.chase = -2;
+    r.line = ROAD_HALF + 1.2;
+  } else {
+    // ride alongside, on whichever side he is already
+    const side = r.x >= target.x ? 1 : -1;
+    r.line = target.phase === "riding" ? target.x + side * 1.4 : target.x;
+    input.throttle = target.z + 1 > r.z || r.speed < target.speed;
+    if (r.z > target.z + 2 && r.speed > target.speed) input.brake = true;
+    if (target.phase === "riding" && Math.abs(target.z - r.z) < 1.8 && Math.abs(target.x - r.x) < 2 && random(race) < r.aggression * DT * 4) input.hand = true;
+  }
+  const want = r.line - r.x;
   if (want > 0.4) input.right = true;
   else if (want < -0.4) input.left = true;
   if (r.speed > topSpeed(r) * r.skill) input.throttle = false;
+  return input;
+}
+
+/**
+ * Traffic for one step (T4): cars hold their speed, wander between the two
+ * lanes of their own direction, and wrap round when they leave the road so
+ * the density stays even along it.
+ */
+function drive(race: Race): void {
+  const L = race.track.length;
+  for (const c of race.cars) {
+    c.z += c.dir * c.speed * DT;
+    if (c.z > L + 50) c.z -= L;
+    if (c.z < -50) c.z += L;
+    c.changeT -= DT;
+    if (c.changeT <= 0) {
+      const lanes = c.dir > 0 ? LANES.with : LANES.against;
+      if (random(race) < 0.4) c.lane = lanes[c.lane === lanes[0] ? 1 : 0];
+      c.changeT = 4 + random(race) * 8;
+    }
+    const dx = c.lane - c.x;
+    c.x += Math.sign(dx) * Math.min(Math.abs(dx), 1.4 * DT);
+  }
+}
+
+/**
+ * A bike against a car. Glancing along its side shoves the bike off; running
+ * into it - the back of a slower one, or head-on - is a crash, the rider
+ * thrown clear (K3, K7).
+ */
+function hitCars(race: Race, r: Rider): void {
+  if (r.phase !== "riding") return;
+  for (const c of race.cars) {
+    const dz = c.z - r.z;
+    const dx = c.x - r.x;
+    const oz = (CAR.length + BIKE.length) / 2 - Math.abs(dz);
+    const ox = (CAR.width + BIKE.width) / 2 - Math.abs(dx);
+    if (oz <= 0 || ox <= 0) continue;
+    const closing = r.speed - c.dir * c.speed;
+    if (ox < oz * 0.5 || Math.abs(closing) < TUNE.carCrash) {
+      // along its side, or barely moving against it: pushed off
+      r.x -= Math.sign(dx || 1) * ox;
+      r.shove = -Math.sign(dx || 1) * 3;
+      r.speed = Math.max(0, r.speed * 0.9);
+      continue;
+    }
+    r.z = c.z - Math.sign(dz || 1) * ((CAR.length + BIKE.length) / 2);
+    // a rider thrown off over a car carries less forward speed
+    r.speed = Math.max(0, Math.min(r.speed, Math.abs(closing)) * 0.5);
+    crash(r, c.dir > 0 ? "rearEnd" : "headOn", race);
+    // the struck car is knocked on a little, not stopped
+    if (c.dir > 0) c.speed += 2;
+    return;
+  }
+}
+
+/** Stopped, or off the bike, with a cop close by: Busted (P1). */
+function busts(race: Race): void {
+  const cops = race.riders.filter((c) => c.cop && c.phase === "riding");
+  for (const r of race.riders) {
+    if (!r.human) continue;
+    const down = r.phase === "thrown" || r.phase === "running" || (r.phase === "riding" && r.speed < 2 && race.t > 3);
+    if (!down) continue;
+    const cop = cops.find((c) => Math.abs(c.z - r.z) < TUNE.bustRange && Math.abs(c.x - r.x) < TUNE.bustRange);
+    if (!cop) continue;
+    r.phase = "busted";
+    r.phaseT = 0;
+    r.speed = 0;
+    r.attack = null;
+    race.events.push({ t: race.t, kind: "busted", rider: r.id, cop: cop.id });
+  }
+}
+
+/**
+ * Where a rider can ride in the next three seconds without running into a
+ * car: the given line if it is clear, else the nearest clear lane, else null
+ * (every lane blocked - brake). Used by the AI and by scripted riders.
+ */
+export function clearLine(race: Race, r: Rider, line: number): number | null {
+  const blocked = (x: number): boolean =>
+    race.cars.some((c) => {
+      const dz = c.z - r.z;
+      const closing = r.speed - c.dir * c.speed;
+      if (dz < -1 || closing <= 0) return false;
+      const t = (dz - (CAR.length + BIKE.length) / 2) / closing;
+      return t < 3 && Math.abs(c.x - x) < (CAR.width + BIKE.width) / 2 + 0.6;
+    });
+  if (!blocked(line)) return line;
+  const options = [...LANES.with, ...LANES.against, 0, ROAD_HALF - 0.5, -(ROAD_HALF - 0.5)].filter((x) => !blocked(x));
+  if (options.length === 0) return null;
+  return options.reduce((best, x) => (Math.abs(x - r.x) < Math.abs(best - r.x) ? x : best));
+}
+
+export function aiInput(race: Race, r: Rider): Input {
+  if (r.cop) return copInput(race, r);
+  const line = clearLine(race, r, r.line);
+  const input: Input = { ...NO_INPUT, throttle: true };
+  const curve = curveAt(race.track, r.z + r.speed * 1.2);
+  // hold the line against the bend
+  const want = (line ?? r.x) - r.x + TUNE.centrifugal * r.speed * r.speed * curve * 0.25;
+  if (want > 0.4) input.right = true;
+  else if (want < -0.4) input.left = true;
+  if (r.speed > topSpeed(r) * r.skill) input.throttle = false;
+  if (line === null) {
+    input.throttle = false;
+    input.brake = true;
+  }
   // ease off for a bend the bars alone cannot hold, brake for one far past it
   const need = TUNE.centrifugal * r.speed * r.speed * Math.abs(curve);
   if (need > 0.8 * TUNE.steerFast) input.throttle = false;
@@ -513,8 +781,12 @@ export function step(race: Race, inputs: Map<number, Input>): void {
     recover(r);
   }
   contact(race);
+  drive(race);
+  for (const r of race.riders) hitCars(race, r);
+  busts(race);
   for (const r of race.riders) {
-    if (r.phase !== "finished" && r.phase !== "wrecked" && r.z >= race.track.length) {
+    if (r.cop) continue;
+    if (r.phase !== "finished" && r.phase !== "wrecked" && r.phase !== "busted" && r.z >= race.track.length) {
       r.phase = "finished";
       r.finishT = race.t;
       r.place = ++race.finishers;
@@ -524,19 +796,23 @@ export function step(race: Race, inputs: Map<number, Input>): void {
 }
 
 /** Standings: finishers by place, then everyone else by distance. */
+/** Standings: finishers by place, then everyone else by distance. Cops are
+ * not in the race. */
 export function standings(race: Race): Rider[] {
-  return [...race.riders].sort((a, b) => {
-    if (a.place && b.place) return a.place - b.place;
-    if (a.place) return -1;
-    if (b.place) return 1;
-    if (a.phase === "wrecked" && b.phase !== "wrecked") return 1;
-    if (b.phase === "wrecked" && a.phase !== "wrecked") return -1;
-    return b.z - a.z;
-  });
+  const out = (r: Rider): boolean => r.phase === "wrecked" || r.phase === "busted";
+  return race.riders
+    .filter((r) => !r.cop)
+    .sort((a, b) => {
+      if (a.place && b.place) return a.place - b.place;
+      if (a.place) return -1;
+      if (b.place) return 1;
+      if (out(a) !== out(b)) return out(a) ? 1 : -1;
+      return b.z - a.z;
+    });
 }
 
 export const positionOf = (race: Race, id: number): number => standings(race).findIndex((r) => r.id === id) + 1;
 
 /** A race is over once no human is still riding it. */
 export const humansDone = (race: Race): boolean =>
-  race.riders.every((r) => !r.human || r.phase === "finished" || r.phase === "wrecked");
+  race.riders.every((r) => !r.human || r.phase === "finished" || r.phase === "wrecked" || r.phase === "busted");

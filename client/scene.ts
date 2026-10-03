@@ -6,10 +6,10 @@
 // the game itself.
 
 import * as THREE from "three";
-import { type Rider, TUNE } from "../game/sim.ts";
+import { type Car, type Rider, TUNE } from "../game/sim.ts";
 import { ROAD_HALF, SEGMENT, SHOULDER, type Track } from "../game/track.ts";
 import { centreline, frameAt } from "../game/world.ts";
-import { type RiderRig, bend, buildBike, buildRider, crouch, loadRider, unbend } from "./models.ts";
+import { type RiderRig, bend, buildBike, buildCar, buildClub, buildRider, crouch, loadRider, unbend } from "./models.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
 
@@ -324,6 +324,7 @@ export class RaceScene {
   private track: Track | null = null;
   private world = new THREE.Group();
   private riders = new Map<number, RiderModel>();
+  private cars = new Map<number, THREE.Group>();
   private backdrop: THREE.Mesh;
   private sun: THREE.DirectionalLight;
   private plain: THREE.Mesh;
@@ -507,6 +508,8 @@ export class RaceScene {
 
     for (const r of this.riders.values()) this.scene.remove(r.root, r.bike);
     this.riders.clear();
+    for (const c of this.cars.values()) this.scene.remove(c);
+    this.cars.clear();
   }
 
   private lineAcross(track: Track, z: number, chequered: boolean): THREE.Mesh {
@@ -539,9 +542,10 @@ export class RaceScene {
   }
 
   /** Draw a frame from behind rider `me`. */
-  draw(riders: readonly Rider[], me: number, dashTop = 0.23): void {
+  draw(riders: readonly Rider[], me: number, dashTop = 0.23, cars: readonly Car[] = []): void {
     const track = this.track;
     if (!track) return;
+    this.placeCars(track, cars);
     const mine = riders.find((r) => r.id === me) ?? riders[0];
     if (this.riderAsset) riders.forEach((r) => this.place(track, r));
     for (const [id, model] of this.riders) {
@@ -573,15 +577,40 @@ export class RaceScene {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /** Traffic: a model per car, made the first time it is near (V17). */
+  private placeCars(track: Track, cars: readonly Car[]): void {
+    const flash = Math.floor(performance.now() / 250) % 2;
+    for (const c of cars) {
+      let g = this.cars.get(c.id);
+      if (!g) {
+        g = buildCar(c.kind, c.id);
+        this.cars.set(c.id, g);
+        this.scene.add(g);
+      }
+      g.visible = c.z > -1e5;
+      if (!g.visible) continue;
+      const f = frameAt(track, c.z, c.x);
+      g.position.set(f.px, f.py, f.pz);
+      g.rotation.set(0, f.heading + (c.dir < 0 ? Math.PI : 0), 0);
+      if (c.kind === "police") {
+        // the light bar alternates red and blue
+        const bar = g.children.find((o) => o.position.y > 1.5 && o.children.length === 2);
+        bar?.children.forEach((o, i) => (((o as THREE.Mesh).material as THREE.MeshStandardMaterial).emissiveIntensity = i === flash ? 2.5 : 0.2));
+      }
+    }
+  }
+
   private model(r: Rider): RiderModel {
     let model = this.riders.get(r.id);
     if (model) return model;
-    const [main, trim, helmet] = LEATHERS[r.id % LEATHERS.length];
+    // a cop: navy uniform, white helmet, a white bike with black panels
+    const [main, trim, helmet] = r.cop ? ["#1c2640", "#1c2640", "#f4f4f4"] : LEATHERS[r.id % LEATHERS.length];
     const root = new THREE.Group();
     const lean = new THREE.Group();
     const seat = new THREE.Group();
-    const bike = buildBike(main, trim);
+    const bike = r.cop ? buildBike("#f2f2f2", "#141418") : buildBike(main, trim);
     const rig = buildRider(this.riderAsset!, { main, trim, helmet });
+    if (r.weapon === "club") rig.bones.hand_r?.add(buildClub());
     lean.add(seat);
     root.add(lean);
     seat.add(rig.root);
@@ -653,7 +682,7 @@ export class RaceScene {
       rig.root.rotation.set(0, 0, 0);
       rig.root.updateMatrixWorld(true);
       crouch(rig);
-      if (r.attack) this.swing(rig, r.attack.kind, r.attack.side, Math.min(1, r.attack.t / TUNE.windup));
+      if (r.attack) this.swing(rig, r.weapon && r.attack.kind !== "kick" ? "club" : r.attack.kind, r.attack.side, Math.min(1, r.attack.t / TUNE.windup));
     }
   }
 
@@ -670,8 +699,8 @@ export class RaceScene {
       bend(rig, b[`calf_${s}`], RIGHT, 1.0 * out);
       return;
     }
-    // shoulder out to the side, elbow straight
-    bend(rig, b[`upperarm_${s}`], FORWARD, away * 1.3 * out);
+    // shoulder out to the side, elbow straight; a club is raised higher
+    bend(rig, b[`upperarm_${s}`], FORWARD, away * (kind === "club" ? 1.9 : 1.3) * out);
     bend(rig, b[`lowerarm_${s}`], RIGHT, 0.6 * out);
     if (kind === "backhand") bend(rig, b[`upperarm_${s}`], new THREE.Vector3(0, 1, 0), -away * 0.9 * out);
   }

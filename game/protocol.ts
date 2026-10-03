@@ -1,7 +1,7 @@
 // The messages between a browser and the server, one JSON object per
 // WebSocket frame. Shared by both ends so they cannot drift apart.
 
-import type { Phase, RaceEvent, Rider } from "./sim.ts";
+import type { Car, Phase, RaceEvent, Rider } from "./sim.ts";
 
 export type Mode = "ai" | "human";
 
@@ -35,12 +35,17 @@ export type RiderState = [
 
 export type Entry = { id: number; name: string; human: boolean };
 
+/** A car on the wire: where it is, and how fast, for drawing between snaps. */
+export type CarState = [id: number, z: number, x: number];
+
+export const encodeCar = (c: Car): CarState => [c.id, Math.round(c.z * 100) / 100, Math.round(c.x * 100) / 100];
+
 export type Standing = {
   id: number;
   name: string;
   human: boolean;
   place: number;
-  outcome: "qualified" | "placed" | "wrecked" | "unfinished" | "quit";
+  outcome: "qualified" | "placed" | "wrecked" | "busted" | "unfinished" | "quit";
   time: number | null;
 };
 
@@ -48,7 +53,7 @@ export type ToClient =
   | { t: "hello"; you: { id: number; name: string }; qualified: { level: number; track: string }[] }
   | { t: "pool"; mode: Mode | null; count: number; startsIn: number | null; waitingForMore: boolean }
   | { t: "start"; race: number; level: number; seed: number; entrants: Entry[]; you: number | null }
-  | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; events: RaceEvent[] }
+  | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; cars: CarState[]; events: RaceEvent[] }
   | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[] }
   | { t: "live"; races: { race: number; level: number; riders: number; humans: number }[] };
 

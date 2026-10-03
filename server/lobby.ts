@@ -2,7 +2,7 @@
 // pools can be tested with a fake clock (spec/lobby.test.ts) and the server
 // just calls tick() with the real one.
 
-import { type Entry, GRID, type Mode, POOL_WAIT, SNAPSHOT_HZ, type Standing, type ToClient, encodeRider } from "../game/protocol.ts";
+import { type Entry, GRID, type Mode, POOL_WAIT, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { makeTrack } from "../game/track.ts";
 
@@ -249,8 +249,11 @@ export class Lobby {
       const events = live.race.events.slice(live.sent);
       live.sent = live.race.events.length;
       const riders = live.race.riders.map(encodeRider);
-      for (const c of live.conns.values()) c.send({ t: "snap", race: live.id, time: live.race.t, ack: c.seq, riders, events });
-      for (const c of live.watchers) c.send({ t: "snap", race: live.id, time: live.race.t, ack: 0, riders, events });
+      // only the cars near someone; the rest are nowhere a camera is
+      const near = (z: number): boolean => live.race.riders.some((r) => !r.cop && Math.abs(r.z - z) < 1300);
+      const cars = live.race.cars.filter((c) => near(c.z)).map(encodeCar);
+      for (const c of live.conns.values()) c.send({ t: "snap", race: live.id, time: live.race.t, ack: c.seq, riders, cars, events });
+      for (const c of live.watchers) c.send({ t: "snap", race: live.id, time: live.race.t, ack: 0, riders, cars, events });
     }
 
     const everyoneGone = live.conns.size === 0;
@@ -270,7 +273,9 @@ export class Lobby {
             : "placed"
           : r.phase === "wrecked"
             ? "wrecked"
-            : "unfinished";
+            : r.phase === "busted"
+              ? "busted"
+              : "unfinished";
       return {
         id: r.human ? (live.riders.get(r.id) ?? -1) : -1,
         name: r.name,
