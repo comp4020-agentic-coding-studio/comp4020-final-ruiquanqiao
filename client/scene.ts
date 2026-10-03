@@ -6,10 +6,10 @@
 // the game itself.
 
 import * as THREE from "three";
-import { type Car, type Rider, TUNE } from "../game/sim.ts";
+import { type Car, type Rider, TUNE, type Weapon, windupOf } from "../game/sim.ts";
 import { ROAD_HALF, SEGMENT, SHOULDER, type Track } from "../game/track.ts";
 import { centreline, frameAt } from "../game/world.ts";
-import { type RiderRig, bend, buildBike, buildCar, buildClub, buildRider, crouch, loadRider, unbend } from "./models.ts";
+import { type RiderRig, bend, buildBike, buildCar, buildChain, buildClub, buildRider, crouch, loadRider, unbend } from "./models.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
 
@@ -310,9 +310,11 @@ type RiderModel = {
   bike: THREE.Group;
   rig: RiderRig;
   seatOffset: THREE.Vector3;
+  held: Record<Weapon, THREE.Object3D>; // shown in whichever hand swings it
 };
 
 const RIGHT = new THREE.Vector3(-1, 0, 0);
+const UP = new THREE.Vector3(0, 1, 0);
 const FORWARD = new THREE.Vector3(0, 0, 1);
 
 // ---- the scene ----
@@ -610,7 +612,9 @@ export class RaceScene {
     const seat = new THREE.Group();
     const bike = r.cop ? buildBike("#f2f2f2", "#141418") : buildBike(main, trim);
     const rig = buildRider(this.riderAsset!, { main, trim, helmet });
-    if (r.weapon === "club") rig.bones.hand_r?.add(buildClub());
+    // either weapon can change hands mid-race (C6), so both are built
+    const held = { club: buildClub(), chain: buildChain() };
+    for (const w of Object.values(held)) rig.bones.hand_r.add(w);
     lean.add(seat);
     root.add(lean);
     seat.add(rig.root);
@@ -623,7 +627,7 @@ export class RaceScene {
     const p = new THREE.Vector3();
     rig.bones.pelvis.getWorldPosition(p);
     const seatOffset = new THREE.Vector3(0, 0.9 - p.y, -0.28 - p.z);
-    model = { root, lean, seat, bike, rig, seatOffset };
+    model = { root, lean, seat, bike, rig, seatOffset, held };
     this.scene.add(root, bike);
     this.riders.set(r.id, model);
     return model;
@@ -682,7 +686,13 @@ export class RaceScene {
       rig.root.rotation.set(0, 0, 0);
       rig.root.updateMatrixWorld(true);
       crouch(rig);
-      if (r.attack) this.swing(rig, r.weapon && r.attack.kind !== "kick" ? "club" : r.attack.kind, r.attack.side, Math.min(1, r.attack.t / TUNE.windup));
+      if (r.attack) this.swing(rig, r, r.attack.kind, r.attack.side, r.attack.t);
+    }
+    // the weapon, if any, in the hand that swings it
+    for (const [w, mesh] of Object.entries(model.held)) mesh.visible = r.weapon === w;
+    if (r.weapon) {
+      const hand = rig.bones[r.attack && r.attack.side < 0 ? "hand_l" : "hand_r"];
+      if (model.held[r.weapon].parent !== hand) hand.add(model.held[r.weapon]);
     }
   }
 
@@ -690,18 +700,31 @@ export class RaceScene {
    * A swing throws an arm straight out sideways; a kick swings a leg out to
    * the same side; a backhand sweeps the arm out behind (V15, C3).
    */
-  private swing(rig: RiderRig, kind: string, side: number, out: number): void {
+  private swing(rig: RiderRig, r: Rider, kind: string, side: number, t: number): void {
     const s = side > 0 ? "r" : "l"; // +x in road terms is the rider's right
     const away = side > 0 ? -1 : 1; // which way "outward" turns about forward
     const b = rig.bones;
+    const windup = windupOf(r, r.attack!);
     if (kind === "kick") {
+      const out = Math.min(1, t / windup);
       bend(rig, b[`thigh_${s}`], FORWARD, away * 0.9 * out);
       bend(rig, b[`calf_${s}`], RIGHT, 1.0 * out);
       return;
     }
-    // shoulder out to the side, elbow straight; a club is raised higher
-    bend(rig, b[`upperarm_${s}`], FORWARD, away * (kind === "club" ? 1.9 : 1.3) * out);
+    if (r.weapon && kind === "punch") {
+      // a weapon is raised and drawn back behind the shoulder - the pause in
+      // which it can be snatched (C6) - then brought round and down
+      const draw = Math.min(1, t / windup);
+      const strike = Math.min(1, Math.max(0, (t - windup) / 0.12));
+      bend(rig, b[`upperarm_${s}`], FORWARD, away * (2.3 - 0.8 * strike) * draw);
+      bend(rig, b[`upperarm_${s}`], UP, -away * (0.9 * draw - 1.6 * strike));
+      bend(rig, b[`lowerarm_${s}`], RIGHT, 0.9 * draw * (1 - strike) + 0.2);
+      return;
+    }
+    // shoulder out to the side, elbow straight
+    const out = Math.min(1, t / windup);
+    bend(rig, b[`upperarm_${s}`], FORWARD, away * (r.weapon ? 1.7 : 1.3) * out);
     bend(rig, b[`lowerarm_${s}`], RIGHT, 0.6 * out);
-    if (kind === "backhand") bend(rig, b[`upperarm_${s}`], new THREE.Vector3(0, 1, 0), -away * 0.9 * out);
+    if (kind === "backhand") bend(rig, b[`upperarm_${s}`], UP, -away * 0.9 * out);
   }
 }

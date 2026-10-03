@@ -1,7 +1,7 @@
 // The messages between a browser and the server, one JSON object per
 // WebSocket frame. Shared by both ends so they cannot drift apart.
 
-import type { Car, Phase, RaceEvent, Rider } from "./sim.ts";
+import { type Car, type Phase, type RaceEvent, type Rider, type Weapon, windupOf } from "./sim.ts";
 
 export type Mode = "ai" | "human";
 
@@ -31,6 +31,7 @@ export type RiderState = [
   bikeX: number,
   attack: string, // "" or kind:side:t
   place: number,
+  weapon: Weapon | "",
 ];
 
 export type Entry = { id: number; name: string; human: boolean };
@@ -60,15 +61,18 @@ export type ToClient =
 export function encodeRider(r: Rider): RiderState {
   const a = r.attack ? `${r.attack.kind}:${r.attack.side}:${r.attack.t.toFixed(3)}` : "";
   const q = (n: number, d = 2): number => Math.round(n * 10 ** d) / 10 ** d;
-  return [r.id, q(r.z), q(r.x), q(r.speed), q(r.lean), q(r.build, 3), q(r.stamina, 1), q(r.damage, 1), r.phase, q(r.phaseT, 3), q(r.bikeZ), q(r.bikeX), a, r.place];
+  return [r.id, q(r.z), q(r.x), q(r.speed), q(r.lean), q(r.build, 3), q(r.stamina, 1), q(r.damage, 1), r.phase, q(r.phaseT, 3), q(r.bikeZ), q(r.bikeX), a, r.place, r.weapon ?? ""];
 }
 
 /** Write a wire state onto a rider, leaving what the wire does not carry. */
 export function applyRider(r: Rider, s: RiderState): void {
   [, r.z, r.x, r.speed, r.lean, r.build, r.stamina, r.damage, r.phase, r.phaseT, r.bikeZ, r.bikeX] = s;
   r.place = s[13];
+  r.weapon = s[14] || null;
   if (s[12]) {
     const [kind, side, t] = s[12].split(":");
-    r.attack = { kind: kind as "punch" | "backhand" | "kick", side: Number(side) as -1 | 1, t: Number(t), target: -1, landed: true };
+    r.attack = { kind: kind as "punch" | "backhand" | "kick", side: Number(side) as -1 | 1, t: Number(t), target: -1, landed: false };
+    // whether it has landed follows from how far into the swing it is
+    r.attack.landed = r.attack.t >= windupOf(r, r.attack);
   } else r.attack = null;
 }

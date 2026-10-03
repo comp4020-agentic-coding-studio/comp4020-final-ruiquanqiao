@@ -73,8 +73,15 @@ export const TUNE = {
   coastDecel: 7.5,
   /** a bike dropped by its own rider slides and stops quickly */
   slideDecel: 14,
-  clubReach: { z: 2.0, x: 2.1 },
-  clubStamina: 26,
+  /** a weapon is swung with the punch key (C5); the chain reaches further,
+   * the club hits harder */
+  reach: { club: { z: 2.0, x: 2.1 }, chain: { z: 2.2, x: 2.6 } },
+  weaponStamina: { club: 26, chain: 22 },
+  /** the draw-back before a weapon lands: the moment it can be snatched (C6) */
+  weaponWindup: 0.45,
+  weaponCooldown: 0.9,
+  /** share of AI riders who start a race armed (C5) */
+  armedShare: 0.25,
   /** stopped or off the bike this close to a cop is Busted (P1), m */
   bustRange: 12,
 };
@@ -112,6 +119,11 @@ export type AttackKind = "punch" | "backhand" | "kick";
 
 export type Attack = { kind: AttackKind; side: -1 | 1; t: number; target: number; landed: boolean };
 
+export type Weapon = "club" | "chain";
+
+/** Seconds from the key to the blow: a weapon is drawn back first (C6). */
+export const windupOf = (r: Rider, a: Attack): number => (r.weapon && a.kind !== "kick" ? TUNE.weaponWindup : TUNE.windup);
+
 export type Rider = {
   id: number;
   name: string;
@@ -134,7 +146,7 @@ export type Rider = {
   bikeX: number;
   bikeSpeed: number; // a riderless bike still moving (K5)
   cop: boolean; // a motorcycle cop (P2): never finishes, never placed
-  weapon: "club" | null; // cops carry a club (C7)
+  weapon: Weapon | null; // one at a time (C5); cops carry a club (C7)
   chase: number; // the rider a cop is after, or -1 while waiting
   attack: Attack | null;
   cooldown: number;
@@ -153,6 +165,7 @@ export type RaceEvent =
   | { t: number; kind: "hit"; by: number; on: number; move: AttackKind }
   | { t: number; kind: "crash"; rider: number; cause: CrashCause }
   | { t: number; kind: "busted"; rider: number; cop: number }
+  | { t: number; kind: "snatch"; by: number; from: number; weapon: Weapon }
   | { t: number; kind: "wrecked"; rider: number }
   | { t: number; kind: "finished"; rider: number; place: number };
 
@@ -249,6 +262,8 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
     r.skill = 0.9 + random(race) * 0.12;
     r.aggression = 0.15 + random(race) * 0.5;
     r.line = (random(race) * 2 - 1) * (ROAD_HALF - 1.5);
+    // "some rashers begin each race with a weapon (either a chain or a bat)"
+    if (random(race) < TUNE.armedShare) r.weapon = random(race) < 0.5 ? "chain" : "club";
   }
   placeCops(race, level, bike);
   placeTraffic(race, level);
@@ -472,16 +487,52 @@ export function beginAttack(race: Race, r: Rider, kind: "hand" | "foot"): void {
   // J turns into a backhand on its own for a rider beside or behind (C3)
   const move: AttackKind = kind === "foot" ? "kick" : target && target.z < r.z - 0.6 ? "backhand" : "punch";
   r.attack = { kind: move, side, t: 0, target: target?.id ?? -1, landed: false };
-  r.cooldown = kind === "foot" ? TUNE.kickCooldown : TUNE.punchCooldown;
+  r.cooldown = kind === "foot" ? TUNE.kickCooldown : r.weapon ? TUNE.weaponCooldown : TUNE.punchCooldown;
+}
+
+const reachOf = (r: Rider, kind: AttackKind): { z: number; x: number } =>
+  kind === "kick" ? TUNE.kickReach : r.weapon ? TUNE.reach[r.weapon] : TUNE.punchReach;
+
+/** Someone drawing a weapon back to swing it at `r`, close enough to grab. */
+export function windingAt(race: Race, r: Rider): Rider | null {
+  for (const o of race.riders) {
+    const a = o.attack;
+    if (o === r || !a || !o.weapon || a.kind === "kick" || a.landed || o.phase !== "riding") continue;
+    const dz = r.z - o.z;
+    const dx = r.x - o.x;
+    const reach = reachOf(o, a.kind);
+    if (Math.sign(dx || a.side) !== a.side || Math.abs(dx) > reach.x) continue;
+    const zOk = a.kind === "backhand" ? dz > -reach.z - 0.8 && dz < 0.6 : Math.abs(dz) < reach.z;
+    if (zOk) return o;
+  }
+  return null;
+}
+
+/**
+ * The punch key, pressed empty-handed while an opponent draws a weapon back
+ * to swing it at you, takes the weapon off them (C6). Returns whether it did.
+ */
+function snatch(race: Race, r: Rider): boolean {
+  if (r.phase !== "riding" || r.weapon || r.attack) return false;
+  const o = windingAt(race, r);
+  if (!o?.weapon) return false;
+  r.weapon = o.weapon;
+  o.weapon = null;
+  o.attack = null;
+  o.cooldown = TUNE.weaponCooldown;
+  r.cooldown = TUNE.punchCooldown;
+  race.events.push({ t: race.t, kind: "snatch", by: r.id, from: o.id, weapon: r.weapon });
+  return true;
 }
 
 function resolveAttack(race: Race, r: Rider): void {
   const a = r.attack;
   if (!a) return;
   a.t += DT;
-  if (!a.landed && a.t >= TUNE.windup) {
+  const windup = windupOf(r, a);
+  if (!a.landed && a.t >= windup) {
     a.landed = true;
-    const reach = a.kind === "kick" ? TUNE.kickReach : r.weapon ? TUNE.clubReach : TUNE.punchReach;
+    const reach = reachOf(r, a.kind);
     // whoever is within reach on that side when the blow arrives takes it
     for (const o of race.riders) {
       if (o === r || o.phase !== "riding") continue;
@@ -494,12 +545,12 @@ function resolveAttack(race: Race, r: Rider): void {
       break;
     }
   }
-  if (a.t >= TUNE.windup + 0.2) r.attack = null;
+  if (a.t >= windup + 0.2) r.attack = null;
 }
 
 function hit(race: Race, by: Rider, on: Rider, move: AttackKind): void {
   const weight = by.lbs / 180; // heavier riders hit harder (R6)
-  const blow = move === "kick" ? TUNE.kickStamina : by.weapon ? TUNE.clubStamina : TUNE.punchStamina;
+  const blow = move === "kick" ? TUNE.kickStamina : by.weapon ? TUNE.weaponStamina[by.weapon] : TUNE.punchStamina;
   const loss = blow * weight;
   on.stamina = Math.max(0, on.stamina - loss);
   on.sinceHit = 0;
@@ -599,10 +650,12 @@ function recover(r: Rider): void {
  */
 function rub(race: Race, a: Rider, b: Rider, closing: number): void {
   if (Math.abs(closing) < 0.5) return;
-  // the mover is whichever is travelling towards the other
-  const aLeft = a.x < b.x;
-  const aMoving = aLeft ? closing > 0 : closing < 0;
-  const [mover, struck] = aMoving ? [a, b] : [b, a];
+  // the mover is whichever is itself travelling harder towards the other;
+  // the sign of `closing` alone cannot say, since it is the same either way
+  const towards = a.x < b.x ? 1 : -1;
+  const aIn = (a.vx + a.shove) * towards;
+  const bIn = -(b.vx + b.shove) * towards;
+  const [mover, struck] = aIn >= bIn ? [a, b] : [b, a];
   const away = struck.x >= mover.x ? 1 : -1;
   const fast = Math.min(mover.speed, struck.speed) > 15;
   if (fast && Math.abs(closing) >= TUNE.rubKnock) {
@@ -757,6 +810,8 @@ export function aiInput(race: Race, r: Rider): Input {
     if (random(race) < 0.65) input.hand = true;
     else input.foot = true;
   }
+  // an unarmed rider sometimes grabs at a weapon drawn back at them (C6)
+  if (!r.weapon && !r.prevHand && windingAt(race, r) && random(race) < r.aggression * DT * 3) input.hand = true;
   if (r.phase === "running") {
     input.left = false;
     input.right = false;
@@ -769,7 +824,7 @@ export function step(race: Race, inputs: Map<number, Input>): void {
   race.t += DT;
   for (const r of race.riders) {
     const input = r.human ? (inputs.get(r.id) ?? NO_INPUT) : aiInput(race, r);
-    if (input.hand && !r.prevHand) beginAttack(race, r, "hand");
+    if (input.hand && !r.prevHand && !snatch(race, r)) beginAttack(race, r, "hand");
     if (input.foot && !r.prevFoot) beginAttack(race, r, "foot");
     r.prevHand = input.hand;
     r.prevFoot = input.foot;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAR, LANES, NO_INPUT, type Race, type Rider, TUNE, humansDone, standings, startRace, step } from "../game/sim.ts";
+import { CAR, LANES, NO_INPUT, type Race, type Rider, TUNE, beginAttack, humansDone, standings, startRace, step } from "../game/sim.ts";
 import { SHOULDER, makeTrack } from "../game/track.ts";
 
 // Contact, traffic and police, each against its ledger row. Every test builds
@@ -157,5 +157,97 @@ describe("police", () => {
     const r = startRace(makeTrack(1), 3, [{ id: 0, name: "h", human: true }], 1);
     expect(r.riders.some((x) => x.cop)).toBe(true);
     expect(standings(r).some((x) => x.cop)).toBe(false);
+  });
+});
+
+describe("weapons", () => {
+  // me (0) and an armed rider (1) side by side at speed
+  const armed = (weapon: "club" | "chain", by = 1): { r: Race; me: Rider; foe: Rider } => {
+    const r = race();
+    const [me, foe] = [rider(r, 0), rider(r, by)];
+    Object.assign(me, { z: 500, x: 0, speed: 30 });
+    Object.assign(foe, { z: 500, x: 1.5, speed: 30, weapon, human: false, aggression: 0, line: 1.5 });
+    return { r, me, foe };
+  };
+  const press = (r: Race, id: number, n: number): void => {
+    for (let i = 0; i < n; i++) step(r, new Map([[id, { ...NO_INPUT, throttle: true, hand: i === 0 }]]));
+  };
+
+  it("the chain reaches a rider a fist cannot, and a weapon hits harder than a fist (C5)", () => {
+    const { r, me, foe } = armed("chain");
+    foe.x = me.x + 2.4;
+    foe.human = true;
+    beginAttack(r, foe, "hand");
+    expect(foe.attack?.side).toBe(-1);
+    steps(r, Math.ceil(TUNE.weaponWindup / (1 / 60)) + 2, { ...NO_INPUT, throttle: true });
+    expect(me.stamina).toBeLessThan(100 - TUNE.punchStamina);
+    expect(TUNE.reach.chain.x).toBeGreaterThan(2.4);
+    expect(TUNE.punchReach.x).toBeLessThan(2.4);
+  });
+
+  it("some AI riders start armed, and every human starts empty-handed (C5, C10)", () => {
+    const entrants = Array.from({ length: 15 }, (_, i) => ({ id: i, name: `r${i}`, human: i < 3 }));
+    const armedCount = [1, 2, 3, 4, 5, 6].map((seed) => {
+      const r = startRace(makeTrack(1), 1, entrants, seed);
+      expect(r.riders.filter((x) => x.human).every((x) => x.weapon === null)).toBe(true);
+      return r.riders.filter((x) => !x.cop && x.weapon).length;
+    });
+    expect(Math.max(...armedCount)).toBeGreaterThan(0);
+    expect(Math.min(...armedCount)).toBeLessThan(12);
+  });
+
+  it("punching while an opponent draws a weapon back takes it off them (C6)", () => {
+    const { r, me, foe } = armed("club");
+    beginAttack(r, foe, "hand");
+    steps(r, 10, { ...NO_INPUT, throttle: true }); // a sixth of a second into the draw-back
+    press(r, 0, 2);
+    expect(me.weapon).toBe("club");
+    expect(foe.weapon).toBeNull();
+    expect(foe.attack).toBeNull();
+    expect(me.stamina).toBe(100);
+    expect(r.events.some((e) => e.kind === "snatch" && e.by === 0 && e.from === 1)).toBe(true);
+  });
+
+  it("too late, once the blow has landed, the punch is only a punch (C6)", () => {
+    const { r, me, foe } = armed("club");
+    beginAttack(r, foe, "hand");
+    steps(r, Math.ceil(TUNE.weaponWindup * 60) + 1, { ...NO_INPUT, throttle: true });
+    expect(me.stamina).toBeLessThan(100);
+    press(r, 0, 2);
+    expect(me.weapon).toBeNull();
+    expect(foe.weapon).toBe("club");
+  });
+
+  it("a cop's club can be snatched the same way, and the cop rides on without it (C7)", () => {
+    const r = race(1);
+    const me = rider(r, 0);
+    const cop = r.riders.find((x) => x.cop)!;
+    Object.assign(me, { z: 600, x: 0, speed: 30 });
+    Object.assign(cop, { z: 600, x: 1.5, speed: 30, chase: 0 });
+    expect(cop.weapon).toBe("club");
+    beginAttack(r, cop, "hand");
+    steps(r, 6, { ...NO_INPUT, throttle: true });
+    press(r, 0, 2);
+    expect(me.weapon).toBe("club");
+    expect(cop.weapon).toBeNull();
+    expect(cop.phase).toBe("riding");
+  });
+});
+
+describe("contact with a cop (K10)", () => {
+  it("rubbing a cop is not a bust; coming off beside one is", () => {
+    const r = race(1);
+    const me = rider(r, 0);
+    const cop = r.riders.find((x) => x.cop)!;
+    Object.assign(me, { z: 600, x: 0, speed: 30, vx: 3 });
+    Object.assign(cop, { z: 600, x: 0.7, speed: 30, vx: 0, chase: 0 });
+    r.t = 10;
+    steps(r, 1, { ...NO_INPUT, throttle: true });
+    expect(me.phase).toBe("riding");
+    // now the cop rubs me off the bike
+    Object.assign(me, { z: 620, x: 0, speed: 30, vx: 0 });
+    Object.assign(cop, { z: 620, x: -0.7, speed: 30, vx: 12 });
+    steps(r, 2);
+    expect(me.phase).toBe("busted");
   });
 });

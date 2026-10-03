@@ -438,9 +438,29 @@ export function buildCar(kind: "sedan" | "taxi" | "pickup" | "police", id: numbe
   return car;
 }
 
-/** A cop's club, held in the right hand (C7). */
+/** A club, as every cop carries (C5, C7): a black baton out of the fist. */
 export function buildClub(): THREE.Mesh {
   const club = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.6, 8), new THREE.MeshStandardMaterial({ color: "#1a1a1a", roughness: 0.5 }));
   club.geometry.translate(0, 0.25, 0);
+  club.castShadow = true;
   return club;
+}
+
+/** A chain (C5): oval steel links hanging in a loose curve from the fist. */
+export function buildChain(): THREE.Group {
+  const chain = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color: "#b8bcc4", metalness: 0.9, roughness: 0.35 });
+  const link = new THREE.TorusGeometry(0.03, 0.008, 6, 10);
+  link.scale(1, 1.6, 1);
+  const n = 14;
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(link, steel);
+    const u = i / (n - 1);
+    // out of the fist along the hand, then drooping
+    m.position.set(0.05 * Math.sin(u * 2.4), 0.06 + u * 0.62, -0.12 * u * u);
+    m.rotation.set(-0.3 * u, i % 2 ? Math.PI / 2 : 0, 0);
+    m.castShadow = true;
+    chain.add(m);
+  }
+  return chain;
 }

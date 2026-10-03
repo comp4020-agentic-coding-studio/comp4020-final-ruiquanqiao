@@ -53,12 +53,12 @@ adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of th
 | C2 | Punch drains the target's stamina; it takes several blows to put a rider down | PCM, SATM | planned | same | C8 |
 | C3 | Backhand hits a rider behind or beside you, with or without a weapon | PCM, 3DOM | planned | adapted: J becomes a backhand by itself when the nearest opponent is beside or behind you, so the move survives without a third attack key | C9 |
 | C4 | Kick shoves the target's bike sideways, into traffic or roadside objects | PCM, SATM, FADE | planned | same | C8 |
-| C5 | Two weapons, club and chain; one held at a time, swung with the punch key; some riders start with one | PCM | planned | same | C9 |
-| C6 | Snatching: press punch as an opponent winds up a weapon swing and it becomes yours | PCM, FADE, POSTER | planned | same. The PC manual gives no timing, so the window is taken from the Mega Drive sources: the short pause while the arm draws back | C9 |
-| C7 | Cops carry clubs and are the easiest place to get one | POSTER, SATM | planned | same | C9 |
+| C5 | Two weapons, club and chain; one held at a time, swung with the punch key; some riders start with one | PCM | built | same | `spec/traffic.test.ts › the chain reaches a rider a fist cannot, and a weapon hits harder than a fist (C5)` |
+| C6 | Snatching: press punch as an opponent winds up a weapon swing and it becomes yours | PCM, FADE, POSTER | built | same. The PC manual gives no timing, so the window is taken from the Mega Drive sources: the pause while the arm draws back. Here that pause is 0.45 s against a fist's 0.14 s. A draw-back reaches the screen up to 0.05 s (snapshot spacing) plus 0.05 s (interpolation) plus one way of the network after it starts, and the J press needs the other way back; at the 16 ms round trip measured to the Fly app that leaves about 0.33 s to react in the worst case, against a typical 0.2 to 0.25 s. Pressed after the blow lands, J is only a punch | `spec/traffic.test.ts › punching while an opponent draws a weapon back takes it off them (C6)` |
+| C7 | Cops carry clubs and are the easiest place to get one | POSTER, SATM | built | same | `spec/traffic.test.ts › a cop's club can be snatched the same way, and the cop rides on without it (C7)` |
 | C8 | Stamina at zero knocks the rider off; they run back to the bike | PCM | planned | same | C8 |
 | C9 | A rider lying on the road can be run over | FADE | planned | same | C9 |
-| C10 | Whether a stolen weapon carries into the next race | RR1FAQ | planned | adapted: the PC is undocumented here; I follow the Mega Drive rule that it does not | C9 |
+| C10 | Whether a stolen weapon carries into the next race | RR1FAQ | built | adapted: the PC is undocumented here; I follow the Mega Drive rule that it does not | `spec/traffic.test.ts › some AI riders start armed, and every human starts empty-handed (C5, C10)` |
 
 ## Meters and crashes
 
@@ -136,7 +136,7 @@ not settle a question, the row says which source filled it.
 | K7 | Running into the back of slow traffic in your lane is nearly as damaging as a head-on crash | PCM | built | same, with T4 | `spec/traffic.test.ts › running into the back of a slower car is a crash, and costs about a head-on's damage (K7)` |
 | K8 | The kick is for knocking a rival sideways into oncoming traffic | PCM | planned | same, once T4 puts traffic in the other lane | C9 |
 | K9 | Each obstacle always does one of three things: nothing, a small jump, or a crash | RR3FAQ2, FADE | planned | same | final |
-| K10 | Contact with a motorcycle cop or a blocking cop car is an instant bust; a parked roadblock car is not | RR3FAQ2 | planned | adapted: Road Rash 3's rule; the PC footage never shows a cop collision, so it is decided with P1 | C9 |
+| K10 | Contact with a motorcycle cop or a blocking cop car is an instant bust; a parked roadblock car is not | RR3FAQ2 | built | adapted: touching a cop is not a bust, whichever way it goes; coming off the bike beside one is (P1). The PC footage never shows a cop collision, and from my own play of the PC version contact alone never got anyone busted, only a crash beside a cop did, so Road Rash 3's rule is not followed | `spec/traffic.test.ts › rubbing a cop is not a bust; coming off beside one is` |
 | K11 | A downed rider and the separated bike stay in the lane as hazards for several seconds | YT1 | planned | same, with C9 | C9 |
 
 ## Look

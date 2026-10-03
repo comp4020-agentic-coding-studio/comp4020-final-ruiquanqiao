@@ -50,5 +50,6 @@ const byCause = new Map<string, number>();
 for (const e of crashes) if (e.kind === "crash") byCause.set(`${e.rider === 0 ? "me" : "ai"} ${e.cause}`, (byCause.get(`${e.rider === 0 ? "me" : "ai"} ${e.cause}`) ?? 0) + 1);
 console.log("crashes:", Object.fromEntries(byCause));
 console.log("hits:", race.events.filter((e) => e.kind === "hit").length, " wrecked:", race.events.filter((e) => e.kind === "wrecked").length);
+console.log("snatches:", race.events.filter((e) => e.kind === "snatch").length, " armed at the end:", race.riders.filter((r) => !r.cop && r.weapon).length, " cops still armed:", race.riders.filter((r) => r.cop && r.weapon).length);
 console.log(order.map((r) => `${r.place || "-"} ${r.name} ${r.phase} ${(r.z / MILE).toFixed(2)}mi`).join("\n"));
 void DT;

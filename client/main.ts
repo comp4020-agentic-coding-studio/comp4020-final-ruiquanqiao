@@ -6,7 +6,7 @@
 import { type CarState, type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
 import { RaceScene } from "./scene.ts";
-import { DT, type Input, MPH, NO_INPUT, type Race, type Rider, beginAttack, cap, nearest, separate, packInput, positionOf, ride, startRace, topSpeed, TUNE } from "../game/sim.ts";
+import { DT, type Input, MPH, NO_INPUT, type Race, type Rider, beginAttack, cap, nearest, separate, packInput, positionOf, ride, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { MILE, makeTrack } from "../game/track.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -99,6 +99,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
       r.stamina = mine[6];
       r.damage = mine[7];
       r.place = mine[13];
+      r.weapon = mine[14] || null;
     }
   }
   for (const e of msg.events) {
@@ -108,6 +109,9 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     // hitting a car flashes the screen white (K3)
     if (e.kind === "crash" && e.rider === c.you && (e.cause === "rearEnd" || e.cause === "headOn")) flash("#ffffff");
     if (e.kind === "busted" && e.rider === c.you) banner("Busted", 3000);
+    // a weapon taken, or lost (C6)
+    if (e.kind === "snatch" && e.by === c.you) banner(`Got the ${e.weapon}`, 1500);
+    if (e.kind === "snatch" && e.from === c.you) banner(`Lost the ${e.weapon}`, 1500);
     if (e.kind === "finished" && e.rider === c.you) banner(e.place <= 3 ? `${ordinal(e.place)}: qualified` : ordinal(e.place), 3000);
   }
 }
@@ -403,7 +407,7 @@ function frame(): void {
           if (r.phase === "riding") for (const o of c.race.riders) if (o !== r && o.phase === "riding") separate(r, o, 1);
           if (r.attack) {
             r.attack.t += DT;
-            if (r.attack.t >= TUNE.windup + 0.2) r.attack = null;
+            if (r.attack.t >= windupOf(r, r.attack) + 0.2) r.attack = null;
           }
           c.history.set(c.steps + Math.round((c.offset ?? 0) / DT), { z: r.z, x: r.x });
           c.history.delete(c.steps + Math.round((c.offset ?? 0) / DT) - 240);
@@ -481,10 +485,11 @@ window.__rash = {
     const c = current;
     const r = c?.race.riders.find((x) => x.id === c.you);
     return c && r
-      ? { race: c.id, you: c.you, t: c.race.t, mph: r.speed / MPH, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, stamina: r.stamina, damage: r.damage }
+      ? { race: c.id, you: c.you, t: c.race.t, mph: r.speed / MPH, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, stamina: r.stamina, damage: r.damage, weapon: r.weapon, threat: windingAt(c.race, r)?.id ?? null }
       : { screen: app.dataset.screen, queued };
   },
   press: (k: keyof Input, down: boolean) => setKey(k, down),
+  riders: () => current?.race.riders.map((r) => ({ id: r.id, cop: r.cop, z: Math.round(r.z), x: r.x.toFixed(1), phase: r.phase, weapon: r.weapon, attack: r.attack && `${r.attack.kind}${r.attack.t.toFixed(2)}${r.attack.landed ? "L" : ""}` })),
 };
 
 connect();
