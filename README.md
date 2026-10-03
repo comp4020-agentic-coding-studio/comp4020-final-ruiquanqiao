@@ -13,17 +13,16 @@ My first plan for this remake left out the police, both weapons and weapon
 snatching: it described the game from an impression. So every mechanic of the
 original now has a row in [the ledger](docs/ledger.md), with a source from the
 manuals and player guides and a decision — copied, adapted with a reason, or
-left out with a reason. Where my hands remember it differently from the
-manual, my hands win and the row says so: there is no lean key and no nitro,
-because I never used either; the bike leans when you steer hard at speed, and
-it gets faster the longer you ride clean.
+left out with a reason. Where my memory of playing differs from the
+manual, the row says so: no lean key and no nitro; the bike leans when you
+steer hard at speed and gets faster the longer you ride clean.
 
 **Your bike answers your keys, not the network.** The server owns the race,
 but each browser runs the same simulation for its own rider, so steering and
 swings happen on the keypress. Everyone else is drawn a tenth of a second in
-the past, between two real positions, as Gabriel Gambetta describes. That
-costs something real: the rider you punch is where the server says, not
-quite where you see them.
+the past, between two real positions, as Gabriel Gambetta describes. The
+cost: the rider you punch is where the server says, not quite where you see
+them.
 
 **There is always someone to hit.** A race with AI starts five seconds after
 the first rider queues and fills the grid to fifteen, so one visitor gets a
@@ -65,4 +64,4 @@ top-three finish qualifies you on that road at that level for good.
   for predicting your own rider and interpolating everyone else.
 - Robin Sloan, [An app can be a home-cooked meal](https://www.robinsloan.com/notes/home-cooked-app/)
   (2020), for why a game rebuilt for the people I would play it with is worth
-  making at all.
+  making.
