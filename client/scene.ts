@@ -1,28 +1,22 @@
-// The race in 3D, the way the original drew it (ledger V1–V17): a textured
-// road through real geometry, a low chase camera behind the rider, a flat
-// periwinkle sky with hard-edged clouds and a painted mountain panorama.
-// Every texture is generated here in code; none comes from the game.
+// The race in 3D (ledger V1–V17): a textured road through real geometry, a low
+// chase camera behind the rider, sky and mountains on the horizon. The rider
+// and bike come from client/models.ts; the ground, rock and sky are CC0
+// photographs (client/public/assets/ASSETS.md); the road markings, the
+// mountain skyline and the pines are drawn here in code. Nothing comes from
+// the game itself.
 
 import * as THREE from "three";
-import { type Rider } from "../game/sim.ts";
+import { type Rider, TUNE } from "../game/sim.ts";
 import { ROAD_HALF, SEGMENT, SHOULDER, type Track } from "../game/track.ts";
 import { centreline, frameAt } from "../game/world.ts";
+import { type RiderRig, bend, buildBike, buildRider, crouch, loadRider, unbend } from "./models.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
 
 const C = {
-  sky: "#94aefa",
-  skyLow: "#c5d0f2",
-  asphalt: [86, 80, 94] as const, // #56505e
   yellow: "#c0b04c",
-  white: "#d8d8d8",
-  dirt: [99, 69, 44] as const, // #63452c
-  meadow: [73, 101, 66] as const, // #496542
-  rock: "#86839f",
-  pine: "#3f5a45",
+  white: "#e0e0e0",
 };
-
-// ---- generated textures ----
 
 function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement("canvas");
@@ -31,7 +25,7 @@ function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContex
   return [c, c.getContext("2d")!];
 }
 
-/** A small seeded noise so a texture comes out the same on every load. */
+/** A small seeded noise so anything generated comes out the same every load. */
 function rng(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
@@ -40,144 +34,196 @@ function rng(seed: number): () => number {
   };
 }
 
-function speckle(ctx: CanvasRenderingContext2D, w: number, h: number, base: readonly [number, number, number], spread: number, seed: number, cell = 1): void {
-  const rand = rng(seed);
-  for (let y = 0; y < h; y += cell) {
-    for (let x = 0; x < w; x += cell) {
-      const d = (rand() - 0.5) * spread;
-      ctx.fillStyle = `rgb(${base[0] + d},${base[1] + d},${base[2] + d * 1.1})`;
-      ctx.fillRect(x, y, cell, cell);
-    }
-  }
-}
+const loader = new THREE.TextureLoader();
+const asset = (name: string): string => `/assets/${name}`;
 
-function texture(c: HTMLCanvasElement, repeat = true): THREE.CanvasTexture {
-  const t = new THREE.CanvasTexture(c);
-  if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  // small textures magnified without smoothing: big square texels near the
-  // camera, as the original's were (V4)
-  t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.anisotropy = 4;
-  t.colorSpace = THREE.SRGBColorSpace;
+function photo(name: string, repeat: [number, number], colour = true): THREE.Texture {
+  const t = loader.load(asset(name));
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(...repeat);
+  t.anisotropy = 8;
+  if (colour) t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
-/** One 12 m tile of the road, across its full width (V9). */
-function roadTexture(): THREE.CanvasTexture {
-  const w = 128; // across 2 × ROAD_HALF
-  const h = 96; // along 12 m
+function ground(name: string, repeat: [number, number], tint = "#ffffff"): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    map: photo(`textures/${name}_color.jpg`, repeat),
+    normalMap: photo(`textures/${name}_normal.jpg`, repeat, false),
+    roughnessMap: photo(`textures/${name}_roughness.jpg`, repeat, false),
+    color: tint,
+  });
+}
+
+/**
+ * The road: the asphalt photograph, with the original's markings painted over
+ * it (V9) — double solid yellow centre, white dashed lanes, solid white edges,
+ * no kerbs. One tile is 12 m long across the road's full width.
+ */
+function roadMaterial(): THREE.MeshStandardMaterial {
+  const w = 512;
+  const h = 512;
   const [c, ctx] = canvas(w, h);
-  speckle(ctx, w, h, C.asphalt, 7, 11, 2);
-  const px = (m: number): number => ((m + ROAD_HALF) / (2 * ROAD_HALF)) * w;
-  const stripe = (m: number, width: number, colour: string, from = 0, to = h): void => {
-    ctx.fillStyle = colour;
-    ctx.fillRect(Math.round(px(m) - (width / (2 * ROAD_HALF)) * w * 0.5), from, Math.max(1, Math.round((width / (2 * ROAD_HALF)) * w)), to - from);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  t.colorSpace = THREE.SRGBColorSpace;
+  const paint = (): void => {
+    const px = (m: number): number => ((m + ROAD_HALF) / (2 * ROAD_HALF)) * w;
+    const stripe = (m: number, width: number, colour: string, from = 0, to = h): void => {
+      ctx.fillStyle = colour;
+      const pw = Math.max(2, (width / (2 * ROAD_HALF)) * w);
+      ctx.fillRect(px(m) - pw / 2, from, pw, to - from);
+    };
+    ctx.globalAlpha = 0.92;
+    stripe(-0.16, 0.12, C.yellow);
+    stripe(0.16, 0.12, C.yellow);
+    stripe(-ROAD_HALF + 0.3, 0.15, C.white);
+    stripe(ROAD_HALF - 0.3, 0.15, C.white);
+    stripe(-ROAD_HALF / 2, 0.14, C.white, 0, (h * 3) / 12);
+    stripe(ROAD_HALF / 2, 0.14, C.white, 0, (h * 3) / 12);
+    ctx.globalAlpha = 1;
+    t.needsUpdate = true;
   };
-  stripe(-0.16, 0.13, C.yellow);
-  stripe(0.16, 0.13, C.yellow);
-  stripe(-ROAD_HALF + 0.25, 0.15, C.white);
-  stripe(ROAD_HALF - 0.25, 0.15, C.white);
-  // lane dashes: 3 m of paint in every 12
-  stripe(-ROAD_HALF / 2, 0.16, "#ececec", 0, (h * 5) / 12);
-  stripe(ROAD_HALF / 2, 0.16, "#ececec", 0, (h * 5) / 12);
-  return texture(c);
+  // the measured purple-grey cast of the original's asphalt (#56505e)
+  ctx.fillStyle = "#56505e";
+  ctx.fillRect(0, 0, w, h);
+  paint();
+  const img = new Image();
+  img.onload = (): void => {
+    // the photograph four times across, tinted towards the measured colour
+    for (let y = 0; y < h; y += h / 2) for (let x = 0; x < w; x += w / 4) ctx.drawImage(img, x, y, w / 4, h / 2);
+    ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = "#9a90a8";
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "source-over";
+    paint();
+  };
+  img.src = asset("textures/asphalt_color.jpg");
+  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.9, normalMap: photo("textures/asphalt_normal.jpg", [4, 2], false), normalScale: new THREE.Vector2(0.4, 0.4) });
 }
 
-function groundTexture(base: readonly [number, number, number], seed: number, streaks = false): THREE.CanvasTexture {
-  const [c, ctx] = canvas(64, 64);
-  speckle(ctx, 64, 64, base, 22, seed, 2);
-  if (streaks) {
-    const rand = rng(seed + 1);
-    for (let i = 0; i < 40; i++) {
-      ctx.fillStyle = `rgba(30,40,20,${0.15 + rand() * 0.2})`;
-      ctx.fillRect(Math.floor(rand() * 64), Math.floor(rand() * 64), 2, 4 + rand() * 6);
-    }
-  }
-  return texture(c);
-}
-
-/** A jagged snow range right round the horizon (V12). */
+/**
+ * The mountain range right round the horizon (V12): a skyline of sharp peaks,
+ * filled with the rock photograph and snow on the summits.
+ */
 function panoramaTexture(): THREE.CanvasTexture {
-  const w = 2048;
-  const h = 256;
+  const w = 4096;
+  const h = 512;
   const [c, ctx] = canvas(w, h);
-  ctx.clearRect(0, 0, w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
   const rand = rng(1994);
-  // the skyline is the upper envelope of many sharp peaks, each a steep
-  // triangle with ragged flanks; that is what reads as the Sierra's teeth
-  // rather than a mesa
   type Peak = { x: number; top: number; slope: number };
   const peaks: Peak[] = [];
-  // a few big massifs and many lesser summits between them
-  for (let i = 0; i < 9; i++) peaks.push({ x: rand() * w, top: 8 + rand() * 45, slope: 0.55 + rand() * 0.5 });
-  for (let i = 0; i < 30; i++) peaks.push({ x: rand() * w, top: 60 + rand() * 110, slope: 0.7 + rand() * 1.2 });
+  // a few great summits, steep-sided, with lesser peaks crowding between
+  for (let i = 0; i < 10; i++) peaks.push({ x: rand() * w, top: 15 + rand() * 80, slope: 1.0 + rand() * 0.8 });
+  for (let i = 0; i < 46; i++) peaks.push({ x: rand() * w, top: 150 + rand() * 200, slope: 0.9 + rand() * 1.4 });
   const sky = new Float64Array(w);
   const owner = new Int32Array(w);
   for (let x = 0; x < w; x++) {
     let best = h;
-    let who = -1;
     peaks.forEach((p, i) => {
-      // distance round the seam too, so the panorama tiles
       const d = Math.min(Math.abs(x - p.x), w - Math.abs(x - p.x));
-      const y = p.top + d * p.slope;
+      // ragged ridgelines: the flank wanders as it falls
+      const y = p.top + d * p.slope + Math.sin(d * 0.045 + p.x) * 9 + Math.sin(d * 0.17 + p.x * 3) * 3;
       if (y < best) {
         best = y;
-        who = i;
+        owner[x] = i;
       }
     });
-    sky[x] = Math.min(h, best + (rand() - 0.5) * 3);
-    owner[x] = who;
+    sky[x] = best;
   }
-  for (let x = 0; x < w; x++) {
-    const top = Math.floor(sky[x]);
-    const p = peaks[owner[x]];
-    // rock, a little darker on the flank facing away from the light
-    const d = x - p.x;
-    ctx.fillStyle = d > 0 ? "#7c7998" : C.rock;
-    ctx.fillRect(x, top, 1, h - top);
-    // snow from the summit down, streaked down the fall line; higher peaks
-    // carry more of it
-    const reach = Math.max(0, (175 - p.top) * 0.55) * (0.6 + rand() * 0.5);
-    if (reach > 2) {
-      ctx.fillStyle = "#f2f2f8";
-      ctx.fillRect(x, top, 1, reach * (0.5 + 0.5 * Math.abs(Math.sin(x * 0.35 + p.x))));
+  const draw = (rock: HTMLImageElement | null): void => {
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let x = 0; x < w; x++) ctx.lineTo(x, sky[x]);
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.clip();
+    if (rock) {
+      ctx.fillStyle = ctx.createPattern(rock, "repeat")!;
+      ctx.fillRect(0, 0, w, h);
+      // towards the lavender-grey of distance
+      ctx.fillStyle = "rgba(140,140,175,0.55)";
+      ctx.fillRect(0, 0, w, h);
+    } else {
+      ctx.fillStyle = "#86839f";
+      ctx.fillRect(0, 0, w, h);
     }
-  }
-  // lower, bluer foothills and a green skirt in front
-  const hills = (base: number, amp: number, colour: string, seed: number): void => {
-    const r = rng(seed);
-    const ph = [r() * 6, r() * 6, r() * 6];
-    ctx.fillStyle = colour;
+    // shade the flanks that fall away to the right, by the skyline's own
+    // slope: deciding by which peak owns a column left a hard vertical edge
+    // wherever one peak handed over to the next
     for (let x = 0; x < w; x++) {
-      const u = (x / w) * Math.PI * 2;
-      const y = base - amp * (0.5 + 0.3 * Math.sin(u * 3 + ph[0]) + 0.15 * Math.sin(u * 11 + ph[1]) + 0.05 * Math.sin(u * 37 + ph[2]));
-      ctx.fillRect(x, y, 1, h - y);
+      const slope = sky[Math.min(w - 1, x + 3)] - sky[Math.max(0, x - 3)];
+      if (slope > 0) {
+        ctx.fillStyle = `rgba(40,40,70,${Math.min(0.3, slope * 0.03)})`;
+        ctx.fillRect(x, sky[x], 1, h);
+      }
     }
+    // snow down from each summit, in streaks along the fall line
+    const r = rng(7);
+    for (let x = 0; x < w; x++) {
+      const p = peaks[owner[x]];
+      // snow lies in broad fields broken by rock ribs, not in single streaks
+      const reach = Math.max(0, (320 - p.top) * 0.5);
+      if (reach < 4) continue;
+      // rock ribs break the snow up; on the lesser peaks only the tips hold it
+      const field = 0.45 + 0.3 * Math.sin(x * 0.013 + p.x) + 0.25 * Math.sin(x * 0.047 + p.top);
+      const rib = 0.35 + 0.65 * Math.abs(Math.sin(x * 0.11 + p.x * 0.5));
+      const len = reach * Math.max(0.04, field * field) * rib * (0.9 + r() * 0.1);
+      const g = ctx.createLinearGradient(0, sky[x], 0, sky[x] + len);
+      g.addColorStop(0, "rgba(250,250,255,0.98)");
+      g.addColorStop(0.8, "rgba(235,238,250,0.85)");
+      g.addColorStop(1, "rgba(235,238,250,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(x, sky[x], 1, len);
+    }
+    // haze at the foot of the range, where it meets the land
+    const haze = ctx.createLinearGradient(0, h * 0.55, 0, h);
+    haze.addColorStop(0, "rgba(190,200,225,0)");
+    haze.addColorStop(1, "rgba(190,200,225,0.85)");
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    t.needsUpdate = true;
   };
-  hills(236, 50, "#6c6d8c", 21);
-  hills(250, 22, "#55704f", 33);
-  (window as unknown as { __pano: HTMLCanvasElement }).__pano = c; // for a look at it without a race
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
+  draw(null);
+  const img = new Image();
+  img.onload = (): void => draw(img);
+  img.src = asset("textures/rock_color.jpg");
   return t;
 }
 
-/** Flat white cumulus with hard edges (V11). */
-function cloudTexture(seed: number): THREE.CanvasTexture {
-  const [c, ctx] = canvas(128, 64);
-  const rand = rng(seed);
-  ctx.fillStyle = "#ffffff";
-  for (let i = 0; i < 7; i++) {
-    const r = 12 + rand() * 16;
-    ctx.beginPath();
-    ctx.arc(24 + rand() * 80, 40 - rand() * 14, r, 0, Math.PI * 2);
-    ctx.fill();
+/** A pine painted as a silhouette of drooping branch tiers, for crossed cards. */
+function pineTexture(): THREE.CanvasTexture {
+  const w = 256;
+  const h = 512;
+  const [c, ctx] = canvas(w, h);
+  const rand = rng(31);
+  ctx.fillStyle = "#4a3424";
+  ctx.fillRect(w / 2 - 7, h * 0.8, 14, h * 0.2);
+  const tiers = 15;
+  for (let i = 0; i < tiers; i++) {
+    const t = i / (tiers - 1);
+    const y = h * 0.04 + t * h * 0.8;
+    const half = (0.06 + t * 0.4) * w;
+    for (let k = 0; k < 140; k++) {
+      // needles along each drooping branch, darker inside the crown
+      const side = rand() < 0.5 ? -1 : 1;
+      const along = rand();
+      const bx = w / 2 + side * along * half;
+      const by = y + along * along * 26 + (rand() - 0.5) * 10;
+      const shade = 30 + rand() * 40 + along * 25;
+      ctx.fillStyle = `rgb(${shade * 0.55},${shade * 1.05 + 20},${shade * 0.6})`;
+      ctx.beginPath();
+      ctx.ellipse(bx, by, 6 + rand() * 7, 3 + rand() * 4, side * (0.3 + along * 0.4), 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
-  ctx.fillStyle = "rgba(200,210,240,0.9)";
-  ctx.fillRect(0, 50, 128, 14);
-  ctx.clearRect(0, 52, 128, 12);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -220,274 +266,210 @@ function strip(track: Track, from: number, to: number, tile: number, lift: (z: n
   return g;
 }
 
-// ---- riders (V5): low-poly bike and rider, lit, in two-colour leathers ----
+/**
+ * Height of the meadow beside the road: a gentle bank, then falling away to
+ * the plain. The strips stop at MEADOW, inside the tightest bend's radius
+ * (110 m): an offset curve wider than the bend folds back over itself, and a
+ * 2.6 km strip once laid a green sheet across half the sky.
+ */
+const MEADOW = 60;
+const PLAIN = -5.5;
+const rise = (z: number, off: number): number => {
+  const d = Math.abs(off) - SHOULDER;
+  if (d <= 0) return -0.04;
+  const bank = Math.min(1, d / 20) * (1.2 + 0.8 * Math.sin(z / 170 + Math.sign(off)));
+  return bank + Math.min(0, -(d - 25) * 0.25) * 1;
+};
 
+// ---- riders (V5) ----
+
+// The PC default rider first: magenta leathers, yellow-green shoulders,
+// yellow helmet. Then fourteen more, each with its own pair.
 const LEATHERS: [string, string, string][] = [
-  ["#e040a0", "#c8d040", "#f0d020"], // the PC default: magenta with yellow-green, yellow helmet
-  ["#d02828", "#f0f0f0", "#f0f0f0"],
-  ["#30a040", "#101010", "#30a040"],
-  ["#2850d0", "#d02828", "#f0f0f0"],
-  ["#f0d020", "#101010", "#f0d020"],
-  ["#8030b0", "#e0e0e0", "#202020"],
-  ["#f07820", "#202020", "#f07820"],
-  ["#20a0b0", "#f0f0f0", "#20a0b0"],
-  ["#202020", "#d02828", "#d02828"],
-  ["#e0e0e0", "#2850d0", "#2850d0"],
-  ["#a02050", "#f0d020", "#a02050"],
-  ["#607020", "#e0c080", "#e0c080"],
-  ["#f060a0", "#202020", "#f0f0f0"],
-  ["#4040a0", "#f0a020", "#f0a020"],
-  ["#b06030", "#f0f0f0", "#202020"],
+  ["#d0308c", "#b8c838", "#f0d020"],
+  ["#c02020", "#f0f0f0", "#f0f0f0"],
+  ["#2a8c38", "#151515", "#2a8c38"],
+  ["#2448c0", "#c02020", "#f0f0f0"],
+  ["#e8c018", "#151515", "#e8c018"],
+  ["#6e2aa0", "#e0e0e0", "#202020"],
+  ["#e06c18", "#202020", "#e06c18"],
+  ["#1c90a0", "#f0f0f0", "#1c90a0"],
+  ["#1e1e22", "#c02020", "#c02020"],
+  ["#d8d8d8", "#2448c0", "#2448c0"],
+  ["#901c48", "#e8c018", "#901c48"],
+  ["#56661c", "#d8b878", "#d8b878"],
+  ["#e05c98", "#202020", "#f0f0f0"],
+  ["#3a3a98", "#e89818", "#e89818"],
+  ["#9c5428", "#f0f0f0", "#202020"],
 ];
 
 type RiderModel = {
-  root: THREE.Group; // placed on the road
+  root: THREE.Group; // on the road at the rider
   lean: THREE.Group; // rolls about the contact line
+  seat: THREE.Group; // where the rider sits on the bike
   bike: THREE.Group;
-  body: THREE.Group; // the rider, separable when thrown
-  armL: THREE.Group;
-  armR: THREE.Group;
-  legL: THREE.Group;
-  legR: THREE.Group;
-  fallen: THREE.Group; // the bike on its side while its rider is off it
+  rig: RiderRig;
+  seatOffset: THREE.Vector3;
 };
 
-const lambert = (colour: string): THREE.MeshLambertMaterial => new THREE.MeshLambertMaterial({ color: colour });
-
-function box(w: number, h: number, d: number, m: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-  mesh.position.set(x, y, z);
-  return mesh;
-}
-
-function bikeModel(m: { frame: THREE.Material; black: THREE.Material; chrome: THREE.Material; light: THREE.Material }): THREE.Group {
-  const g = new THREE.Group();
-  const wheel = new THREE.CylinderGeometry(0.32, 0.32, 0.2, 16);
-  wheel.rotateZ(Math.PI / 2);
-  const front = new THREE.Mesh(wheel, m.black);
-  front.position.set(0, 0.32, 0.72);
-  const rear = new THREE.Mesh(wheel, m.black);
-  rear.position.set(0, 0.32, -0.7);
-  g.add(front, rear);
-  g.add(box(0.34, 0.34, 1.0, m.frame, 0, 0.62, 0.05)); // tank and body
-  g.add(box(0.3, 0.18, 0.55, m.black, 0, 0.82, -0.35)); // seat
-  g.add(box(0.36, 0.36, 0.3, m.frame, 0, 0.8, 0.62)); // fairing
-  const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.4, 4, 10), m.frame);
-  tail.rotation.x = Math.PI / 2 - 0.15;
-  tail.scale.set(1.3, 1, 1);
-  tail.position.set(0, 0.7, -0.72);
-  g.add(tail);
-  g.add(box(0.2, 0.06, 0.04, m.light, 0, 0.72, -1.04)); // tail light
-  g.add(box(0.1, 0.1, 0.5, m.chrome, 0.17, 0.36, -0.55)); // exhaust
-  g.add(box(0.7, 0.04, 0.04, m.chrome, 0, 1.0, 0.6)); // bars
-  return g;
-}
-
-function riderModel(index: number): RiderModel {
-  const [main, trim, helmet] = LEATHERS[index % LEATHERS.length];
-  const mats = {
-    main: lambert(main),
-    trim: lambert(trim),
-    helmet: new THREE.MeshPhongMaterial({ color: helmet, shininess: 60 }),
-    visor: new THREE.MeshPhongMaterial({ color: "#101018", shininess: 90 }),
-    black: lambert("#1a1a1e"),
-    frame: new THREE.MeshPhongMaterial({ color: main, shininess: 40 }),
-    chrome: new THREE.MeshPhongMaterial({ color: "#b8b8c0", shininess: 90 }),
-    light: new THREE.MeshBasicMaterial({ color: "#ff3020" }),
-    boot: lambert("#141414"),
-    glove: lambert("#202020"),
-  };
-  const root = new THREE.Group();
-  const lean = new THREE.Group();
-  const bike = bikeModel(mats);
-  const body = new THREE.Group();
-  const capsule = (r: number, len: number, m: THREE.Material): THREE.Mesh => new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 4, 10), m);
-  // a broad back hunched over the tank, trim across the shoulders
-  const torso = capsule(0.2, 0.34, mats.main);
-  torso.scale.set(1.3, 1, 1);
-  torso.rotation.x = 1.15;
-  torso.position.set(0, 0.16, 0.02);
-  const panel = capsule(0.16, 0.2, mats.trim);
-  panel.scale.set(1.45, 1, 0.9);
-  panel.rotation.x = 1.15;
-  panel.position.set(0, 0.28, -0.04);
-  body.add(torso, panel);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 16, 12), mats.helmet);
-  head.position.set(0, 0.42, 0.3);
-  body.add(head);
-  const visor = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8, 0, Math.PI * 2, 0, 0.9), mats.visor);
-  visor.rotation.x = 1.6;
-  visor.position.set(0, 0.41, 0.36);
-  body.add(visor);
-  const arm = (side: number): THREE.Group => {
-    const a = new THREE.Group();
-    // facing +z, the rider's right is -x
-    a.position.set(-side * 0.26, 0.26, 0.14);
-    const upper = capsule(0.07, 0.36, mats.main);
-    upper.rotation.x = 1.2;
-    upper.position.set(0, -0.08, 0.2);
-    a.add(upper, box(0.13, 0.11, 0.13, mats.glove, 0, -0.16, 0.44));
-    return a;
-  };
-  const leg = (side: number): THREE.Group => {
-    const l = new THREE.Group();
-    l.position.set(-side * 0.21, -0.02, -0.12);
-    const thigh = capsule(0.09, 0.32, mats.trim);
-    thigh.rotation.x = 1.3;
-    thigh.position.set(0, -0.06, 0.14);
-    const shin = capsule(0.075, 0.3, mats.main);
-    shin.rotation.x = -0.5;
-    shin.position.set(0, -0.3, 0.24);
-    l.add(thigh, shin, box(0.13, 0.12, 0.26, mats.boot, 0, -0.5, 0.2));
-    return l;
-  };
-  const armL = arm(-1);
-  const armR = arm(1);
-  const legL = leg(-1);
-  const legR = leg(1);
-  body.add(armL, armR, legL, legR);
-  body.position.set(0, 0.95, -0.25);
-  lean.add(bike, body);
-  root.add(lean);
-  const fallen = bikeModel(mats);
-  fallen.rotation.z = Math.PI / 2;
-  fallen.position.y = 0.18;
-  fallen.visible = false;
-  return { root, lean, bike, body, armL, armR, legL, legR, fallen };
-}
+const RIGHT = new THREE.Vector3(-1, 0, 0);
+const FORWARD = new THREE.Vector3(0, 0, 1);
 
 // ---- the scene ----
 
 export class RaceScene {
   renderer: THREE.WebGLRenderer;
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.3, 4000);
+  camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.3, 6000);
   private track: Track | null = null;
   private world = new THREE.Group();
   private riders = new Map<number, RiderModel>();
   private backdrop: THREE.Mesh;
-  private clouds = new THREE.Group();
   private sun: THREE.DirectionalLight;
+  private plain: THREE.Mesh;
+  private riderAsset: Awaited<ReturnType<typeof loadRider>> | null = null;
 
-  constructor(canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true });
+  constructor(canvasEl: HTMLCanvasElement) {
+    this.renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.scene.background = new THREE.Color(C.sky);
-    this.scene.add(new THREE.HemisphereLight("#dfe6ff", "#5a6a4a", 1.6));
-    this.sun = new THREE.DirectionalLight("#fff4e0", 1.8);
-    this.sun.position.set(-40, 80, -30);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    // the sky photograph, as background and as what the paint reflects
+    const sky = loader.load(asset("sky/sky.jpg"), (t) => {
+      t.mapping = THREE.EquirectangularReflectionMapping;
+      t.colorSpace = THREE.SRGBColorSpace;
+      this.scene.background = t;
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      this.scene.environment = pmrem.fromEquirectangular(t).texture;
+      this.scene.environmentIntensity = 0.6;
+    });
+    void sky;
+    this.scene.background = new THREE.Color("#94aefa");
+    // aerial haze, the colour the range fades to at its foot
+    this.scene.fog = new THREE.Fog("#bec8e1", 400, 2700);
+
+    this.scene.add(new THREE.HemisphereLight("#dfe6ff", "#5a6a4a", 0.9));
+    this.sun = new THREE.DirectionalLight("#fff2dc", 2.6);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    const s = this.sun.shadow.camera;
+    s.left = -30;
+    s.right = 30;
+    s.top = 30;
+    s.bottom = -30;
+    s.near = 1;
+    s.far = 200;
+    this.sun.shadow.bias = -0.0004;
     this.scene.add(this.sun, this.sun.target);
 
-    // the panorama rides with the camera, so it never gets closer (V12)
-    // 420 m tall at 2.4 km is about 10° of sky: the range sits on the horizon
-    // and rises to the height it has in the original, not above it
-    const pano = new THREE.CylinderGeometry(2400, 2400, 420, 64, 1, true);
+    // the range rides with the camera, so it never gets closer (V12)
     const panoTex = panoramaTexture();
-    // six times round, so a texel is about as wide as it is tall
-    panoTex.repeat.set(6, 1);
-    this.backdrop = new THREE.Mesh(pano, new THREE.MeshBasicMaterial({ map: panoTex, transparent: true, side: THREE.BackSide, depthWrite: false, fog: false }));
+    panoTex.repeat.set(2, 1);
+    this.backdrop = new THREE.Mesh(
+      new THREE.CylinderGeometry(4200, 4200, 760, 96, 1, true),
+      new THREE.MeshBasicMaterial({ map: panoTex, transparent: true, side: THREE.BackSide, depthWrite: false, fog: false }),
+    );
     this.backdrop.renderOrder = -2;
     this.scene.add(this.backdrop);
-    // a paler strip at the horizon behind the mountains
-    const haze = new THREE.Mesh(new THREE.CylinderGeometry(2450, 2450, 260, 32, 1, true), new THREE.MeshBasicMaterial({ color: C.skyLow, side: THREE.BackSide, depthWrite: false }));
-    haze.renderOrder = -3;
-    this.backdrop.add(haze);
-    haze.position.y = -120;
-    const rand = rng(5);
-    for (let i = 0; i < 70; i++) {
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTexture(i + 1), depthWrite: false, fog: false }));
-      const a = rand() * Math.PI * 2;
-      s.position.set(Math.sin(a) * 1800, 150 + rand() * 480, Math.cos(a) * 1800);
-      const size = 70 + rand() * 150;
-      s.scale.set(size, size / 2, 1);
-      s.renderOrder = -1;
-      this.clouds.add(s);
-    }
-    this.scene.add(this.clouds);
     this.scene.add(this.world);
+
+    // beyond the strips, one plain to the horizon that follows the camera;
+    // its texture is pinned to the world so it does not slide
+    const plainTex = photo("textures/grass_color.jpg", [600, 600]);
+    this.plain = new THREE.Mesh(new THREE.CircleGeometry(3000, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: plainTex, color: "#b8c8a0", roughness: 1 }));
+    this.plain.receiveShadow = false;
+    this.scene.add(this.plain);
+
+    loadRider().then((a) => {
+      this.riderAsset = a;
+    });
   }
 
   setTrack(track: Track): void {
     if (this.track === track) return;
     this.track = track;
     this.world.clear();
-    const flat = (): number => 0.0;
-    const road = new THREE.Mesh(strip(track, -ROAD_HALF, ROAD_HALF, 12, flat), new THREE.MeshLambertMaterial({ map: roadTexture() }));
-    const dirtTex = groundTexture(C.dirt, 3);
-    const dirt = new THREE.MeshLambertMaterial({ map: dirtTex });
-    const left = new THREE.Mesh(strip(track, -SHOULDER, -ROAD_HALF, 4, () => -0.02, 0.5), dirt);
-    const right = new THREE.Mesh(strip(track, ROAD_HALF, SHOULDER, 4, () => -0.02, 0.5), dirt);
-    // meadow rising gently away from the road on both sides
-    const meadowTex = groundTexture(C.meadow, 9, true);
-    const meadow = new THREE.MeshLambertMaterial({ map: meadowTex });
-    const rise = (z: number, off: number): number => {
-      const d = Math.abs(off) - SHOULDER;
-      // gentle: the original's meadows are nearly flat, and the far range
-      // has to show over them (V12)
-      return d <= 0 ? -0.04 : Math.min(1, d / 120) * (2.5 + 2 * Math.sin(z / 170 + Math.sign(off)));
-    };
-    const far = 400;
-    const bands = [SHOULDER, SHOULDER + 12, SHOULDER + 35, SHOULDER + 90, SHOULDER + 200, far];
+    const flat = (): number => 0;
+    const road = new THREE.Mesh(strip(track, -ROAD_HALF, ROAD_HALF, 12, flat), roadMaterial());
+    road.receiveShadow = true;
+    const dirt = ground("dirt", [1, 1], "#a88a70");
+    const left = new THREE.Mesh(strip(track, -SHOULDER, -ROAD_HALF, 3, () => -0.02, 1), dirt);
+    const right = new THREE.Mesh(strip(track, ROAD_HALF, SHOULDER, 3, () => -0.02, 1), dirt);
+    left.receiveShadow = right.receiveShadow = true;
+    const meadow = ground("grass", [1, 1], "#c8d8b0");
+    const bands = [SHOULDER, SHOULDER + 12, SHOULDER + 30, MEADOW];
     for (let b = 0; b < bands.length - 1; b++) {
-      this.world.add(new THREE.Mesh(strip(track, -bands[b + 1], -bands[b], 6, rise, (bands[b + 1] - bands[b]) / 6), meadow));
-      this.world.add(new THREE.Mesh(strip(track, bands[b], bands[b + 1], 6, rise, (bands[b + 1] - bands[b]) / 6), meadow));
+      for (const side of [-1, 1]) {
+        const [a, z] = side < 0 ? [-bands[b + 1], -bands[b]] : [bands[b], bands[b + 1]];
+        const m = new THREE.Mesh(strip(track, a, z, 6, rise, (bands[b + 1] - bands[b]) / 6), meadow);
+        m.receiveShadow = b === 0;
+        this.world.add(m);
+      }
     }
     this.world.add(road, left, right);
 
-    // pines, poles and chevrons from the track's own scenery list
+    // pines as three crossed cards each, instanced (V12)
     const trees = track.scenery.filter((s) => s.kind === "tree");
-    const cone = new THREE.ConeGeometry(1.7, 6.5, 7);
-    cone.translate(0, 4.4, 0);
-    const trunk = new THREE.CylinderGeometry(0.22, 0.28, 1.4, 6);
-    trunk.translate(0, 0.7, 0);
-    const pines = new THREE.InstancedMesh(cone, lambert(C.pine), trees.length);
-    const trunks = new THREE.InstancedMesh(trunk, lambert("#5a3e2a"), trees.length);
-    const m = new THREE.Matrix4();
+    const pineMat = new THREE.MeshStandardMaterial({ map: pineTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 });
+    const card = new THREE.PlaneGeometry(5, 10).translate(0, 5, 0);
+    const cards = [0, Math.PI / 3, (2 * Math.PI) / 3].map((a) => card.clone().rotateY(a));
+    const m4 = new THREE.Matrix4();
     const rand = rng(77);
-    trees.forEach((s, i) => {
+    const placements = trees.map((s) => {
       const f = frameAt(track, s.z, s.x);
-      const scale = 0.8 + rand() * 0.6;
-      m.compose(new THREE.Vector3(f.px, f.py + rise(s.z, s.x), f.pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rand() * 6, 0)), new THREE.Vector3(scale, scale * (0.9 + rand() * 0.4), scale));
-      pines.setMatrixAt(i, m);
-      trunks.setMatrixAt(i, m);
+      const scale = 0.75 + rand() * 0.7;
+      return m4
+        .compose(new THREE.Vector3(f.px, f.py + rise(s.z, s.x), f.pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rand() * 6, 0)), new THREE.Vector3(scale, scale * (0.85 + rand() * 0.4), scale))
+        .clone();
     });
-    this.world.add(pines, trunks);
+    for (const g of cards) {
+      const inst = new THREE.InstancedMesh(g, pineMat, placements.length);
+      placements.forEach((p, i) => inst.setMatrixAt(i, p));
+      inst.castShadow = true;
+      this.world.add(inst);
+    }
 
     const poles = track.scenery.filter((s) => s.kind === "pole");
-    const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.14, 8, 6).translate(0, 4, 0), lambert("#6e5238"), poles.length);
-    const arms = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8, 0.12, 0.12).translate(0, 7.4, 0), lambert("#6e5238"), poles.length);
+    const wood = new THREE.MeshStandardMaterial({ color: "#6e5238", roughness: 0.9 });
+    const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.15, 8, 8).translate(0, 4, 0), wood, poles.length);
+    const arms = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8, 0.12, 0.12).translate(0, 7.4, 0), wood, poles.length);
     poles.forEach((s, i) => {
       const f = frameAt(track, s.z, s.x);
-      m.compose(new THREE.Vector3(f.px, f.py, f.pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, f.heading + Math.PI / 2, 0)), new THREE.Vector3(1, 1, 1));
-      pole.setMatrixAt(i, m);
-      arms.setMatrixAt(i, m);
+      m4.compose(new THREE.Vector3(f.px, f.py, f.pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, f.heading + Math.PI / 2, 0)), new THREE.Vector3(1, 1, 1));
+      pole.setMatrixAt(i, m4);
+      arms.setMatrixAt(i, m4);
     });
+    pole.castShadow = arms.castShadow = true;
     this.world.add(pole, arms);
 
-    const signs = track.scenery.filter((s) => s.kind === "sign");
     const chevron = (() => {
-      const [c, ctx] = canvas(32, 32);
+      const [c, ctx] = canvas(64, 64);
       ctx.fillStyle = "#e8c020";
-      ctx.fillRect(0, 0, 32, 32);
+      ctx.fillRect(0, 0, 64, 64);
       ctx.fillStyle = "#101010";
       ctx.beginPath();
-      ctx.moveTo(22, 4);
-      ctx.lineTo(10, 16);
-      ctx.lineTo(22, 28);
-      ctx.lineTo(16, 28);
-      ctx.lineTo(4, 16);
-      ctx.lineTo(16, 4);
+      ctx.moveTo(44, 8);
+      ctx.lineTo(20, 32);
+      ctx.lineTo(44, 56);
+      ctx.lineTo(32, 56);
+      ctx.lineTo(8, 32);
+      ctx.lineTo(32, 8);
       ctx.fill();
-      return texture(c, false);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
     })();
-    for (const s of signs) {
+    const post = new THREE.MeshStandardMaterial({ color: "#9a9aa0", metalness: 0.6, roughness: 0.4 });
+    for (const s of track.scenery.filter((x) => x.kind === "sign")) {
       const f = frameAt(track, s.z, s.x);
       const g = new THREE.Group();
-      g.add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.2, 0.08).translate(0, 0.6, 0), lambert("#909090")));
-      const face = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshLambertMaterial({ map: chevron, side: THREE.DoubleSide }));
-      face.position.y = 1.55;
-      // the arrow points the way the road turns: flip it for a left-hander
+      g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.3, 6).translate(0, 0.65, 0), post));
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshStandardMaterial({ map: chevron, side: THREE.DoubleSide }));
+      face.position.y = 1.6;
       if (s.x < 0) face.scale.x = -1;
       g.add(face);
       g.position.set(f.px, f.py, f.pz);
@@ -495,31 +477,35 @@ export class RaceScene {
       this.world.add(g);
     }
 
-    // a steel guardrail along the outside of the bends (V12)
-    const rail = new THREE.MeshPhongMaterial({ color: "#a8a8b0", shininess: 50 });
+    // a steel guardrail on posts along the outside of the bends (V12)
+    const railMat = new THREE.MeshStandardMaterial({ color: "#b4b4bc", metalness: 0.8, roughness: 0.35, side: THREE.DoubleSide });
     const k = track.curve;
-    let startSeg = -1;
+    let start = -1;
     for (let i = 0; i <= track.segments; i++) {
       const bend = i < track.segments && Math.abs(k[i]) > 1 / 260 ? Math.sign(k[i]) : 0;
-      if (bend !== 0 && startSeg < 0) startSeg = i;
-      if ((bend === 0 || i === track.segments) && startSeg >= 0) {
-        const side = -Math.sign(k[startSeg]) * (SHOULDER + 0.3);
-        const g = strip(track, side, side + 0.02, 4, (_z, _o) => 0, 1);
-        // keep only this bend's stretch, and stand it up as a band 0.35 m tall
+      if (bend !== 0 && start < 0) start = i;
+      if ((bend === 0 || i === track.segments) && start >= 0) {
+        const side = -Math.sign(k[start]) * (SHOULDER + 0.3);
+        const g = strip(track, side, side + 0.02, 4, flat, 1);
         const pos = g.getAttribute("position") as THREE.BufferAttribute;
-        for (let v = 0; v < pos.count; v++) if (v % 2 === 1) pos.setY(v, pos.getY(v) + 0.75);
-        for (let v = 0; v < pos.count; v++) if (v % 2 === 0) pos.setY(v, pos.getY(v) + 0.4);
-        g.setDrawRange(startSeg * 6, (i - startSeg) * 6);
-        this.world.add(new THREE.Mesh(g, new THREE.MeshPhongMaterial({ color: "#b0b0b8", shininess: 50, side: THREE.DoubleSide })));
-        startSeg = -1;
+        for (let v = 0; v < pos.count; v++) pos.setY(v, pos.getY(v) + (v % 2 === 1 ? 0.75 : 0.42));
+        g.computeVertexNormals();
+        g.setDrawRange(start * 6, (i - start) * 6);
+        this.world.add(new THREE.Mesh(g, railMat));
+        for (let z = start * SEGMENT; z < i * SEGMENT; z += 4) {
+          const f = frameAt(track, z, side);
+          const p = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.7, 0.08).translate(0, 0.35, 0), post);
+          p.position.set(f.px, f.py, f.pz);
+          this.world.add(p);
+        }
+        start = -1;
       }
     }
-    void rail;
 
     // start and finish: white line and chequered band across the road (V16)
     this.world.add(this.lineAcross(track, 30, false), this.lineAcross(track, track.length, true));
 
-    for (const r of this.riders.values()) this.scene.remove(r.root, r.fallen);
+    for (const r of this.riders.values()) this.scene.remove(r.root, r.bike);
     this.riders.clear();
   }
 
@@ -531,12 +517,15 @@ export class RaceScene {
         ctx.fillRect(x, y, 1, 1);
       }
     }
-    const t = texture(c, false);
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.colorSpace = THREE.SRGBColorSpace;
     const f = frameAt(track, z);
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_HALF * 2, chequered ? 1.6 : 0.6), new THREE.MeshLambertMaterial({ map: t }));
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_HALF * 2, chequered ? 1.6 : 0.6), new THREE.MeshStandardMaterial({ map: t }));
     mesh.rotation.x = -Math.PI / 2;
     mesh.rotation.z = f.heading;
     mesh.position.set(f.px, f.py + 0.02, f.pz);
+    mesh.receiveShadow = true;
     return mesh;
   }
 
@@ -554,10 +543,10 @@ export class RaceScene {
     const track = this.track;
     if (!track) return;
     const mine = riders.find((r) => r.id === me) ?? riders[0];
-    riders.forEach((r) => this.place(track, r, r.id));
+    if (this.riderAsset) riders.forEach((r) => this.place(track, r));
     for (const [id, model] of this.riders) {
       if (!riders.some((r) => r.id === id)) {
-        this.scene.remove(model.root, model.fallen);
+        this.scene.remove(model.root, model.bike);
         this.riders.delete(id);
       }
     }
@@ -566,76 +555,124 @@ export class RaceScene {
     const off = mine.phase === "thrown" || mine.phase === "running";
     const z = off ? Math.min(mine.z, mine.bikeZ) - 3 : mine.z;
     const x = off ? (mine.x + mine.bikeX) / 2 : mine.x;
-    const eye = frameAt(track, z - 7.4, x * 0.9);
+    const eye = frameAt(track, z - 6.0, x * 0.9);
     const look = frameAt(track, z + 14, x * 0.9);
-    this.camera.position.set(eye.px, eye.py + 2.2, eye.pz);
+    this.camera.position.set(eye.px, eye.py + 1.95, eye.pz);
     // aim below the horizon so the rider sits above the dashboard (V2, V7)
     this.camera.lookAt(look.px, look.py + 0.55 - dashTop * 1.2, look.pz);
-    // its foot a little below eye level, so the ground's far edge never shows
-    this.backdrop.position.set(this.camera.position.x, this.camera.position.y + 210 - 25, this.camera.position.z);
-    this.clouds.position.set(this.camera.position.x, 0, this.camera.position.z);
-    this.sun.position.set(this.camera.position.x - 40, 80, this.camera.position.z - 30);
-    this.sun.target.position.copy(this.camera.position);
+    this.backdrop.position.set(this.camera.position.x, this.camera.position.y + 380 - 40, this.camera.position.z);
+    // the plain sits a little below the road here, and its texture moves
+    // against it so the grass stays put in the world
+    const map = (this.plain.material as THREE.MeshStandardMaterial).map!;
+    this.plain.position.set(this.camera.position.x, eye.py + PLAIN, this.camera.position.z);
+    map.offset.set(this.camera.position.x / 10, -this.camera.position.z / 10);
+    // the sun's shadow box follows the camera
+    const at = frameAt(track, z + 10, x);
+    this.sun.target.position.set(at.px, at.py, at.pz);
+    this.sun.position.set(at.px - 30, at.py + 60, at.pz - 20);
     this.renderer.render(this.scene, this.camera);
   }
 
-  private place(track: Track, r: Rider, index: number): void {
+  private model(r: Rider): RiderModel {
     let model = this.riders.get(r.id);
-    if (!model) {
-      model = riderModel(index);
-      this.riders.set(r.id, model);
-      this.scene.add(model.root, model.fallen);
-    }
+    if (model) return model;
+    const [main, trim, helmet] = LEATHERS[r.id % LEATHERS.length];
+    const root = new THREE.Group();
+    const lean = new THREE.Group();
+    const seat = new THREE.Group();
+    const bike = buildBike(main, trim);
+    const rig = buildRider(this.riderAsset!, { main, trim, helmet });
+    lean.add(seat);
+    root.add(lean);
+    seat.add(rig.root);
+    // find where the clip's pelvis sits and put it on the saddle
+    rig.actions.Driving_Loop.play();
+    rig.mixer.setTime(0.4);
+    rig.root.updateMatrixWorld(true);
+    crouch(rig);
+    rig.root.updateMatrixWorld(true);
+    const p = new THREE.Vector3();
+    rig.bones.pelvis.getWorldPosition(p);
+    const seatOffset = new THREE.Vector3(0, 0.9 - p.y, -0.28 - p.z);
+    model = { root, lean, seat, bike, rig, seatOffset };
+    this.scene.add(root, bike);
+    this.riders.set(r.id, model);
+    return model;
+  }
+
+  private place(track: Track, r: Rider): void {
+    const model = this.model(r);
+    const { rig } = model;
     const thrown = r.phase === "thrown";
     const running = r.phase === "running";
     const f = frameAt(track, r.z, r.x);
     model.root.position.set(f.px, f.py, f.pz);
     model.root.rotation.set(0, f.heading, 0);
-    // the whole bike and rider roll together, up to about 35° (V5)
-    // positive roll about the forward axis tips the top towards -x, the right
-    model.lean.rotation.set(0, 0, r.lean * 0.62);
-    model.bike.visible = !thrown && !running;
-    model.fallen.visible = thrown || running;
-    if (model.fallen.visible) {
+
+    // the bike: under the rider, or on its side where it fell (M2)
+    if (thrown || running) {
       const b = frameAt(track, r.bikeZ, r.bikeX);
-      model.fallen.position.set(b.px, b.py + 0.18, b.pz);
-      model.fallen.rotation.set(0, b.heading + 0.5, Math.PI / 2);
+      model.bike.position.set(b.px, b.py + 0.16, b.pz);
+      model.bike.rotation.set(0, b.heading + 0.5, Math.PI / 2);
+      model.lean.rotation.set(0, 0, 0);
+    } else {
+      model.bike.position.copy(model.root.position);
+      // the whole bike and rider roll together, up to about 35° (V5)
+      model.bike.rotation.set(0, f.heading, r.lean * 0.62, "YXZ");
+      model.lean.rotation.set(0, 0, r.lean * 0.62);
     }
 
-    // the rider: tucked on the bike, tumbling when thrown, upright when running
-    const body = model.body;
-    body.rotation.set(0, 0, 0);
-    body.position.set(0, 0.95, -0.25);
-    model.armL.rotation.set(0, 0, 0);
-    model.armR.rotation.set(0, 0, 0);
-    model.legL.rotation.set(0, 0, 0);
-    model.legR.rotation.set(0, 0, 0);
-    if (thrown) {
-      const t = Math.min(1, r.phaseT / 1.1);
-      body.position.set(0, 0.4 + Math.sin(t * Math.PI) * 1.3, 0);
-      body.rotation.set(r.phaseT * 7, r.phaseT * 3, 0);
-    } else if (running) {
-      body.position.set(0, 0.55, 0);
-      body.rotation.set(-0.7, 0, 0);
-      const swing = Math.sin(r.phaseT * 11) * 0.7;
-      model.legL.rotation.x = swing;
-      model.legR.rotation.x = -swing;
-      model.armL.rotation.x = -swing;
-      model.armR.rotation.x = swing;
-    } else if (r.attack) {
-      // a swing throws the arm straight out sideways; a kick the leg (V15)
-      const out = Math.min(1, r.attack.t / 0.14);
-      const side = r.attack.side;
-      if (r.attack.kind === "kick") {
-        const leg = side > 0 ? model.legR : model.legL;
-        leg.rotation.z = -side * 1.2 * out;
-      } else {
-        const arm = side > 0 ? model.armR : model.armL;
-        // rotating about y by -90° points a forward arm at -x, the right
-        arm.rotation.y = -side * (r.attack.kind === "backhand" ? 2.3 : 1.35) * out;
-        arm.rotation.x = -0.3 * out;
-        arm.rotation.z = -side * 0.4 * out;
+    // the rider's clip, driven by the simulation's own clock so every
+    // browser shows the same moment
+    unbend(rig);
+    const play = (name: string, time: number, loop = true): void => {
+      for (const [n, a] of Object.entries(rig.actions)) {
+        if (n === name) {
+          if (!a.isRunning()) a.play();
+          a.setEffectiveWeight(1);
+          const d = a.getClip().duration;
+          a.time = loop ? time % d : Math.min(time, d - 0.001);
+        } else a.stop();
       }
+      rig.mixer.update(0);
+    };
+    if (thrown) {
+      play("Death01", r.phaseT * 1.6, false);
+      rig.root.position.set(0, Math.sin(Math.min(1, r.phaseT / TUNE.thrownTime) * Math.PI) * 0.8, 0);
+      rig.root.rotation.set(0, Math.PI, 0);
+    } else if (running) {
+      play("Jog_Fwd_Loop", r.phaseT);
+      rig.root.position.set(0, 0, 0);
+      // face the bike
+      const dz = r.bikeZ - r.z;
+      const dx = r.bikeX - r.x;
+      rig.root.rotation.set(0, Math.atan2(-dx, dz), 0);
+    } else {
+      play("Driving_Loop", 0.4 + (r.id % 7) * 0.05);
+      rig.root.position.copy(model.seatOffset);
+      rig.root.rotation.set(0, 0, 0);
+      rig.root.updateMatrixWorld(true);
+      crouch(rig);
+      if (r.attack) this.swing(rig, r.attack.kind, r.attack.side, Math.min(1, r.attack.t / TUNE.windup));
     }
+  }
+
+  /**
+   * A swing throws an arm straight out sideways; a kick swings a leg out to
+   * the same side; a backhand sweeps the arm out behind (V15, C3).
+   */
+  private swing(rig: RiderRig, kind: string, side: number, out: number): void {
+    const s = side > 0 ? "r" : "l"; // +x in road terms is the rider's right
+    const away = side > 0 ? -1 : 1; // which way "outward" turns about forward
+    const b = rig.bones;
+    if (kind === "kick") {
+      bend(rig, b[`thigh_${s}`], FORWARD, away * 0.9 * out);
+      bend(rig, b[`calf_${s}`], RIGHT, 1.0 * out);
+      return;
+    }
+    // shoulder out to the side, elbow straight
+    bend(rig, b[`upperarm_${s}`], FORWARD, away * 1.3 * out);
+    bend(rig, b[`lowerarm_${s}`], RIGHT, 0.6 * out);
+    if (kind === "backhand") bend(rig, b[`upperarm_${s}`], new THREE.Vector3(0, 1, 0), -away * 0.9 * out);
   }
 }

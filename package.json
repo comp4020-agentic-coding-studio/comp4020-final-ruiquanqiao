@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
-    "build": "esbuild client/main.ts --bundle --format=esm --target=es2022 --sourcemap --outfile=dist/app.js",
+    "build": "esbuild client/main.ts --bundle --minify --format=esm --target=es2022 --sourcemap --outfile=dist/app.js",
     "start": "node server/main.ts",
     "dev": "pnpm build && node server/main.ts",
     "typecheck": "tsc --noEmit",
@@ -13,6 +13,9 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/three": "^0.186.0",
@@ -20,6 +23,7 @@
     "esbuild": "^0.28.2",
     "jsdom": "^30.1.0",
     "playwright-core": "^1.63.0",
+    "sharp": "^0.35.5",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"
   },

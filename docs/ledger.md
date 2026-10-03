@@ -1,36 +1,4 @@
-# The Road Rash ledger
-
-This game is a remake of the arcade half ("Thrash") of **Road Rash**, EA's 1994
-3DO game in its 1996 Windows port — the version Chinese players know as 暴力摩托
-and the one I played. Every mechanic of that game has a row here, sourced, with
-a decision against it. A mechanic that is not in this table has not been
-considered yet, and nothing gets built from memory: a new mechanic is
-researched and added here before any code is written for it.
-
-`spec/ledger.test.ts` holds the table to its own rules:
-
-- every row has a status of `built`, `planned` or `omitted`
-- a `planned` row names the crit it is due by: `C8`, `C9`, `C10` or `final`
-- a `built` row names the spec test that proves it, as `file › test name`, and
-  that test exists
-- an `omitted` row says why
-- every source tag resolves to a URL in [Sources](#sources)
-
-**Treatment** is `same` when the row is copied as the original has it, or
-`adapted:` followed by what changes and why. Where versions of the game disagree,
-the PC version wins; the others are only used where the PC manual is silent,
-and the row says so.
-
-A row whose source is `—` is a rule the original never needed — matchmaking, for
-one — and must be `adapted:`, saying what it answers instead.
-
-The research behind this table is in
-[road-rash-research.md](road-rash-research.md), gathered on 30 Sep 2026 from the
-manuals and FAQs listed at the end. It has the numbers, the differences between
-versions and the conflicts between sources that the table only summarises.
-
-## Structure
-
+adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of the flat periwinkle and cartoon clouds, which looked like an unfinished backdrop beside photographic ground
 | ID | Mechanic (PC 1996) | Source | Status | Treatment | Due / proof |
 |---|---|---|---|---|---|
 | S1 | Big Game career: money, a bike shop, repair bills and fines, game over when broke | PCM, SATM | omitted | omitted: I chose the arcade mode alone. A career is a single-player economy, and it would make a race you join for five minutes carry a debt into tomorrow | — |
