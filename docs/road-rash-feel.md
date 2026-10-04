@@ -87,6 +87,42 @@ The player's weapon is a white/grey stick (club). It is already held at 351.6. A
 
 **Knock-off rule observed:** a single kick at 57.24 ended a fight in which the rival had already traded blows (seen at 4 fps from ~56). Blow counts per knock-off could not be isolated, because rival health is not shown on the dash.
 
+### Poses
+
+Read off single full-resolution frames with a 40 px grid laid over them, all
+seen from straight behind. Every joint is measured from the centre of the
+striking rider's helmet, in **helmet widths** (45–55 px in these frames), with
+x out towards the blow and y up. The tail lamp is the one point of the bike the
+recording always shows, so it gives the rider's height on the bike.
+`spec/sprites.test.ts` ("every pose against the recording") projects the
+sprite puppet the same way and holds each frame to these, to half a helmet
+width.
+
+| Frame | Time | Measured |
+|---|---|---|
+| Riding | 56.90 | Hunched: helmet 2.1 over the tail lamp; elbows out at x 1.1, y −1.35 |
+| Fist drawn back (chain in hand) | 247.44 | Sitting up: helmet 2.85 over the lamp. Fist beside the helmet at x 1.45, y −0.4; elbow out below it at x 1.8, y −0.9 |
+| Fist or chain out | 247.64 | Arm dead straight at shoulder height: fist at x 3.4, y −0.6. The body leans *away* from the blow: the lamp sits 0.4 out towards it |
+| Club overhead | 355.32 | Fist beside the helmet at x 1.4, level with it; the club points up and back over the head. Helmet 2.4 over the lamp |
+| Kick chambered | 57.08 | Not a riding pose: the leg is already out, bent. Knee at x 2.2, y −2.2; foot back by the tail at x 3.2, level with the lamp |
+| Kick out | 57.32 | Leg straight, nearly level, foot at x 4.2 and just above the lamp; the body leans off it, the lamp 0.45 out towards the kick |
+
+### Contact
+
+What a touch looks like when no one comes off, read at 25 fps:
+
+- **The struck bike is over on the next frame.** The kick lands at 57.24; at
+  57.28 the rival's bike is visibly tilted away, and it has left the frame by
+  57.44. A chain landing at 247.64 tilts 露西娅's bike away on the next frame,
+  and it is sliding by 247.76.
+- **The striker's bike rocks** for about four frames after a blow lands
+  (355.80–355.92).
+- **A rock or car taken square at speed throws the rider high**: in the air
+  1.25 s at 454.25–455.50, rising to the top of the frame, while the bike lies
+  in the road. A crate clipped at 212.92 put bike and rider down together
+  instead.
+- Nothing shakes or flashes the screen (section 4).
+
 ## 3. Player crashes
 
 | Start | Cause | Phases | Speed | Back to ~250 km/h |

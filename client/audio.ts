@@ -517,10 +517,14 @@ export function updateAudio(f: AudioFrame): void {
   e.windTone.frequency.setTargetAtTime(350 + 2400 * w, t, 0.15);
 }
 
-export function sfx(kind: "punch" | "kick" | "club" | "chain" | "hitTaken" | "crash" | "carCrash" | "snatch" | "busted" | "countdown" | "go" | "finish"): void {
+export type Sfx = "punch" | "kick" | "club" | "chain" | "hitTaken" | "crash" | "carCrash" | "snatch" | "busted" | "countdown" | "go" | "finish" | "bump" | "carBump" | "scrape";
+
+/** Play a sound effect; `gain` (0-1) for the touches, which come in sizes. */
+export function sfx(kind: Sfx, gain = 1): void {
   const g = A;
   if (!g) return;
   const t = g.ctx.currentTime + 0.005;
+  const v = Math.max(0, Math.min(1, gain));
   // hits in the original are dull thumps: ~50 ms long, nearly all below 250 Hz
   switch (kind) {
     case "punch":
@@ -563,6 +567,21 @@ export function sfx(kind: "punch" | "kick" | "club" | "chain" | "hitTaken" | "cr
       hiss(g, "highpass", 4000, 4000, 0.7, t, 0.5, 0.4);
       for (const p of [347, 529, 811]) blip(g, "triangle", p, p * 0.98, t, 0.7, 0.12);
       for (let i = 0; i < 6; i++) blip(g, "sine", 3000 + Math.random() * 4000, 2500, t + Math.random() * 0.4, 0.08 + Math.random() * 0.12, 0.08);
+      break;
+    case "bump": // fairing on fairing: a hollow knock and a short grind
+      blip(g, "sine", 190, 85, t, 0.11, 0.75 * v);
+      blip(g, "triangle", 640, 560, t, 0.07, 0.22 * v);
+      hiss(g, "bandpass", 2400, 1500, 2.5, t, 0.16, 0.4 * v);
+      break;
+    case "carBump": // a bike glancing off a car's flank: a deeper thump and sheet metal
+      blip(g, "sine", 120, 60, t, 0.16, 0.9 * v);
+      for (const p of [431, 673, 1009]) blip(g, "triangle", p, p * 0.97, t, 0.22, 0.09 * v);
+      hiss(g, "bandpass", 1800, 900, 2, t, 0.3, 0.45 * v);
+      break;
+    case "scrape": // along a wall or rail: the grind the recording holds for about a second
+      blip(g, "sine", 150, 70, t, 0.08, 0.5 * v);
+      hiss(g, "bandpass", 3200, 1600, 3, t, 0.5, 0.45 * v);
+      hiss(g, "highpass", 5000, 5000, 0.7, t, 0.35, 0.15 * v);
       break;
     case "snatch": // a whoosh up and a blip: something changed hands
       hiss(g, "bandpass", 500, 3500, 4, t, 0.22, 0.6);

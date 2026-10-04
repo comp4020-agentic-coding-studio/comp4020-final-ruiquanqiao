@@ -12,6 +12,7 @@ import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
 import { Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
 import { buildCar } from "./models.ts";
+import { type Reaction, wobble } from "./feel.ts";
 import { type Atlas, type Look, RiderSprite, buildAtlas, frameFor } from "./sprites.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
@@ -401,6 +402,11 @@ export class RaceScene {
   private landMat: THREE.MeshStandardMaterial;
   private camX = 0;
   private lastDraw = 0;
+  /** touches felt (K13): when, and how hard, by rider id and by car id */
+  private jolts = new Map<number, { at: number; amp: number }>();
+  private carJolts = new Map<number, { at: number; amp: number }>();
+  /** riders thrown off over a car or a wall, flying high and far, not sliding */
+  private launched = new Set<number>();
 
   constructor(canvasEl: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, preserveDrawingBuffer: true });
@@ -663,6 +669,22 @@ export class RaceScene {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Show how a race event is felt: bikes tilting, a car knocked, a rider launched. */
+  feel(r: Reaction): void {
+    const now = performance.now() / 1000;
+    for (const t of r.tilt) this.jolts.set(t.id, { at: now, amp: t.amp });
+    if (r.car) this.carJolts.set(r.car.id, { at: now, amp: r.car.amp });
+    if (r.launched !== null) this.launched.add(r.launched);
+  }
+
+  private wobbleOf(m: Map<number, { at: number; amp: number }>, id: number): number {
+    const j = m.get(id);
+    if (!j) return 0;
+    const age = performance.now() / 1000 - j.at;
+    if (age > 0.6) m.delete(id);
+    return wobble(age, j.amp);
+  }
+
   /** Draw a frame from behind rider `me`. */
   draw(riders: readonly Rider[], me: number, dashTop = 0.23, cars: readonly Car[] = []): void {
     const track = this.track;
@@ -721,7 +743,9 @@ export class RaceScene {
       if (!g.visible) continue;
       const f = frameAt(track, c.z, c.x);
       g.position.set(f.px, f.py, f.pz);
-      g.rotation.set(0, f.heading + (c.dir < 0 ? Math.PI : 0), 0);
+      // knocked by a bike, it slews and rocks for a moment
+      const j = this.wobbleOf(this.carJolts, c.id);
+      g.rotation.set(0, f.heading + (c.dir < 0 ? Math.PI : 0) + j, j * 0.5);
       if (c.kind === "police") {
         // the light bar alternates red and blue
         const bar = g.children.find((o) => o.position.y > 1.5 && o.children.length === 2);
@@ -780,17 +804,22 @@ export class RaceScene {
       m.scale.set(w, 1, l);
     };
     a.bike.mesh.visible = a.bikeShadow.visible = off;
+    if (!off) this.launched.delete(r.id);
+    const launched = this.launched.has(r.id);
     if (off) {
       // the bike down on its side where it fell, sliding on (V13)
       this.stand(track, a.bike, "bikeDown", r.bikeZ, r.bikeX, 0, 0);
       shadowAt(a.bikeShadow, r.bikeZ, r.bikeX, 1.4, 2.2);
     }
     if (r.phase === "thrown") {
-      // thrown clear, spread-eagled and turning over, then down on the road
-      const u = r.phaseT / (TUNE.thrownTime * 0.75);
+      // thrown clear, spread-eagled and turning over, then down on the road;
+      // off a car or a rock at speed, high and long: the recording's rider
+      // is in the air 1.25 s and rises to the top of the frame (454.25-455.50)
+      const air = launched ? 1 : 0.75;
+      const u = r.phaseT / (TUNE.thrownTime * air);
       if (u < 1) {
-        const frame = `tumble${Math.floor(r.phaseT * 9) % 3}`;
-        this.stand(track, a.rider, frame, r.z, r.x, -0.75 + Math.sin(u * Math.PI) * 1.3, 0);
+        const frame = `tumble${Math.floor(r.phaseT * (launched ? 12 : 9)) % 3}`;
+        this.stand(track, a.rider, frame, r.z, r.x, -0.75 + Math.sin(u * Math.PI) * (launched ? 3.4 : 1.3), 0);
       } else this.stand(track, a.rider, "lying", r.z, r.x, 0, 0);
       shadowAt(a.shadow, r.z, r.x, 1.0, 1.6);
       return;
@@ -804,7 +833,7 @@ export class RaceScene {
       shadowAt(a.shadow, r.z, r.x, 0.6, 0.6);
       return;
     }
-    this.stand(track, a.rider, frameFor(r), r.z, r.x, 0, r.lean);
+    this.stand(track, a.rider, frameFor(r), r.z, r.x, 0, r.lean + this.wobbleOf(this.jolts, r.id));
     shadowAt(a.shadow, r.z, r.x, 0.9, 2.3);
   }
 

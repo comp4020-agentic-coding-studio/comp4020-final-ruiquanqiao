@@ -68,33 +68,39 @@ const ride = (over: Partial<Pose> = {}): Pose => ({
   handL: GRIP_L,
   footR: PEG_R,
   footL: PEG_L,
-  elbowR: [-0.6, 1.0, -0.1],
-  elbowL: [0.6, 1.0, -0.1],
+  elbowR: [-0.4, 1.0, -0.1],
+  elbowL: [0.4, 1.0, -0.1],
   kneeR: KNEE_R,
   kneeL: KNEE_L,
   bike: true,
   ...over,
 });
 
-// The blows, each as the recording shows it at full extension. Right-hand
-// versions; the left ones are their mirror images (mirror()).
+// The blows, each as the recording shows it, measured off full-resolution
+// frames and held there by spec/sprites.test.ts ("every pose against the
+// recording"). Right-hand versions; the left ones are their mirror images
+// (mirror()). The rider rides hunched (helmet 2.1 helmet widths over the tail
+// lamp) but sits up to strike (2.85).
 const RIGHT: Record<string, Pose> = {
   ride: ride(),
   rideClub: ride({ weapon: { kind: "club", dir: [-0.3, -0.5, -0.8] } }),
   rideChain: ride({ weapon: { kind: "chain", dir: [-0.2, -0.9, -0.3] } }),
-  // the fist drawn back beside the helmet, elbow high and out (6 frames)
-  punchCock: ride({ pitch: 0.7, roll: 0.1, handR: [-0.3, 1.45, 0.1], elbowR: [-0.9, 1.45, -0.2] }),
+  // the fist drawn back beside the helmet, the elbow out below it (6 frames)
+  punchCock: ride({ pitch: 0.4, handR: [-0.42, 1.5, 0.05], elbowR: [-1.0, 1.1, -0.3] }),
   // then the whole arm straight out sideways at shoulder height (5 frames)
-  punchOut: ride({ pitch: 0.7, roll: -0.12, handR: [-0.95, 1.4, 0.05], elbowR: [-0.5, 1.8, -0.2] }),
+  punchOut: ride({ pitch: 0.4, roll: -0.1, handR: [-1.2, 1.42, 0.05], elbowR: [-0.5, 1.8, -0.2] }),
   // the backhand sweeps out and behind
-  backhand: ride({ pitch: 0.7, roll: -0.12, handR: [-0.85, 1.38, -0.5], elbowR: [-0.5, 1.8, -0.2] }),
-  // the leg straight out sideways at peg height, the body leaning off it
-  kick: ride({ roll: 0.18, footR: [-1.05, 0.78, -0.2], kneeR: [-0.6, 1.3, -0.25] }),
-  // a club held straight up over the helmet, then brought out and down
-  clubUp: ride({ pitch: 0.4, handR: [-0.22, 1.95, -0.12], elbowR: [-0.6, 1.6, -0.2], weapon: { kind: "club", dir: [-0.1, 1, -0.25] } }),
-  clubOut: ride({ pitch: 0.45, roll: -0.15, handR: [-0.85, 1.32, 0.1], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "club", dir: [-0.85, -0.45, 0.25] } }),
-  chainUp: ride({ pitch: 0.4, handR: [-0.3, 1.98, -0.1], elbowR: [-0.6, 1.6, -0.2], weapon: { kind: "chain", dir: [0.2, 0.6, -0.8] } }),
-  chainOut: ride({ pitch: 0.45, roll: -0.15, handR: [-0.85, 1.36, 0.05], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "chain", dir: [-1, -0.15, 0.2] } }),
+  backhand: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2] }),
+  // the kick chambered: knee out, foot drawn back by the tail (6 frames)
+  kickCock: ride({ pitch: 0.42, roll: -0.12, footR: [-0.95, 0.72, -0.45], kneeR: [-0.9, 1.3, 0.3] }),
+  // then the leg straight out sideways just over the tail: the hips slide
+  // across the seat towards it and the body leans off it (5 frames)
+  kick: ride({ pelvis: [-0.12, 0.96, -0.36], pitch: 0.38, roll: -0.2, footR: [-1.5, 0.84, -0.25], kneeR: [-0.6, 1.5, -0.25] }),
+  // a club held up beside the helmet, pointing up over it, then brought out
+  clubUp: ride({ pitch: 0.8, handR: [-0.42, 1.47, 0.0], elbowR: [-0.8, 1.9, -0.3], weapon: { kind: "club", dir: [0.35, 1, -0.2] } }),
+  clubOut: ride({ pitch: 0.4, roll: -0.1, handR: [-1.2, 1.42, 0.1], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "club", dir: [-0.85, -0.45, 0.25] } }),
+  chainUp: ride({ pitch: 0.8, handR: [-0.42, 1.47, 0.0], elbowR: [-0.8, 1.9, -0.3], weapon: { kind: "chain", dir: [0.3, 0.6, -0.8] } }),
+  chainOut: ride({ pitch: 0.4, roll: -0.1, handR: [-1.2, 1.42, 0.05], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "chain", dir: [-1, -0.15, 0.2] } }),
 };
 
 // off the bike: thrown spread-eagled and tumbling, lying, and the jog back
@@ -182,6 +188,12 @@ const ELEVATION = 0.17; // rad: the chase camera looks down on a rider at about 
 // ---- the puppet ----
 
 type Part = THREE.Mesh & { userData: { part: number } };
+
+// Upper and lower limb lengths, m. The recording's riders reach 3.4 helmet
+// widths with a fist and 4.2 with a boot; at 0.3 and 0.44 the puppet's limbs
+// fell well short of both, so the blows read as nudges.
+const ARM = 0.35;
+const LEG = 0.5;
 
 class Puppet {
   root = new THREE.Group(); // bike space
@@ -297,21 +309,21 @@ class Puppet {
       const shoulder = chest.clone().addScaledVector(across, sign * 0.22).addScaledVector(spine, -0.03);
       const hand = v(s === "R" ? p.handR : p.handL);
       const elbowPole = v((s === "R" ? p.elbowR : p.elbowL) ?? [sign * -0.6, 1, -0.1]);
-      const elbow = ik(shoulder, hand, 0.3, 0.3, elbowPole);
+      const elbow = ik(shoulder, hand, ARM, ARM, elbowPole);
       blob(P[`shoulder${s}`], shoulder, [0.085, 0.085, 0.085]);
       bone(P[`upper${s}`], shoulder, elbow, 0.058);
       blob(P[`elbow${s}`], elbow, [0.055, 0.055, 0.055]);
-      const handAt = elbow.clone().add(hand.clone().sub(elbow).normalize().multiplyScalar(0.3));
+      const handAt = elbow.clone().add(hand.clone().sub(elbow).normalize().multiplyScalar(ARM));
       bone(P[`fore${s}`], elbow, handAt, 0.05);
       blob(P[`glove${s}`], handAt, [0.06, 0.06, 0.06]);
       const hip = pelvis.clone().addScaledVector(across, sign * 0.11);
       const foot = v(s === "R" ? p.footR : p.footL);
       const kneePole = v((s === "R" ? p.kneeR : p.kneeL) ?? [sign * -0.4, 0.9, 0.4]);
-      const knee = ik(hip, foot, 0.44, 0.44, kneePole);
+      const knee = ik(hip, foot, LEG, LEG, kneePole);
       blob(P[`hip${s}`], hip, [0.09, 0.09, 0.09]);
       bone(P[`thigh${s}`], hip, knee, 0.078);
       blob(P[`knee${s}`], knee, [0.072, 0.072, 0.072]);
-      const footAt = knee.clone().add(foot.clone().sub(knee).normalize().multiplyScalar(0.44));
+      const footAt = knee.clone().add(foot.clone().sub(knee).normalize().multiplyScalar(LEG));
       bone(P[`shin${s}`], knee, footAt, 0.058);
       const boot = P[`boot${s}`];
       boot.position.copy(footAt).add(new THREE.Vector3(0, -0.02, 0.05));
@@ -342,6 +354,11 @@ class Puppet {
     // a bike down on its side, sliding (V13)
     this.bike.rotation.set(0, 0, bikeDown ? Math.PI / 2 - 0.15 : 0);
     this.bike.position.set(bikeDown ? 0.5 : 0, bikeDown ? 0.18 : 0, 0);
+  }
+
+  /** Where a part sits, in bike space. */
+  at(name: string): THREE.Vector3 {
+    return this.parts[name].position.clone();
   }
 
   /** Swap every material for flat part numbers, or back. */
@@ -375,6 +392,41 @@ function ik(a: THREE.Vector3, target: THREE.Vector3, l1: number, l2: number, pol
   toPole.addScaledVector(dir, -toPole.dot(dir));
   if (toPole.lengthSq() < 1e-6) toPole.set(0, 1, 0);
   return a.clone().addScaledVector(dir, along).addScaledVector(toPole.normalize(), h);
+}
+
+// ---- measuring a frame against the recording ----
+
+/** The bike's tail lamp, the one fixed point the recording always shows. */
+const TAIL_LAMP: V = [0, 0.88, -0.87];
+
+export type Measure = Record<"elbow" | "hand" | "knee" | "foot" | "tailLamp", [number, number]>;
+
+/**
+ * A right-handed frame as the chase camera sees it from straight behind: each
+ * joint of the striking side relative to the helmet's centre, in helmet
+ * widths, x out towards the blow and y up. The same numbers are read off the
+ * recording (docs/road-rash-feel.md, "Poses"), so spec/sprites.test.ts can
+ * hold every frame to them.
+ */
+export function measure(frame: string): Measure {
+  const pose = FRAMES.find(([n]) => n === frame)?.[1];
+  if (!pose) throw new Error(`no frame ${frame}`);
+  const puppet = new Puppet();
+  puppet.set(pose);
+  const width = 0.29;
+  const head = puppet.at("helmet");
+  // from behind and a little above: the rider's right (-x) is screen right
+  const flat = (p: THREE.Vector3): [number, number] => [
+    -(p.x - head.x) / width,
+    ((p.y - head.y) * Math.cos(ELEVATION) + (p.z - head.z) * Math.sin(ELEVATION)) / width,
+  ];
+  return {
+    elbow: flat(puppet.at("elbowR")),
+    hand: flat(puppet.at("gloveR")),
+    knee: flat(puppet.at("kneeR")),
+    foot: flat(puppet.at("bootR")),
+    tailLamp: flat(new THREE.Vector3(...TAIL_LAMP)),
+  };
 }
 
 // ---- the atlas ----
@@ -492,12 +544,37 @@ void main() {
   gl_FragColor = vec4(c.rgb * t * shade, 1.0);
 }`;
 
+export type Tile = { col: number; flip: boolean };
+
+/** Degrees past the halfway point before a sprite changes direction. */
+const HOLD = 4;
+
+/**
+ * Which of the drawn directions to show for `view` radians round from behind,
+ * and whether mirrored for a view from the left. Each sprite keeps what it
+ * showed last until the view is clearly past the halfway point to the next
+ * one: picked afresh every frame, a bike straight ahead swapped between its
+ * mirror images, and a bike at a direction halfway between two drawn ones
+ * swapped tiles, with every few centimetres of sideways wobble - a flicker
+ * when overtaking (spec/sprites.test.ts counts the swaps).
+ */
+export function tileFor(view: number, last: Tile): Tile {
+  const hold = (HOLD * Math.PI) / 180;
+  const flip = last.flip ? view < hold : view < -hold;
+  const deg = (Math.abs(view) * 180) / Math.PI;
+  let best = 0;
+  for (let i = 1; i < YAWS.length; i++) if (Math.abs(YAWS[i] - deg) < Math.abs(YAWS[best] - deg)) best = i;
+  const col = Math.abs(YAWS[best] - deg) + HOLD < Math.abs(YAWS[last.col] - deg) ? best : last.col;
+  return { col, flip };
+}
+
 /** A billboard showing one rider's frames in their own colours. */
 export class RiderSprite {
   readonly mesh: THREE.Mesh;
   private u: { tile: { value: THREE.Vector4 }; flip: { value: number }; shade: { value: number } };
 
   private atlas: Atlas;
+  private tile: Tile = { col: 0, flip: false };
 
   constructor(atlas: Atlas, look: Look) {
     this.atlas = atlas;
@@ -527,24 +604,16 @@ export class RiderSprite {
    */
   show(name: string, view: number): void {
     const a = this.atlas;
-    let yaw = view;
-    let frame = name;
-    let flip = 0;
-    if (yaw < 0) {
-      // seen from the left: the right-hand view, mirrored, of the other side's move
-      yaw = -yaw;
-      flip = 1;
-      frame = name.endsWith(".R") ? name.slice(0, -2) + ".L" : name.endsWith(".L") ? name.slice(0, -2) + ".R" : name;
-    }
-    const deg = (yaw * 180) / Math.PI;
-    let col = 0;
-    for (let i = 1; i < YAWS.length; i++) if (Math.abs(YAWS[i] - deg) < Math.abs(YAWS[col] - deg)) col = i;
+    this.tile = tileFor(view, this.tile);
+    const { col, flip } = this.tile;
+    // seen from the left: the right-hand view, mirrored, of the other side's move
+    const frame = !flip ? name : name.endsWith(".R") ? name.slice(0, -2) + ".L" : name.endsWith(".L") ? name.slice(0, -2) + ".R" : name;
     const row = a.frames.get(frame) ?? 0;
     const cols = YAWS.length;
     const rows = a.frames.size;
     // DataTexture rows run bottom-up, the same as readRenderTargetPixels
     this.u.tile.value.set(col / cols, row / rows, 1 / cols, 1 / rows);
-    this.u.flip.value = flip;
+    this.u.flip.value = flip ? 1 : 0;
   }
 }
 
@@ -559,7 +628,7 @@ export function frameFor(r: Rider): string {
   const side = a.side > 0 ? "R" : "L";
   const windup = windupOf(r, a);
   const out = a.t >= windup;
-  if (a.kind === "kick") return a.t >= windup * 0.4 ? `kick.${side}` : `ride.${side}`;
+  if (a.kind === "kick") return `${out ? "kick" : "kickCock"}.${side}`;
   if (a.kind === "backhand") return a.t >= windup * 0.4 ? `backhand.${side}` : `punchCock.${side}`;
   if (r.weapon === "club") return `${out ? "clubOut" : "clubUp"}.${side}`;
   if (r.weapon === "chain") return `${out ? "chainOut" : "chainUp"}.${side}`;

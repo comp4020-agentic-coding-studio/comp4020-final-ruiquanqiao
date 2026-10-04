@@ -177,6 +177,8 @@ export type Rider = {
   attack: Attack | null;
   cooldown: number;
   sinceHit: number;
+  /** race time of the last bump reported for this rider, so a long rub is not a drum roll */
+  bumpedAt: number;
   prevHand: boolean;
   prevFoot: boolean;
   prevNitro: boolean;
@@ -196,7 +198,9 @@ export type RaceEvent =
   | { t: number; kind: "busted"; rider: number; cop: number }
   | { t: number; kind: "snatch"; by: number; from: number; weapon: Weapon }
   | { t: number; kind: "wrecked"; rider: number }
-  | { t: number; kind: "finished"; rider: number; place: number };
+  | { t: number; kind: "finished"; rider: number; place: number }
+  /** bikes touching without anyone coming off: a rub, a shunt, a car or wall glanced (K13) */
+  | { t: number; kind: "bump"; rider: number; other: number; with: "rider" | "car" | "wall"; hard: number; from: number };
 
 /** Traffic (T4): same-direction cars in the right lanes, oncoming in the left. */
 export type Car = {
@@ -279,6 +283,7 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       attack: null,
       cooldown: 0,
       sinceHit: 99,
+      bumpedAt: -99,
       prevHand: false,
       prevFoot: false,
       prevNitro: false,
@@ -483,6 +488,7 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
       return;
     }
     r.speed *= 1 - TUNE.wallScrape * dt;
+    if (lateral * side > 0.5) bump(race, r, -1, "wall", (lateral * side) / TUNE.wallCrash, side * wall);
     if (r.vx * side > 0) r.vx = 0;
     if (r.shove * side > 0) r.shove = 0;
   }
@@ -523,6 +529,16 @@ function crash(r: Rider, cause: CrashCause, race: Race | null): void {
     return;
   }
   setPhase(r, "thrown");
+}
+
+/**
+ * Report a touch that put no one down, so it can be heard and seen (K13).
+ * `hard` runs 0 to 1. A rub held for seconds reports about four times a second.
+ */
+function bump(race: Race | null, r: Rider, other: number, kind: "rider" | "car" | "wall", hard: number, from: number): void {
+  if (!race || race.t - r.bumpedAt < 0.25) return;
+  r.bumpedAt = race.t;
+  race.events.push({ t: race.t, kind: "bump", rider: r.id, other, with: kind, hard: Math.round(Math.min(1, Math.max(0.1, hard)) * 100) / 100, from: Math.round(from * 100) / 100 });
 }
 
 // ---- the whole race ----
@@ -662,7 +678,10 @@ export function separate(a: Rider, b: Rider, share = 0.5): "side" | "rear" | nul
   const oz = BIKE.length - Math.abs(dz);
   const ox = BIKE.width - Math.abs(dx);
   if (oz <= 0 || ox <= 0) return null;
-  if (ox < oz) {
+  // whichever overlap is smaller for the bike's size: compared in metres, a
+  // bike 2.1 m long and 0.8 wide counted almost every shunt from behind as a
+  // rub and threw the bike in front 0.8 m sideways in one step
+  if (ox / BIKE.width < oz / BIKE.length) {
     const s = dx >= 0 ? 1 : -1;
     a.x -= s * ox * share;
     b.x += s * ox * (1 - share);
@@ -698,6 +717,7 @@ function contactPass(race: Race, riding: Rider[], transfer: boolean): void {
         const diff = back.speed - front.speed;
         front.speed += Math.min(7 * MPH, diff * 0.5);
         back.speed = front.speed;
+        if (diff > 1) bump(race, front, back.id, "rider", diff / 10, back.x);
       }
     }
   }
@@ -731,6 +751,7 @@ function rub(race: Race, a: Rider, b: Rider, closing: number): void {
   }
   struck.shove = away * Math.max(Math.abs(struck.shove), TUNE.rubShove * Math.min(1, Math.abs(closing) / TUNE.rubKnock));
   mover.vx *= 0.5;
+  bump(race, struck, mover.id, "rider", Math.abs(closing) / TUNE.rubKnock, mover.x);
 }
 
 /** What a cop does: wait on the shoulder, then ride down a human (P2). */
@@ -804,6 +825,7 @@ function hitCars(race: Race, r: Rider): void {
       r.x -= Math.sign(dx || 1) * ox;
       r.shove = -Math.sign(dx || 1) * 3;
       r.speed = Math.max(0, r.speed * 0.9);
+      bump(race, r, c.id, "car", 0.4 + Math.abs(closing) / TUNE.carCrash / 2, c.x);
       continue;
     }
     r.z = c.z - Math.sign(dz || 1) * ((CAR.length + BIKE.length) / 2);

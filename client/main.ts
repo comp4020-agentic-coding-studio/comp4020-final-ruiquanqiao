@@ -6,8 +6,10 @@
 import { type CarState, type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
 import { setMusic, sfx, startAudio, updateAudio } from "./audio.ts";
+import { react } from "./feel.ts";
 import { RaceScene } from "./scene.ts";
 import { DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, nearest, separate, packInput, positionOf, ride, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
+import { Prediction, Timeline } from "./netview.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -35,26 +37,25 @@ function connect(): void {
 
 // ---- a race as this tab sees it ----
 
-type Snapshot = { at: number; time: number; riders: RiderState[]; cars: CarState[] };
-
 type Current = {
   id: number;
   level: number;
   race: Race;
   you: number | null; // local rider id, or null when watching
-  snaps: Snapshot[];
-  history: Map<number, { z: number; x: number }>; // predicted pose by step
+  timeline: Timeline; // everyone the server owns
+  prediction: Prediction; // one's own rider
   steps: number;
-  offset: number | null; // server time minus local time, seconds
   ended: boolean;
 };
 
 let current: Current | null = null;
+/** when this tab last felt its own predicted bike touch another */
+let localBump = -9;
 
 function begin(msg: Extract<ToClient, { t: "start" }>): void {
   const track = makeTrack(msg.level, msg.track ?? 0);
   const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed);
-  current = { id: msg.race, level: msg.level, race, you: msg.you, snaps: [], history: new Map(), steps: 0, offset: null, ended: false };
+  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false };
   if (msg.you !== null) {
     show("race");
     roadScene.setTrack(track);
@@ -74,33 +75,33 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
   const c = current;
   if (!c || c.id !== msg.race) return;
   const now = performance.now() / 1000;
-  c.snaps.push({ at: now, time: msg.time, riders: msg.riders, cars: msg.cars });
-  if (c.snaps.length > 30) c.snaps.shift();
-  const localTime = c.steps * DT;
-  const offset = msg.time - localTime;
-  c.offset = c.offset === null ? offset : Math.min(c.offset + 0.002, offset); // track the least-delayed
+  c.timeline.push(now, { time: msg.time, riders: msg.riders, cars: msg.cars });
+  // every touch is seen and heard (K13): tilts, a knocked car, a rider launched
+  for (const e of msg.events) {
+    // a rub of one's own was already felt as it was predicted
+    if (e.kind === "bump" && e.with === "rider" && (e.rider === c.you || e.other === c.you) && now - localBump < 0.5) continue;
+    const felt = react(e, c.race.riders, c.you);
+    (c.you === null ? watchScene : roadScene).feel(felt);
+    if (felt.sound && c.you !== null) sfx(felt.sound.kind, felt.sound.gain);
+  }
 
   if (c.you === null) return;
   const mine = msg.riders.find((s) => s[0] === c.you);
   const r = c.race.riders.find((x) => x.id === c.you);
   if (!mine || !r) return;
   const before = r.phase;
-  const predicted = c.history.get(Math.round(msg.time / DT));
-  if (mine[8] !== "riding" || before !== "riding" || !predicted) {
+  const eased = mine[8] === "riding" && before === "riding" && c.prediction.heard(c.steps, msg.time, mine[1], mine[2]);
+  if (!eased) {
     // off the bike, back on it, or no prediction to compare: the server's word,
     // except a swing begun here that the server has not heard of yet - taking
     // its word for that wiped the player's own punch within 80 ms
     const swing = r.attack;
     applyRider(r, mine);
+    c.prediction.reset();
     if (!r.attack && swing && mine[8] === "riding" && swing.t < windupOf(r, swing) + 0.2) r.attack = swing;
   } else {
-    // steer the prediction towards the server by the error it had then
-    const ez = mine[1] - predicted.z;
-    const ex = mine[2] - predicted.x;
-    if (Math.abs(ez) > 6 || Math.abs(ex) > 3) applyRider(r, mine);
-    else {
-      r.z += ez * 0.3;
-      r.x += ex * 0.3;
+    // the error it had then is eased out over the next steps (Prediction)
+    {
       r.speed = mine[3];
       r.build = mine[5];
       r.stamina = mine[6];
@@ -384,43 +385,25 @@ function resize(): void {
 }
 addEventListener("resize", resize);
 
-const RENDER_DELAY = 0.1; // others are drawn this far in the past
-
-/** Everyone but the predicted rider, placed between the two snapshots around the render time. */
+/** Everyone but the predicted rider, where the snapshots say they are now (client/netview.ts). */
 function interpolate(c: Current, now: number): void {
-  if (c.snaps.length === 0) return;
-  const t = now - RENDER_DELAY;
-  let a = c.snaps[0];
-  let b = c.snaps[c.snaps.length - 1];
-  for (let i = c.snaps.length - 1; i > 0; i--) {
-    if (c.snaps[i - 1].at <= t) {
-      a = c.snaps[i - 1];
-      b = c.snaps[i];
-      break;
-    }
-  }
-  const span = b.at - a.at;
-  const f = span > 0 ? Math.min(1, Math.max(0, (t - a.at) / span)) : 1;
-  // a car the server stopped sending is nowhere near anyone: hide it
-  for (const car of c.race.cars) if (!b.cars.some((x) => x[0] === car.id)) car.z = -1e6;
-  for (const cb of b.cars) {
-    const ca = a.cars.find((x) => x[0] === cb[0]);
-    const car = c.race.cars.find((x) => x.id === cb[0]);
-    if (!car) continue;
-    // a car that wrapped round the road between snapshots jumps, not slides
-    const near = ca && Math.abs(cb[1] - ca[1]) < 50;
-    car.z = near ? ca[1] + (cb[1] - ca[1]) * f : cb[1];
-    car.x = near ? ca[2] + (cb[2] - ca[2]) * f : cb[2];
+  const tl = c.timeline;
+  if (tl.snaps.length === 0) return;
+  const t = tl.now(now);
+  for (const car of c.race.cars) {
+    const p = tl.car(car.id, t);
+    // a car the server stopped sending is nowhere near anyone: hide it
+    car.z = p ? p.z : -1e6;
+    if (p) car.x = p.x;
   }
   for (const r of c.race.riders) {
     if (r.id === c.you) continue;
-    const sa = a.riders.find((s) => s[0] === r.id);
-    const sb = b.riders.find((s) => s[0] === r.id);
-    if (!sa || !sb) continue;
-    applyRider(r, sb);
-    r.z = sa[1] + (sb[1] - sa[1]) * f;
-    r.x = sa[2] + (sb[2] - sa[2]) * f;
-    r.lean = sa[4] + (sb[4] - sa[4]) * f;
+    const p = tl.rider(r.id, t);
+    if (!p) continue;
+    applyRider(r, p.s);
+    r.z = p.z;
+    r.x = p.x;
+    r.lean = p.lean;
   }
 }
 
@@ -443,16 +426,26 @@ function frame(): void {
         const r = c.race.riders.find((x) => x.id === c.you);
         if (r) {
           ride(r, keys, c.race.track);
+          const fix = c.prediction.ease();
+          r.z += fix.z;
+          r.x += fix.x;
           if (r.boost > TUNE.nitroTime - DT * 1.5) flash("#fff0b0");
           // the predicted bike stops at other bikes too, instead of passing
           // through them until the server's correction arrives
-          if (r.phase === "riding") for (const o of c.race.riders) if (o !== r && o.phase === "riding") separate(r, o, 1);
+          if (r.phase === "riding")
+            for (const o of c.race.riders) {
+              if (o === r || o.phase !== "riding" || !separate(r, o, 1) || now - localBump < 0.25) continue;
+              // and the touch is felt at once, not a round trip later (K13)
+              localBump = now;
+              const felt = react({ t: c.race.t, kind: "bump", rider: r.id, other: o.id, with: "rider", hard: Math.min(1, Math.abs(r.vx) / TUNE.rubKnock), from: o.x }, c.race.riders, c.you);
+              roadScene.feel(felt);
+              if (felt.sound) sfx(felt.sound.kind, felt.sound.gain);
+            }
           if (r.attack) {
             r.attack.t += DT;
             if (r.attack.t >= windupOf(r, r.attack) + 0.2) r.attack = null;
           }
-          c.history.set(c.steps + Math.round((c.offset ?? 0) / DT), { z: r.z, x: r.x });
-          c.history.delete(c.steps + Math.round((c.offset ?? 0) / DT) - 240);
+          c.prediction.record(c.steps, r.z, r.x);
         }
       }
     }

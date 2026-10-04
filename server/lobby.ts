@@ -250,12 +250,14 @@ export class Lobby {
     step(live.race, inputs);
     live.steps++;
 
-    for (let i = live.sent; i < live.race.events.length; i++) {
-      const e = live.race.events[i];
-      this.log({ ev: e.kind, race: live.id, ...e });
-    }
-
     if (live.steps % (60 / SNAPSHOT_HZ) === 0) {
+      // logged once each, as they go out (this ran every step, from the last
+      // snapshot's mark, and logged most events three times); bumps are too
+      // many and too small to be worth a line
+      for (let i = live.sent; i < live.race.events.length; i++) {
+        const e = live.race.events[i];
+        if (e.kind !== "bump") this.log({ ev: e.kind, race: live.id, ...e });
+      }
       const events = live.race.events.slice(live.sent);
       live.sent = live.race.events.length;
       const riders = live.race.riders.map(encodeRider);
