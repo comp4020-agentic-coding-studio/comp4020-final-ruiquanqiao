@@ -3,44 +3,63 @@
 // client runs the same code to predict its own rider, and spec/ runs it with
 // scripted keys. Ledger row IDs are given where a rule answers one.
 
-import { ROAD_HALF, SHOULDER, type Track, curveAt } from "./track.ts";
+import { OPEN, ROAD_HALF, SHOULDER, type Track, curveAt, wallAt } from "./track.ts";
 
 export const DT = 1 / 60; // one fixed step, whatever the display does
 export const MPH = 0.44704; // m/s
+export const KMH = 1 / 3.6; // m/s
 
-// ---- bikes (ledger S3: one preset bike per level, the originals' numbers) ----
+// ---- bikes (ledger S3, R5: one preset bike per level) ----
 
-export type Bike = { name: string; hp: number; lbs: number; topMph: number };
+// Top speeds are read off the PC game's own dial, not the manual's spec
+// sheet: a recorded race (docs/road-rash-feel.md) cruises at 280-290 km/h
+// and only nitro carries it past 300. The manual's 109-158 mph left level 1
+// running at 92 mph.
+export type Bike = { name: string; hp: number; lbs: number; topKmh: number };
 
 export const BIKES: readonly Bike[] = [
-  { name: "Wasp 400", hp: 45, lbs: 310, topMph: 109 },
-  { name: "Hornet 450", hp: 60, lbs: 340, topMph: 114 },
-  { name: "Ronin 750", hp: 100, lbs: 510, topMph: 132 },
-  { name: "Kestrel 600", hp: 100, lbs: 430, topMph: 141 },
-  { name: "Bravo 900", hp: 140, lbs: 490, topMph: 158 },
+  { name: "Wasp 400", hp: 45, lbs: 310, topKmh: 275 },
+  { name: "Hornet 450", hp: 60, lbs: 340, topKmh: 285 },
+  { name: "Ronin 750", hp: 100, lbs: 510, topKmh: 295 },
+  { name: "Kestrel 600", hp: 100, lbs: 430, topKmh: 305 },
+  { name: "Bravo 900", hp: 140, lbs: 490, topKmh: 315 },
 ];
 
 // ---- tuning (every number here is ridden before it changes; see CLAUDE.md) ----
 
 export const TUNE = {
   /** fraction of top speed reachable before any build-up (R17) */
-  baseCap: 0.84,
-  /** seconds of clean riding at speed to build from nothing to full */
-  buildTime: 14,
+  baseCap: 0.88,
+  /** seconds of clean riding at speed to build from nothing to full: the
+   * original creeps from 250 to 285 km/h over about ten */
+  buildTime: 10,
+  /** full-throttle pull well below the cap, m/s²: 0 to 250 km/h in about
+   * 5.5 s on the original's dial */
+  accel: 15.5,
+  /** nitro (R8): charges a race, seconds a burst lasts, the speed it adds to
+   * the cap and how hard it pulls. A burst took the original from 44 to 226
+   * km/h in 2 s, and from cruise to 316-320 */
+  nitroCharges: 10,
+  nitroTime: 3.5,
+  nitroCap: 35 * KMH,
+  nitroAccel: 24,
   /** build-up is earned only above this fraction of top speed */
   buildFloor: 0.7,
   /** build lost to a hit */
   buildHitLoss: 0.35,
   brake: 14, // m/s²
   coast: 1.2, // m/s² with no throttle
-  offRoadSpeed: 22, // m/s the bike bogs down to on grass
-  offRoadDrag: 9, // m/s² towards that speed
+  /** the dirt shoulder is ridden at about 190 km/h in the original; grass
+   * beyond it is slower */
+  shoulderSpeed: 190 * KMH,
+  offRoadSpeed: 30, // m/s the bike bogs down to on grass
+  offRoadDrag: 14, // m/s² towards either
   /** lateral speed at a standstill and at full speed, m/s */
   steerSlow: 2.5,
   steerFast: 8.5,
   steerResponse: 9, // 1/s, how fast lateral speed follows the bars
   /** how hard a bend pushes the bike outwards: m/s per (v²·κ) */
-  centrifugal: 0.5,
+  centrifugal: 0.2,
   /** lean (R3): builds only when steering hard at this fraction of the cap */
   leanFrom: 0.92,
   leanRise: 2.0, // per second of hard steer at speed
@@ -50,8 +69,9 @@ export const TUNE = {
   leanLimit: 0.6,
   punchReach: { z: 1.8, x: 1.6 },
   kickReach: { z: 1.5, x: 1.7 },
-  windup: 0.14, // s from key to contact
-  punchCooldown: 0.45,
+  // a blow is 6 frames drawn back and 5 out, at 25 fps, in the original
+  windup: 0.22, // s from key to contact
+  punchCooldown: 0.44,
   kickCooldown: 0.6,
   punchStamina: 17,
   kickStamina: 7,
@@ -62,7 +82,11 @@ export const TUNE = {
   runSpeed: 6.5, // m/s back to the bike
   // a knockdown by another rider costs the bike nothing (K6); running into
   // the back of traffic is "almost as damaging as a head-on collision" (K7)
-  crashDamage: { tree: 34, lowside: 16, knockdown: 0, rub: 0, rearEnd: 30, headOn: 40 },
+  crashDamage: { tree: 34, wall: 28, lowside: 16, knockdown: 0, rub: 0, rearEnd: 30, headOn: 40 },
+  /** sideways speed into a cliff, wall or rail that crashes rather than
+   * scrapes along it, m/s; and how much speed a scrape costs, per second */
+  wallCrash: 6,
+  wallScrape: 0.8,
   /** sideways closing speed at which a rub puts the other rider down (K2) */
   rubKnock: 6.5,
   /** sideways shove from a rub that does not (K1), m/s */
@@ -78,7 +102,7 @@ export const TUNE = {
   reach: { club: { z: 2.0, x: 2.1 }, chain: { z: 2.2, x: 2.6 } },
   weaponStamina: { club: 26, chain: 22 },
   /** the draw-back before a weapon lands: the moment it can be snatched (C6) */
-  weaponWindup: 0.45,
+  weaponWindup: 0.36,
   weaponCooldown: 0.9,
   /** share of AI riders who start a race armed (C5) */
   armedShare: 0.25,
@@ -95,12 +119,13 @@ export type Input = {
   right: boolean;
   hand: boolean;
   foot: boolean;
+  nitro: boolean;
 };
 
-export const NO_INPUT: Input = { throttle: false, brake: false, left: false, right: false, hand: false, foot: false };
+export const NO_INPUT: Input = { throttle: false, brake: false, left: false, right: false, hand: false, foot: false, nitro: false };
 
 export const packInput = (i: Input): number =>
-  (+i.throttle) | (+i.brake << 1) | (+i.left << 2) | (+i.right << 3) | (+i.hand << 4) | (+i.foot << 5);
+  (+i.throttle) | (+i.brake << 1) | (+i.left << 2) | (+i.right << 3) | (+i.hand << 4) | (+i.foot << 5) | (+i.nitro << 6);
 
 export const unpackInput = (n: number): Input => ({
   throttle: !!(n & 1),
@@ -109,11 +134,12 @@ export const unpackInput = (n: number): Input => ({
   right: !!(n & 8),
   hand: !!(n & 16),
   foot: !!(n & 32),
+  nitro: !!(n & 64),
 });
 
 export type Phase = "riding" | "thrown" | "running" | "finished" | "wrecked" | "busted";
 
-export type CrashCause = "tree" | "lowside" | "knockdown" | "rub" | "rearEnd" | "headOn";
+export type CrashCause = "tree" | "wall" | "lowside" | "knockdown" | "rub" | "rearEnd" | "headOn";
 
 export type AttackKind = "punch" | "backhand" | "kick";
 
@@ -153,6 +179,9 @@ export type Rider = {
   sinceHit: number;
   prevHand: boolean;
   prevFoot: boolean;
+  prevNitro: boolean;
+  nitro: number; // charges left (R8)
+  boost: number; // seconds of the current burst left
   finishT: number; // race time at the line, or -1
   place: number; // 1-based, or 0 while racing
   // AI only
@@ -194,12 +223,14 @@ export type Race = {
   finishers: number;
 };
 
-export const topSpeed = (r: Rider): number => r.bike.topMph * MPH * (1 + (180 - r.lbs) / 3000);
+export const topSpeed = (r: Rider): number => r.bike.topKmh * KMH * (1 + (180 - r.lbs) / 3000);
 
-/** the speed a rider can reach right now: build-up raises the cap (R17) */
-export const cap = (r: Rider): number => topSpeed(r) * (TUNE.baseCap + (1 - TUNE.baseCap) * r.build);
+/** the speed a rider can reach right now: build-up raises the cap (R17), a
+ * nitro burst lifts it past the bike's top (R8) */
+export const cap = (r: Rider): number => topSpeed(r) * (TUNE.baseCap + (1 - TUNE.baseCap) * r.build) + (r.boost > 0 ? TUNE.nitroCap : 0);
 
-const accelOf = (r: Rider): number => Math.min(12, Math.max(4, (58 * r.bike.hp) / (r.bike.lbs + r.lbs)));
+// the level 3 bike pulls TUNE.accel; a better power-to-weight a little more
+const accelOf = (r: Rider): number => TUNE.accel * Math.min(1.12, Math.max(0.88, (r.bike.hp / (r.bike.lbs + r.lbs)) / (100 / 690)));
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
@@ -250,6 +281,9 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       sinceHit: 99,
       prevHand: false,
       prevFoot: false,
+      prevNitro: false,
+      nitro: TUNE.nitroCharges,
+      boost: 0,
       finishT: -1,
       place: 0,
       line: col * 2.8,
@@ -307,7 +341,8 @@ function placeTraffic(race: Race, level: number): void {
   const kinds: Car["kind"][] = ["sedan", "sedan", "taxi", "pickup", "sedan", "police"];
   let id = 0;
   // more traffic at each level (S6)
-  const gap = 260 - level * 25;
+  // the original's traffic is sparse: a car every 30-60 s at cruise
+  const gap = 1100 - level * 120;
   for (let z = 300; z < race.track.length; z += gap * (0.6 + random(race) * 0.8)) {
     const dir: 1 | -1 = random(race) < 0.5 ? 1 : -1;
     const lanes = dir > 0 ? LANES.with : LANES.against;
@@ -328,7 +363,7 @@ function placeTraffic(race: Race, level: number): void {
 // ---- one rider's own physics (also what the client predicts) ----
 
 /** Advance one rider by one step, ignoring every other rider. */
-export function ride(r: Rider, input: Input, track: Track, dt = DT): void {
+export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race | null = null): void {
   r.phaseT += dt;
   r.cooldown = Math.max(0, r.cooldown - dt);
   r.sinceHit += dt;
@@ -347,10 +382,12 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT): void {
 
   if (r.phase === "thrown") {
     // the rider tumbles on ahead
-    r.speed = Math.max(0, r.speed - 18 * dt);
+    // 280 km/h down to 20 in under a second, as measured off the original
+    r.speed = Math.max(0, r.speed - (10 + 3 * r.speed) * dt);
     r.z += r.speed * dt;
     r.x += r.vx * dt;
     r.vx *= Math.exp(-3 * dt);
+    r.x = Math.min(wallAt(track, r.z, 1) - 0.6, Math.max(-wallAt(track, r.z, -1) + 0.6, r.x));
     if (r.phaseT >= TUNE.thrownTime) setPhase(r, "running");
     return;
   }
@@ -378,20 +415,31 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT): void {
     return;
   }
 
-  // riding
+  // riding. Nitro (R8): one burst per press, while charges last
+  if (input.nitro && !r.prevNitro && r.nitro > 0 && r.boost <= 0 && r.speed > 3) {
+    r.nitro--;
+    r.boost = TUNE.nitroTime;
+  }
+  r.prevNitro = input.nitro;
+  r.boost = Math.max(0, r.boost - dt);
   const top = topSpeed(r);
   const limit = cap(r);
   const offRoad = Math.abs(r.x) > ROAD_HALF;
 
-  if (input.brake) r.speed -= TUNE.brake * dt;
-  else if (input.throttle) {
-    const f = r.speed / limit;
-    r.speed += accelOf(r) * Math.max(0, 1 - f * f) * dt;
+  const ground = Math.abs(r.x) > SHOULDER ? TUNE.offRoadSpeed : offRoad ? TUNE.shoulderSpeed : Infinity;
+  if (input.brake) {
+    r.speed -= TUNE.brake * dt;
+    r.boost = 0;
+  } else if (input.throttle || r.boost > 0) {
+    // off the asphalt the throttle pulls only up to what the ground allows
+    const f = Math.min(1, r.speed / Math.min(limit, ground));
+    // a full pull until close to the cap, then a short taper: the original's
+    // needle sweeps up steadily and settles, it does not crawl the last part
+    const a = r.boost > 0 ? TUNE.nitroAccel : accelOf(r);
+    r.speed += a * (1 - f ** 6) * dt;
     if (r.speed > limit) r.speed = Math.max(limit, r.speed - 3 * dt);
   } else r.speed -= (TUNE.coast + 0.0004 * r.speed * r.speed) * dt;
-  if (offRoad && r.speed > TUNE.offRoadSpeed) {
-    r.speed = Math.max(TUNE.offRoadSpeed, r.speed - TUNE.offRoadDrag * dt);
-  }
+  if (r.speed > ground) r.speed = Math.max(ground, r.speed - TUNE.offRoadDrag * dt);
   r.speed = Math.max(0, r.speed);
 
   // build-up (R17): earned above the floor, lost to a stop
@@ -416,13 +464,30 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT): void {
   r.vx += (target - r.vx) * Math.min(1, TUNE.steerResponse * dt);
   r.shove *= Math.exp(-4 * dt);
   const outward = TUNE.centrifugal * r.speed * r.speed * curveAt(track, r.z);
-  r.x += (r.vx + r.shove - outward) * dt;
+  const lateral = r.vx + r.shove - outward;
+  r.x += lateral * dt;
   r.x = clamp(r.x, -30, 30);
   r.z += r.speed * dt;
   r.bikeZ = r.z;
   r.bikeX = r.x;
 
-  if (r.leanHeld > TUNE.leanLimit) crash(r, "lowside", null);
+  // cliffs, canyon walls, shopfronts and the sea rail are solid: ridden
+  // into square they crash you, glanced along they scrape you slower
+  for (const side of [-1, 1] as const) {
+    const wall = wallAt(track, r.z, side);
+    if (wall >= OPEN || r.x * side < wall - BIKE.width / 2) continue;
+    r.x = side * (wall - BIKE.width / 2);
+    if (lateral * side > TUNE.wallCrash && r.speed > 15) {
+      crash(r, "wall", race);
+      r.bikeX = r.x - side * 0.8;
+      return;
+    }
+    r.speed *= 1 - TUNE.wallScrape * dt;
+    if (r.vx * side > 0) r.vx = 0;
+    if (r.shove * side > 0) r.shove = 0;
+  }
+
+  if (r.leanHeld > TUNE.leanLimit) crash(r, "lowside", race);
 }
 
 /** A coasting riderless bike slows gently; a sliding dropped one quickly. */
@@ -442,7 +507,9 @@ function crash(r: Rider, cause: CrashCause, race: Race | null): void {
   r.bikeZ = r.z;
   r.bikeX = r.x;
   const byRider = cause === "knockdown" || cause === "rub";
-  r.bikeSpeed = byRider ? r.speed * 0.9 : Math.min(r.speed * 0.2, 6);
+  // a riderless bike coasts on (K5), but not a quarter of a mile at 300 km/h
+  r.bikeSpeed = byRider ? Math.min(r.speed * 0.9, 25) : Math.min(r.speed * 0.2, 6);
+  r.boost = 0;
   r.vx = r.vx * 0.5 + Math.sign(r.x || 1) * 1.5;
   r.lean = 0;
   r.leanHeld = 0;
@@ -567,7 +634,7 @@ function scenery(race: Race, r: Rider): void {
   for (const s of race.track.scenery) {
     if (s.z < r.z - 2) continue;
     if (s.z > r.z + 2) break;
-    const width = s.kind === "tree" ? 1.3 : 0.6;
+    const width = s.kind === "tree" ? 1.3 : s.kind === "rock" ? 1.2 : s.kind === "bush" ? 1.0 : 0.6;
     if (Math.abs(s.x - r.x) < width) {
       r.speed *= 0.3;
       crash(r, "tree", race);
@@ -795,6 +862,24 @@ export function aiInput(race: Race, r: Rider): Input {
   const want = (line ?? r.x) - r.x + TUNE.centrifugal * r.speed * r.speed * curve * 0.25;
   if (want > 0.4) input.right = true;
   else if (want < -0.4) input.left = true;
+  // look before changing line: a rider alongside on that side is waited
+  // for, not ridden into. At 280 km/h the bars move a bike sideways faster
+  // than a rub can be survived, and an AI that steered blind put its own
+  // pack down 7-9 times a race. Fights are started on purpose, below.
+  for (const o of race.riders) {
+    // dodging a car comes first, and close enough to swing at is fine
+    if (line !== r.line) break;
+    if (o === r || o.phase !== "riding" || Math.abs(o.z - r.z) > BIKE.length * 1.4) continue;
+    const dx = o.x - r.x;
+    // the faster it is already moving over, the earlier it holds back; slow,
+    // it may still close in to swing
+    const closing = (r.vx - o.vx) * Math.sign(dx);
+    if (Math.abs(dx) > 1.0 + Math.max(0, closing) * 0.3) continue;
+    if (dx > 0) input.right = false;
+    else input.left = false;
+  }
+  // ease the bars before a held lean puts the bike down (R3)
+  if (Math.abs(r.lean) > 0.85 && r.leanHeld > TUNE.leanLimit * 0.4) input.left = input.right = false;
   if (r.speed > topSpeed(r) * r.skill) input.throttle = false;
   if (line === null) {
     input.throttle = false;
@@ -828,7 +913,7 @@ export function step(race: Race, inputs: Map<number, Input>): void {
     if (input.foot && !r.prevFoot) beginAttack(race, r, "foot");
     r.prevHand = input.hand;
     r.prevFoot = input.foot;
-    ride(r, input, race.track);
+    ride(r, input, race.track, DT, race);
   }
   for (const r of race.riders) {
     resolveAttack(race, r);

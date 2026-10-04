@@ -4,7 +4,7 @@
 
 import { type Entry, GRID, type Mode, POOL_WAIT, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
-import { makeTrack } from "../game/track.ts";
+import { ROADS, makeTrack } from "../game/track.ts";
 
 export type Conn = {
   rider: number; // riders.id in the database
@@ -12,6 +12,7 @@ export type Conn = {
   send(msg: ToClient): void;
   pool: Mode | null;
   level: number;
+  road: number; // the road this connection voted for (N4)
   race: Live | null;
   local: number; // this connection's rider id inside its race
   seq: number; // last input sequence number applied
@@ -21,6 +22,7 @@ export type Live = {
   id: number;
   mode: Mode;
   level: number;
+  road: number;
   track: string;
   race: Race;
   conns: Map<number, Conn>; // local id -> connection, while connected
@@ -69,11 +71,12 @@ export class Lobby {
 
   // ---- the pools (N2, N3) ----
 
-  join(conn: Conn, mode: Mode, level: number, now: number): void {
+  join(conn: Conn, mode: Mode, level: number, now: number, road = 0): void {
     if (conn.race && !conn.race.ended) return; // already racing
     this.leave(conn, now);
     conn.pool = mode;
     conn.level = Math.min(5, Math.max(1, Math.round(level) || 1));
+    conn.road = Math.min(ROADS.length - 1, Math.max(0, Math.round(road) || 0));
     const pool = this.pools[mode];
     pool.members.push(conn);
     if (mode === "ai") {
@@ -137,7 +140,7 @@ export class Lobby {
     const newest = [...this.races.values()].filter((l) => !l.ended).at(-1);
     if (!newest) return;
     newest.watchers.add(conn);
-    conn.send({ t: "start", race: newest.id, level: newest.level, seed: newest.seed, entrants: newest.entrants, you: null });
+    conn.send({ t: "start", race: newest.id, level: newest.level, track: newest.road, seed: newest.seed, entrants: newest.entrants, you: null });
   }
 
   private startFrom(mode: Mode, now: number): void {
@@ -153,6 +156,12 @@ export class Lobby {
     const most = Math.max(...votes.values());
     const tied = [...votes.keys()].filter((l) => votes.get(l) === most).sort();
     const level = tied[Math.floor(this.random() * tied.length)];
+    // and the road the same way (N4)
+    const roadVotes = new Map<number, number>();
+    for (const c of members) roadVotes.set(c.road ?? 0, (roadVotes.get(c.road ?? 0) ?? 0) + 1);
+    const roadMost = Math.max(...roadVotes.values());
+    const roadTied = [...roadVotes.keys()].filter((r) => roadVotes.get(r) === roadMost).sort();
+    const road = roadTied[Math.floor(this.random() * roadTied.length)];
 
     const entrants: Entry[] = [];
     const seen = new Map<number, number>();
@@ -167,7 +176,7 @@ export class Lobby {
       for (let i = entrants.length; i < GRID; i++) entrants.push({ id: i, name: names[(i - members.length) % names.length], human: false });
     }
 
-    const track = makeTrack(level);
+    const track = makeTrack(level, road);
     const seed = Math.floor(this.random() * 2 ** 31);
     const id = this.store.startRace(mode, level, track.name);
     const race = startRace(track, level, entrants, seed);
@@ -175,6 +184,7 @@ export class Lobby {
       id,
       mode,
       level,
+      road,
       track: track.name,
       race,
       conns: new Map(),
@@ -187,7 +197,7 @@ export class Lobby {
       steps: 0,
       sent: 0,
       ended: false,
-      timeLimit: track.length / 15 + 60,
+      timeLimit: track.length / 30 + 90,
     };
     members.forEach((c, i) => {
       for (const other of this.races.values()) other.watchers.delete(c);
@@ -195,7 +205,7 @@ export class Lobby {
       c.local = i;
       c.seq = 0;
       live.conns.set(i, c);
-      c.send({ t: "start", race: id, level, seed, entrants, you: i });
+      c.send({ t: "start", race: id, level, track: road, seed, entrants, you: i });
     });
     this.races.set(id, live);
     this.log({ ev: "race_start", race: id, mode, level, humans: members.length, riders: entrants.length });

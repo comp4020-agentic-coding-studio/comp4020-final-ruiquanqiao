@@ -2,7 +2,7 @@
 // viewports, taken while riding with real key presses. The preview pane
 // renders at its own size and throttles when hidden; this does neither.
 //
-//   node scripts/shoot.ts [--url http://localhost:5189] [--ride 8] [--steer D:1.2] [--name race]
+//   node scripts/shoot.ts [--url http://localhost:5189] [--ride 8] [--steer D:1.2] [--name race] [--road 0-4]
 //
 // Writes .frames/<name>-1920x1080.png and .frames/<name>-390x844.png. Chrome's
 // profile and temp files go in .cache/, inside this repo, not the user's
@@ -22,6 +22,7 @@ const ride = Number(flag("ride", "8"));
 const steer = flag("steer", "");
 const name = flag("name", "race");
 const only = flag("only", "");
+const road = flag("road", "0");
 const CHROME = process.env.CHROME ?? (process.platform === "win32" ? "C:/Program Files/Google/Chrome/Application/chrome.exe" : "/usr/bin/google-chrome");
 
 const profile = resolve(".cache/chrome-profile");
@@ -48,6 +49,7 @@ for (const [w, h] of sizes) {
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
   await page.goto(url);
   await page.waitForTimeout(800);
+  await page.check(`input[name="road"][value="${road}"]`);
   await page.click("#queue-ai");
   await page.waitForFunction(() => document.querySelector("#app")?.getAttribute("data-screen") === "race", null, { timeout: 15000 });
   await page.keyboard.down("KeyW");

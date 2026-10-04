@@ -116,6 +116,7 @@ wss.on("connection", (ws, req) => {
     },
     pool: null,
     level: 1,
+    road: 0,
     race: null,
     local: -1,
     seq: 0,
@@ -131,7 +132,7 @@ wss.on("connection", (ws, req) => {
       return;
     }
     const now = performance.now() / 1000;
-    if (msg.t === "queue" && (msg.mode === "ai" || msg.mode === "human")) lobby.join(conn, msg.mode, Number(msg.level), now);
+    if (msg.t === "queue" && (msg.mode === "ai" || msg.mode === "human")) lobby.join(conn, msg.mode, Number(msg.level), now, Number(msg.track ?? 0));
     else if (msg.t === "leave") lobby.leave(conn, now);
     else if (msg.t === "in") lobby.input(conn, Number(msg.seq), Number(msg.keys));
     else if (msg.t === "name" && typeof msg.name === "string") {

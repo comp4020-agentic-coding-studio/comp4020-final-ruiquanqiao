@@ -1,4 +1,36 @@
-adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of the flat periwinkle and cartoon clouds, which looked like an unfinished backdrop beside photographic ground
+# The Road Rash ledger
+
+This game is a remake of the arcade half ("Thrash") of **Road Rash**, EA's 1994
+3DO game in its 1996 Windows port — the version Chinese players know as 暴力摩托
+and the one I played. Every mechanic of that game has a row here, sourced, with
+a decision against it. A mechanic that is not in this table has not been
+considered yet, and nothing gets built from memory: a new mechanic is
+researched and added here before any code is written for it.
+
+`spec/ledger.test.ts` holds the table to its own rules:
+
+- every row has a status of `built`, `planned` or `omitted`
+- a `planned` row names the crit it is due by: `C8`, `C9`, `C10` or `final`
+- a `built` row names the spec test that proves it, as `file › test name`, and
+  that test exists
+- an `omitted` row says why
+- every source tag resolves to a URL in [Sources](#sources)
+
+**Treatment** is `same` when the row is copied as the original has it, or
+`adapted:` followed by what changes and why. Where versions of the game disagree,
+the PC version wins; the others are only used where the PC manual is silent,
+and the row says so.
+
+A row whose source is `—` is a rule the original never needed — matchmaking, for
+one — and must be `adapted:`, saying what it answers instead.
+
+The research behind this table is in
+[road-rash-research.md](road-rash-research.md), gathered on 30 Sep 2026 from the
+manuals and FAQs listed at the end. It has the numbers, the differences between
+versions and the conflicts between sources that the table only summarises.
+
+## Structure
+
 | ID | Mechanic (PC 1996) | Source | Status | Treatment | Due / proof |
 |---|---|---|---|---|---|
 | S1 | Big Game career: money, a bike shop, repair bills and fines, game over when broke | PCM, SATM | omitted | omitted: I chose the arcade mode alone. A career is a single-player economy, and it would make a race you join for five minutes carry a debt into tomorrow | — |
@@ -31,14 +63,14 @@ adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of th
 | R2 | Separate lean input: turns more slowly but loses less speed | FADE, PCM | omitted | omitted: I played without ever touching a lean key, and the lean I remember came from the bike itself (R17). A second steering input would make the game I am remaking harder to recognise, not easier | — |
 | R3 | Steer and lean together is a power slide: fastest turn, risks a crash | FADE, SATM | planned | adapted: no lean key. The bike leans on its own when it is steered hard at or near top speed, and that lean is where the sharper turn and the crash risk live | C8 |
 | R4 | No gears; the rev counter is feedback only | FADE | planned | same | C8 |
-| R5 | Races at 100+ mph; the fastest bikes reach about 180 | SATM | planned | same | C8 |
+| R5 | Races at 100+ mph; the fastest bikes reach about 180 | SATM, RRVID | built | adapted: speeds come from the PC game's own km/h dial in a recorded race, not the manual: grid to 250 km/h in about 5.5 s, a cruise of 280–290 once the speed has built up, and only nitro past 300. The bikes top out at 275–315 km/h by level, and the level 5 bike passes 340 on nitro. The manual's 109–158 mph had held level 1 at 92 mph | `spec/feel.test.ts › cruises at 280-290 km/h once the speed has built up` |
 | R6 | Lighter riders are faster; heavier riders hit harder | 3DOM, SCDM | planned | same | C9 |
 | R7 | A faster rider hitting you from behind pushes your speed up by as much as about 7 mph | ARGURO | planned | same | C9 |
-| R8 | Nitrous on "N" bikes only: ten charges a race, one burst per press | PCM, SATM | omitted | omitted: Thrash hands out nitro bikes only at levels 4 and 5 (S3), and the speed build-up of R17 rewards clean riding instead. The level 4 and 5 bikes keep their top speeds without the burst | — |
+| R8 | Nitrous on "N" bikes only: ten charges a race, one burst per press | PCM, SATM, RRVID | built | adapted: every level's bike carries it, not only the N bikes, because the recorded race leans on it for every burst past 300. Ten charges on L or Space, shown as a row of lamps on the dash as in the recording; a burst lasts 3.5 s and adds 35 km/h to the cap | `spec/feel.test.ts › goes past 300 on nitro, and past 340 on the level 5 bike` |
 | R9 | Oil, mud and ice patches make you skid | FADE | planned | same | final |
 | R10 | Hills throw the bike into the air | FADE | planned | same | C9 |
 | R11 | Pedestrians and traffic cones act as ramps; each obstacle always does the same thing | FADE | planned | same | final |
-| R12 | Leaving the asphalt slows you; off-road trees crash you | FADE, PCM | planned | same | C8 |
+| R12 | Leaving the asphalt slows you; off-road trees crash you | FADE, PCM, RRVID | built | same. The dirt shoulder is ridden at about 190 km/h, as in the recording; grass beyond it bogs the bike down to 108 | `spec/feel.test.ts › is ridden at about 190 km/h on the dirt shoulder` |
 | R13 | Falling off an unfenced cliff into the ocean wrecks you instantly | FADE, ARGURO | planned | same, on the tracks that have a coast | final |
 | R14 | Roads fork; the shorter branch is the harder one | FADE | planned | same | final |
 | R15 | Default keys: arrows ride, Home/PgUp lean, N nitro, D dismount, Ins punch or grab, Space backhand, Enter kick | PCM | planned | adapted: W throttle, S brake, A and D steer; J is the hand (punch, weapon swing, grab), K is the foot (kick). Backhand has no key of its own (C3). The phone layout carries the same actions | C8 |
@@ -54,7 +86,7 @@ adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of th
 | C3 | Backhand hits a rider behind or beside you, with or without a weapon | PCM, 3DOM | planned | adapted: J becomes a backhand by itself when the nearest opponent is beside or behind you, so the move survives without a third attack key | C9 |
 | C4 | Kick shoves the target's bike sideways, into traffic or roadside objects | PCM, SATM, FADE | planned | same | C8 |
 | C5 | Two weapons, club and chain; one held at a time, swung with the punch key; some riders start with one | PCM | built | same | `spec/traffic.test.ts › the chain reaches a rider a fist cannot, and a weapon hits harder than a fist (C5)` |
-| C6 | Snatching: press punch as an opponent winds up a weapon swing and it becomes yours | PCM, FADE, POSTER | built | same. The PC manual gives no timing, so the window is taken from the Mega Drive sources: the pause while the arm draws back. Here that pause is 0.45 s against a fist's 0.14 s. A draw-back reaches the screen up to 0.05 s (snapshot spacing) plus 0.05 s (interpolation) plus one way of the network after it starts, and the J press needs the other way back; at the 16 ms round trip measured to the Fly app that leaves about 0.33 s to react in the worst case, against a typical 0.2 to 0.25 s. Pressed after the blow lands, J is only a punch | `spec/traffic.test.ts › punching while an opponent draws a weapon back takes it off them (C6)` |
+| C6 | Snatching: press punch as an opponent winds up a weapon swing and it becomes yours | PCM, FADE, POSTER | built | same. The PC manual gives no timing, so the window is taken from the Mega Drive sources: the pause while the arm draws back. Here that pause is 0.36 s against a fist's 0.22 s: the recording shows a club held overhead for 6 frames and lowered over 2 at 25 fps, and a fist drawn back for 6. A draw-back reaches the screen up to 0.05 s (snapshot spacing) plus 0.05 s (interpolation) plus one way of the network after it starts, and the J press needs the other way back; at the 16 ms round trip measured to the Fly app that leaves about 0.24 s to react in the worst case, against a typical 0.2 to 0.25 s. It was 0.45 s before the recording was measured. Pressed after the blow lands, J is only a punch | `spec/traffic.test.ts › punching while an opponent draws a weapon back takes it off them (C6)` |
 | C7 | Cops carry clubs and are the easiest place to get one | POSTER, SATM | built | same | `spec/traffic.test.ts › a cop's club can be snatched the same way, and the cop rides on without it (C7)` |
 | C8 | Stamina at zero knocks the rider off; they run back to the bike | PCM | planned | same | C8 |
 | C9 | A rider lying on the road can be run over | FADE | planned | same | C9 |
@@ -84,7 +116,7 @@ adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of th
 
 | ID | Mechanic (PC 1996) | Source | Status | Treatment | Due / proof |
 |---|---|---|---|---|---|
-| T1 | Five real Northern California roads, each with its own character | PCM | planned | adapted: fictional roads of my own, each given a character in the same spirit; one road for C8, five by the end | C8 |
+| T1 | Five real Northern California roads, each with its own character | PCM, RRVID | built | adapted: five fictional roads of my own (Ridge Road, Seawall Highway, Orchard Valley, Gold Town, Red Canyon), each passing through more than one kind of country, the way one recorded race runs coast, valley, town, farmland and canyon. The land is shaped around the road, never laid over it | `spec/terrain.test.ts › drawn as a heightfield, never covers any part of the road surface` |
 | T2 | Course lengths per level, from about 5 miles at level 1 to about 17 at level 5 | JATIN | planned | same | C8 |
 | T3 | No race timer and no progress bar: the course length is shown before the race and the odometer counts up | PCM | planned | same | C8 |
 | T4 | Oncoming and same-direction traffic; drivers change lanes | FADE, 3DOM | built | same | `spec/traffic.test.ts › keeps every car in a lane of its own direction for a whole race (T4)` |
@@ -112,7 +144,7 @@ adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of th
 | H2 | F10 toggles the dashboard | PCM | planned | same | final |
 | H3 | A flag girl starts the race | 3DOM | planned | adapted: a flagger who waves the grid off | final |
 | H4 | Four ways a race ends — qualified, placed, Wrecked, Busted — each with its own FMV clip | 3DOM, WP-3DO | planned | adapted: four ending screens drawn in the game's own style; there is no video | C8 |
-| H5 | Licensed grunge soundtrack (14 A&M songs) in the menus, synthesised music during races | PCM, ZHWP | omitted | omitted: the songs are licensed to EA and cannot be republished | — |
+| H5 | Licensed grunge soundtrack (14 A&M songs) in the menus, synthesised music during races | PCM, ZHWP, RRVID | built | adapted: the songs are licensed to EA and cannot be republished, and none of the recording's music is copied. The race music is an original drop-D rock loop written in code, informed only by what the recording measures: 105 BPM, a loop of more than a minute, several equally loud sections, distorted guitar, bass and kit. The engine and every hit are synthesised as well; M turns the music off | `spec/audio.test.ts › runs at the original's 105 BPM and loops only after more than a minute` |
 | H6 | Resolution and detail-level options | PCM | omitted | omitted: the road is drawn at one fixed low resolution and scaled up, so there is nothing to trade | — |
 | H7 | The name Road Rash, the riders, bike brands and track names | PCM | omitted | omitted: they are EA's. Mechanics are copied; names are my own, and the README credits the original | — |
 
@@ -138,6 +170,7 @@ not settle a question, the row says which source filled it.
 | K9 | Each obstacle always does one of three things: nothing, a small jump, or a crash | RR3FAQ2, FADE | planned | same | final |
 | K10 | Contact with a motorcycle cop or a blocking cop car is an instant bust; a parked roadblock car is not | RR3FAQ2 | built | adapted: touching a cop is not a bust, whichever way it goes; coming off the bike beside one is (P1). The PC footage never shows a cop collision, and from my own play of the PC version contact alone never got anyone busted, only a crash beside a cop did, so Road Rash 3's rule is not followed | `spec/traffic.test.ts › rubbing a cop is not a bust; coming off beside one is` |
 | K11 | A downed rider and the separated bike stay in the lane as hazards for several seconds | YT1 | planned | same, with C9 | C9 |
+| K12 | Cliffs, canyon walls, buildings and the sea rail are solid: the bike rides along them or crashes into them, never through | RRVID | built | same. Glanced along, a wall slows the bike; ridden into faster than 6 m/s sideways, it throws the rider | `spec/feel.test.ts › scrapes a bike glancing along the coast's cliff, and crashes one ridden into it square` |
 
 ## Look
 
@@ -153,14 +186,14 @@ come from 137 screenshots of the PC and 3DO versions, measured in
 | V2 | Low chase camera dead behind the rider; rider about 9% of screen width and 22% of height, centred; horizon at .33–.38; the camera never rolls | YT1 | planned | same | C8 |
 | V3 | 640×480, 4:3 | A2023 | planned | adapted: the window's own shape, since both marking viewports are 16:9 or taller; the camera keeps the rider's size and the horizon's height | C8 |
 | V4 | Low-resolution textures that break into big square texels near the camera | YT1 | planned | same, with nearest-neighbour filtering on small generated textures | C8 |
-| V5 | Riders are pre-rendered 3D sprites in bright two-colour leathers and full-face helmets; the whole bike leans up to 30–40° | YT1, TE | planned | adapted: low-poly models built in code and lit in real time, in the same bright leathers; the same lean | C8 |
+| V5 | Riders are pre-rendered 3D sprites in bright two-colour leathers and full-face helmets; the whole bike leans up to 30–40° | YT1, TE, RRVID | built | adapted: pre-rendered sprites as the original's were, but of a rider puppet of my own design, posed for each frame the recording shows (riding hunched over the tank, a fist drawn back by the helmet then straight out, a club over the head then down, a leg out at peg height, thrown spread-eagled, lying, running back) and rendered from eight directions into one atlas with big square texels. Each rider's leathers, helmet and paint are tinted in at draw time. The first version posed a generic CC0 character, whose only clip was for driving a car, by twisting its bones at run time, and a punch came out as an arm jammed backwards from a body lying on the tank | `spec/sprites.test.ts › draws a punch back until it lands, then shows it out at full stretch, on the side it is thrown` |
 | V6 | Only the closest opponent is named, in the HUD; no names float over riders | YT1 | planned | same | C8 |
 | V7 | A black glossy fairing arch over the bottom quarter: cream MPH and RPM dials, the position in a black box, the odometer beneath, a red-yellow-green bar, and both riders' names with curved stamina wedges; the closest opponent's distance in red ↑ or green ↓ | YT1, PCM | planned | same, laid out across a wider screen; the phone gets the same instruments over its touch controls | C8 |
 | V8 | Tall condensed white type for every name and number in the HUD | YT1 | planned | same, in Oswald (SIL Open Font Licence), self-hosted | C8 |
 | V9 | Purple-grey asphalt (#56505e), a double solid yellow centre line, white dashed lane lines, solid white edges, no kerbs or rumble strips | YT1 | planned | same | C8 |
 | V10 | Brown dirt shoulders on rural roads, grey pavement in towns | YT1 | planned | same | C8 |
-| V11 | A flat periwinkle sky (#94aefa) with hard-edged white cartoon clouds, the same on every track | YT1 | planned | same | C8 |
-| V12 | One silhouette per track: city canyons, coastal cliff and sea, snow peaks and pines, hazy vineyard hills, green rolling hills | YT1, TE | planned | adapted: Ridge Road takes the alpine silhouette — jagged snow peaks, pine clumps, meadows, a guardrail on the outside of bends — without copying the Sierra Nevada's art | C8 |
+| V11 | A flat periwinkle sky (#94aefa) with hard-edged white cartoon clouds, the same on every track | YT1 | planned | adapted: a CC0 photograph of a bright sky with scattered cumulus, in place of the flat periwinkle and cartoon clouds, which looked like an unfinished backdrop beside photographic ground | C8 |
+| V12 | One silhouette per track: city canyons, coastal cliff and sea, snow peaks and pines, hazy vineyard hills, green rolling hills | YT1, TE, RRVID | built | adapted: one skyline per road and the country along it changing within a race: pine and snow peaks, a cliff on the left with the sea behind a rail on the right, fields and broad trees, a western main street, red canyon walls. Cliffs, walls and shopfronts stand where the bike is stopped (K12) | `spec/terrain.test.ts › is never above the shoulder within it, on any road` |
 | V13 | Crashes play in the game view: the bike tumbles free, the rider lands, stands and walks back to it | YT1, TE | planned | same | C8 |
 | V14 | The winner crosses the line sitting up with both arms raised | YT1 | planned | same | C9 |
 | V15 | A swing throws an arm straight out sideways; a chain is raised above the helmet | YT1, APOST | planned | same | C9 |
@@ -195,3 +228,4 @@ come from 137 screenshots of the PC and 3DO versions, measured in
 | CJH | 车家号,a player's memoir of the PC game | https://chejiahao.autohome.com.cn/info/7721200/ |
 | GSKY | 游民星空,Road Rash game page | https://ku.gamersky.com/1996/Road-Rash/ |
 | CHEAT | Cheatbook, Road Rash PC cheat list | https://www.cheatbook.de |
+| RRVID | "【暴力摩托】：打人才是这个游戏的灵魂所在！警察都制不住！", a full PC race (Chinese release, km/h dial), Bilibili, measured frame by frame in [road-rash-feel.md](road-rash-feel.md) | https://www.bilibili.com/video/BV1iK4y1W76t/ |

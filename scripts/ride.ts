@@ -7,7 +7,7 @@
 // Each step is keys:seconds, keys being any of W A S D J K joined by "+", or
 // "-" for none. --ai puts the level's AI field on the road as well.
 
-import { DT, MPH, NO_INPUT, type Input, TUNE, cap, positionOf, startRace, step, topSpeed } from "../game/sim.ts";
+import { DT, KMH, NO_INPUT, type Input, TUNE, cap, positionOf, startRace, step, topSpeed } from "../game/sim.ts";
 import { makeTrack } from "../game/track.ts";
 
 const args = process.argv.slice(2);
@@ -29,6 +29,7 @@ const keysOf = (spec: string): Input => {
     if (k === "D") i.right = true;
     if (k === "J") i.hand = true;
     if (k === "K") i.foot = true;
+    if (k === "N") i.nitro = true;
   }
   return i;
 };
@@ -39,8 +40,8 @@ if (withAi) for (let i = 1; i < 15; i++) entrants.push({ id: i, name: `ai${i}`, 
 const race = startRace(track, level, entrants, 7);
 const me = race.riders.find((r) => r.id === 0)!;
 
-console.log(`level ${level}, ${track.name}, ${(track.length / 1609.344).toFixed(1)} mi, bike ${me.bike.name}, top ${(topSpeed(me) / MPH).toFixed(0)} mph`);
-console.log("   t   keys      mph   cap   build   x      lean  stam  dmg  phase     pos");
+console.log(`level ${level}, ${track.name}, ${(track.length / 1609.344).toFixed(1)} mi, bike ${me.bike.name}, top ${(topSpeed(me) / KMH).toFixed(0)} km/h`);
+console.log("   t   keys     km/h   cap   build   x      lean  stam  dmg  phase     pos");
 
 let nextPrint = 0;
 const print = (keys: string): void => {
@@ -48,8 +49,8 @@ const print = (keys: string): void => {
     [
       race.t.toFixed(1).padStart(5),
       keys.padEnd(8),
-      (me.speed / MPH).toFixed(0).padStart(5),
-      (cap(me) / MPH).toFixed(0).padStart(5),
+      (me.speed / KMH).toFixed(0).padStart(5),
+      (cap(me) / KMH).toFixed(0).padStart(5),
       me.build.toFixed(2).padStart(6),
       me.x.toFixed(2).padStart(6),
       me.lean.toFixed(2).padStart(6),
@@ -67,7 +68,7 @@ for (const s of steps) {
   const n = Math.round(Number(secs) / DT);
   for (let i = 0; i < n; i++) {
     // a held attack key is one press, the way a player taps it
-    const held = i === 0 ? input : { ...input, hand: false, foot: false };
+    const held = i === 0 ? input : { ...input, hand: false, foot: false, nitro: false };
     step(race, new Map([[0, held]]));
     if (race.t + 1e-9 >= nextPrint) {
       print(keys);

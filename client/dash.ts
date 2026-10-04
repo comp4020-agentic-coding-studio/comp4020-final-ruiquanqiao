@@ -8,14 +8,15 @@
 // screen the frame is centred and the road shows either side of the arch, as
 // it did; on a narrow one the frame shrinks to the screen's width.
 
-import { MILE } from "../game/track.ts";
-
 export type Readout = {
   name: string;
-  mph: number;
+  kmh: number;
   rpm: number; // 0..1 of the dial
   position: number;
-  miles: number;
+  km: number;
+  nitro: number; // charges left (R8)
+  nitroMax: number;
+  boosting: boolean;
   damage: number; // 0..1 left
   stamina: number; // 0..1
   opponent: { name: string; stamina: number; gap: number } | null; // gap in metres, + ahead
@@ -54,6 +55,22 @@ export function drawDash(ctx: CanvasRenderingContext2D, w: number, h: number, d:
   ctx.stroke();
   ctx.restore();
 
+  // the nitro lamps above the damage bar, one per charge, as in the Chinese
+  // PC release's dash; the one burning glows white
+  const lampY = Y(0.778);
+  const lampW = (W * 0.13) / d.nitroMax;
+  ctx.fillStyle = "#000";
+  roundRect(ctx, X(0.435) - 3, lampY - lampW * 0.55 - 3, W * 0.13 + 6, lampW * 1.1 + 6, 4);
+  ctx.fill();
+  for (let i = 0; i < d.nitroMax; i++) {
+    const lit = i < d.nitro;
+    const burning = d.boosting && i === d.nitro;
+    ctx.beginPath();
+    ctx.arc(X(0.435) + lampW * (i + 0.5), lampY, lampW * 0.36, 0, Math.PI * 2);
+    ctx.fillStyle = burning ? "#fff6c0" : lit ? "#e01818" : "#3a3030";
+    ctx.fill();
+  }
+
   // the damage bar above the position box: red, then yellow, then green
   const barX = X(0.445);
   const barW = W * 0.11;
@@ -69,7 +86,9 @@ export function drawDash(ctx: CanvasRenderingContext2D, w: number, h: number, d:
     ctx.fillRect(barX + (i * barW) / segs + 0.5, barY, barW / segs - 1, barH);
   }
 
-  dial(ctx, X(0.39), Y(0.94), W * 0.074, d.mph / 200, [0, 50, 100, 150, 200], "MPH");
+  // km/h, as the Chinese PC release's dial reads; scaled past its 320 so a
+  // nitro burst at level 5 still has room to show
+  dial(ctx, X(0.39), Y(0.94), W * 0.074, d.kmh / 360, [0, 90, 180, 270, 360], "km/h");
   dial(ctx, X(0.615), Y(0.94), W * 0.06, d.rpm, [0, 3, 6, 9, 12], "RPM x 1000");
 
   // position, in a small black box between the dials
@@ -80,7 +99,7 @@ export function drawDash(ctx: CanvasRenderingContext2D, w: number, h: number, d:
   ctx.stroke();
   text(ctx, String(d.position), X(0.5075), Y(0.895), H * 0.055, "#fff", "center");
   // odometer beneath it, one decimal, zero-padded
-  text(ctx, (d.miles < 10 ? "0" : "") + d.miles.toFixed(1), X(0.5075), Y(0.985), H * 0.04, "#fff", "center");
+  text(ctx, (d.km < 10 ? "0" : "") + d.km.toFixed(1), X(0.5075), Y(0.985), H * 0.04, "#fff", "center");
 
   // the player's name bottom-left with a stamina wedge above-right of it
   text(ctx, fit(ctx, d.name, W * 0.17, H * 0.05), X(0.075), Y(0.985), H * 0.05, "#fff", "left");
@@ -89,10 +108,10 @@ export function drawDash(ctx: CanvasRenderingContext2D, w: number, h: number, d:
   if (d.opponent) {
     text(ctx, fit(ctx, d.opponent.name, W * 0.17, H * 0.05), X(0.925), Y(0.985), H * 0.05, "#fff", "right");
     wedge(ctx, X(0.765), Y(0.87), W * 0.05, d.opponent.stamina, true);
-    // distance in miles: red and up when they are ahead, green and down behind
+    // distance in km: red and up when they are ahead, green and down behind
     const ahead = d.opponent.gap >= 0;
-    const miles = Math.abs(d.opponent.gap) / MILE;
-    text(ctx, `${ahead ? "↑" : "↓"}${miles.toFixed(3)}`, X(0.71), Y(0.855), H * 0.04, ahead ? "#ff3030" : "#40e040", "center");
+    const km = Math.abs(d.opponent.gap) / 1000;
+    text(ctx, `${ahead ? "↑" : "↓"}${km.toFixed(3)}`, X(0.71), Y(0.855), H * 0.04, ahead ? "#ff3030" : "#40e040", "center");
   }
   return H * (1 - 0.765); // how much of the screen the arch covers, in px
 }

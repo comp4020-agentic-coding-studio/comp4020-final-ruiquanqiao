@@ -59,7 +59,7 @@ button:hover { border-color: var(--gold); }
 .field { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin: 0 0 0.8rem; border: 0; padding: 0; }
 .field > span, .field legend { color: var(--dim); min-width: 3.5rem; float: left; padding: 0; margin-right: 0.6rem; }
 #name { background: var(--bg); border: 2px solid var(--edge); border-radius: 4px; padding: 0.4em 0.6em; width: 14rem; max-width: 100%; }
-#levels label { display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.6rem; }
+#levels label, #roads label { display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.6rem; }
 .queue { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 .queue button { font-weight: bold; font-size: 1.05rem; text-align: left; }
 .queue button small { display: block; font-weight: normal; color: var(--dim); font-size: 0.8rem; }
@@ -100,7 +100,8 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
   }
   .pad { display: grid; gap: 0.4rem; }
   .pad.left { grid-template-columns: 1fr 1fr; width: 42%; }
-  .pad.right { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; width: 55%; }
+  .pad.right { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; width: 55%; }
+  .pad.right [data-key="nitro"] { grid-row: span 2; }
   .pad button { font-size: 1.4rem; font-weight: bold; padding: 0; line-height: 1; }
   .pad button small { display: block; font-size: 0.65rem; font-weight: normal; color: var(--dim); }
   .pad button.down { background: #3a2226; border-color: var(--hot); }

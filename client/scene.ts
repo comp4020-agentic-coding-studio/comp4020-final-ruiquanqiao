@@ -7,9 +7,12 @@
 
 import * as THREE from "three";
 import { type Car, type Rider, TUNE, type Weapon, windupOf } from "../game/sim.ts";
-import { ROAD_HALF, SEGMENT, SHOULDER, type Track } from "../game/track.ts";
+import { BIOMES, type Biome, OPEN, ROAD_HALF, SEGMENT, SHOULDER, type Track, biomeAt, segmentAt } from "../game/track.ts";
+import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
-import { type RiderRig, bend, buildBike, buildCar, buildChain, buildClub, buildRider, crouch, loadRider, unbend } from "./models.ts";
+import { Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
+import { buildCar } from "./models.ts";
+import { type Atlas, type Look, RiderSprite, buildAtlas, frameFor } from "./sprites.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
 
@@ -107,7 +110,19 @@ function roadMaterial(): THREE.MeshStandardMaterial {
  * The mountain range right round the horizon (V12): a skyline of sharp peaks,
  * filled with the rock photograph and snow on the summits.
  */
-function panoramaTexture(): THREE.CanvasTexture {
+type Skyline = { snow: boolean; veil: string; peaks: number; low: number; flat: number };
+
+/** Each road's distant range (V12): snow peaks over the pines, green hills
+ * over the coast and valley, dry brown ranges, red mesas over the canyon. */
+const SKYLINES: Skyline[] = [
+  { snow: true, veil: "rgba(140,140,175,0.55)", peaks: 10, low: 150, flat: 1 },
+  { snow: false, veil: "rgba(120,150,120,0.6)", peaks: 4, low: 230, flat: 2.2 },
+  { snow: false, veil: "rgba(140,160,120,0.6)", peaks: 3, low: 250, flat: 2.6 },
+  { snow: false, veil: "rgba(170,140,110,0.55)", peaks: 6, low: 200, flat: 1.6 },
+  { snow: false, veil: "rgba(190,110,80,0.5)", peaks: 8, low: 210, flat: 3.2 },
+];
+
+function panoramaTexture(line: Skyline): THREE.CanvasTexture {
   const w = 4096;
   const h = 512;
   const [c, ctx] = canvas(w, h);
@@ -118,8 +133,8 @@ function panoramaTexture(): THREE.CanvasTexture {
   type Peak = { x: number; top: number; slope: number };
   const peaks: Peak[] = [];
   // a few great summits, steep-sided, with lesser peaks crowding between
-  for (let i = 0; i < 10; i++) peaks.push({ x: rand() * w, top: 15 + rand() * 80, slope: 1.0 + rand() * 0.8 });
-  for (let i = 0; i < 46; i++) peaks.push({ x: rand() * w, top: 150 + rand() * 200, slope: 0.9 + rand() * 1.4 });
+  for (let i = 0; i < line.peaks; i++) peaks.push({ x: rand() * w, top: (line.snow ? 15 : 120) + rand() * 80, slope: (1.0 + rand() * 0.8) / line.flat });
+  for (let i = 0; i < 46; i++) peaks.push({ x: rand() * w, top: line.low + rand() * 200, slope: (0.9 + rand() * 1.4) / line.flat });
   const sky = new Float64Array(w);
   const owner = new Int32Array(w);
   for (let x = 0; x < w; x++) {
@@ -148,7 +163,7 @@ function panoramaTexture(): THREE.CanvasTexture {
       ctx.fillStyle = ctx.createPattern(rock, "repeat")!;
       ctx.fillRect(0, 0, w, h);
       // towards the lavender-grey of distance
-      ctx.fillStyle = "rgba(140,140,175,0.55)";
+      ctx.fillStyle = line.veil;
       ctx.fillRect(0, 0, w, h);
     } else {
       ctx.fillStyle = "#86839f";
@@ -166,7 +181,7 @@ function panoramaTexture(): THREE.CanvasTexture {
     }
     // snow down from each summit, in streaks along the fall line
     const r = rng(7);
-    for (let x = 0; x < w; x++) {
+    for (let x = 0; x < (line.snow ? w : 0); x++) {
       const p = peaks[owner[x]];
       // snow lies in broad fields broken by rock ribs, not in single streaks
       const reach = Math.max(0, (320 - p.top) * 0.5);
@@ -229,6 +244,49 @@ function pineTexture(): THREE.CanvasTexture {
   return t;
 }
 
+/** Other trees and shrubs as silhouettes for crossed cards: a broad
+ * field tree, a wind-flattened coast tree, a scrubby canyon tree, a bush. */
+function crownTexture(kind: "broad" | "coast" | "scrub" | "bush"): THREE.CanvasTexture {
+  const w = 256;
+  const h = 256;
+  const [c, ctx] = canvas(w, h);
+  const rand = rng(kind.length * 97);
+  const blob = (x: number, y: number, rx: number, ry: number, n: number, dark: number): void => {
+    for (let k = 0; k < n; k++) {
+      const a = rand() * Math.PI * 2;
+      const d = Math.sqrt(rand());
+      const shade = dark + rand() * 40;
+      ctx.fillStyle = kind === "scrub" ? `rgb(${shade * 0.9},${shade + 10},${shade * 0.5})` : `rgb(${shade * 0.6},${shade + 25},${shade * 0.45})`;
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(a) * d * rx, y + Math.sin(a) * d * ry, 6 + rand() * 9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  ctx.fillStyle = "#4a3828";
+  if (kind === "broad") {
+    ctx.fillRect(w / 2 - 8, h * 0.55, 16, h * 0.45);
+    blob(w / 2, h * 0.38, 100, 85, 700, 35);
+  } else if (kind === "coast") {
+    // a leaning trunk under a flat, layered canopy
+    ctx.beginPath();
+    ctx.moveTo(w / 2 - 6, h);
+    ctx.lineTo(w / 2 + 14, h * 0.4);
+    ctx.lineTo(w / 2 + 22, h * 0.4);
+    ctx.lineTo(w / 2 + 6, h);
+    ctx.fill();
+    blob(w / 2 + 10, h * 0.32, 115, 30, 500, 30);
+    blob(w / 2 - 30, h * 0.45, 60, 18, 160, 25);
+  } else if (kind === "scrub") {
+    ctx.fillRect(w / 2 - 5, h * 0.6, 10, h * 0.4);
+    blob(w / 2, h * 0.5, 90, 70, 450, 45);
+  } else {
+    blob(w / 2, h * 0.62, 115, 90, 650, 30);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 // ---- the road and the land ----
 
 /** A strip along the road between two offsets, textured every `tile` metres. */
@@ -266,20 +324,21 @@ function strip(track: Track, from: number, to: number, tile: number, lift: (z: n
   return g;
 }
 
-/**
- * Height of the meadow beside the road: a gentle bank, then falling away to
- * the plain. The strips stop at MEADOW, inside the tightest bend's radius
- * (110 m): an offset curve wider than the bend folds back over itself, and a
- * 2.6 km strip once laid a green sheet across half the sky.
- */
-const MEADOW = 60;
-const PLAIN = -5.5;
-const rise = (z: number, off: number): number => {
-  const d = Math.abs(off) - SHOULDER;
-  if (d <= 0) return -0.04;
-  const bank = Math.min(1, d / 20) * (1.2 + 0.8 * Math.sin(z / 170 + Math.sign(off)));
-  return bank + Math.min(0, -(d - 25) * 0.25) * 1;
-};
+/** Shoulder colours: dirt in the country, grey pavement in town (V10). */
+function tint(track: Track, g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const n = g.getAttribute("position").count;
+  const col = new Float32Array(n * 3);
+  const dirt = new THREE.Color("#a88a70");
+  const pave = new THREE.Color("#8c8890");
+  const sand = new THREE.Color("#c0a080");
+  for (let v = 0; v < n; v++) {
+    const b = biomeAt(track, Math.floor(v / 2) * SEGMENT);
+    const c = b === "town" ? pave : b === "coast" || b === "canyon" ? sand : dirt;
+    col.set([c.r, c.g, c.b], v * 3);
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  return g;
+}
 
 // ---- riders (V5) ----
 
@@ -303,19 +362,24 @@ const LEATHERS: [string, string, string][] = [
   ["#9c5428", "#f0f0f0", "#202020"],
 ];
 
-type RiderModel = {
-  root: THREE.Group; // on the road at the rider
-  lean: THREE.Group; // rolls about the contact line
-  seat: THREE.Group; // where the rider sits on the bike
-  bike: THREE.Group;
-  rig: RiderRig;
-  seatOffset: THREE.Vector3;
-  held: Record<Weapon, THREE.Object3D>; // shown in whichever hand swings it
-};
+/** A rider on the road: the sprite, the bike's own sprite for when they part
+ * company (M2), and a shadow under each. */
+type Actor = { rider: RiderSprite; bike: RiderSprite; shadow: THREE.Mesh; bikeShadow: THREE.Mesh };
 
-const RIGHT = new THREE.Vector3(-1, 0, 0);
-const UP = new THREE.Vector3(0, 1, 0);
-const FORWARD = new THREE.Vector3(0, 0, 1);
+/** A soft dark ellipse for under a bike, as the original casts one. */
+const shadowMaterial = (() => {
+  let m: THREE.MeshBasicMaterial | null = null;
+  return (): THREE.MeshBasicMaterial => {
+    if (m) return m;
+    const [c, ctx] = canvas(64, 64);
+    const g = ctx.createRadialGradient(32, 32, 4, 32, 32, 32);
+    g.addColorStop(0, "rgba(0,0,0,0.55)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    return (m = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+  };
+})();
 
 // ---- the scene ----
 
@@ -325,12 +389,18 @@ export class RaceScene {
   camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.3, 6000);
   private track: Track | null = null;
   private world = new THREE.Group();
-  private riders = new Map<number, RiderModel>();
+  private riders = new Map<number, Actor>();
+  private atlas: Atlas | null = null;
   private cars = new Map<number, THREE.Group>();
   private backdrop: THREE.Mesh;
   private sun: THREE.DirectionalLight;
-  private plain: THREE.Mesh;
-  private riderAsset: Awaited<ReturnType<typeof loadRider>> | null = null;
+  private terrain: Terrain | null = null;
+  private sea: THREE.Mesh | null = null;
+  private grass: THREE.Texture;
+  private rock: THREE.Texture;
+  private landMat: THREE.MeshStandardMaterial;
+  private camX = 0;
+  private lastDraw = 0;
 
   constructor(canvasEl: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, preserveDrawingBuffer: true });
@@ -353,9 +423,11 @@ export class RaceScene {
     void sky;
     this.scene.background = new THREE.Color("#94aefa");
     // aerial haze, the colour the range fades to at its foot
-    this.scene.fog = new THREE.Fog("#bec8e1", 400, 2700);
+    this.scene.fog = new THREE.Fog("#bec8e1", 500, 1750);
 
-    this.scene.add(new THREE.HemisphereLight("#dfe6ff", "#5a6a4a", 0.9));
+    // bright fill from the sky: cliff and canyon faces turned from the sun
+    // are lit in the original, not black
+    this.scene.add(new THREE.HemisphereLight("#e8eeff", "#8a7a60", 1.5));
     this.sun = new THREE.DirectionalLight("#fff2dc", 2.6);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -370,26 +442,18 @@ export class RaceScene {
     this.scene.add(this.sun, this.sun.target);
 
     // the range rides with the camera, so it never gets closer (V12)
-    const panoTex = panoramaTexture();
-    panoTex.repeat.set(2, 1);
     this.backdrop = new THREE.Mesh(
       new THREE.CylinderGeometry(4200, 4200, 760, 96, 1, true),
-      new THREE.MeshBasicMaterial({ map: panoTex, transparent: true, side: THREE.BackSide, depthWrite: false, fog: false }),
+      new THREE.MeshBasicMaterial({ transparent: true, side: THREE.BackSide, depthWrite: false, fog: false }),
     );
     this.backdrop.renderOrder = -2;
     this.scene.add(this.backdrop);
     this.scene.add(this.world);
 
-    // beyond the strips, one plain to the horizon that follows the camera;
-    // its texture is pinned to the world so it does not slide
-    const plainTex = photo("textures/grass_color.jpg", [600, 600]);
-    this.plain = new THREE.Mesh(new THREE.CircleGeometry(3000, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: plainTex, color: "#b8c8a0", roughness: 1 }));
-    this.plain.receiveShadow = false;
-    this.scene.add(this.plain);
+    this.grass = photo("textures/grass_color.jpg", [1, 1]);
+    this.rock = photo("textures/rock_color.jpg", [1, 1]);
+    this.landMat = terrainMaterial(this.grass, this.rock);
 
-    loadRider().then((a) => {
-      this.riderAsset = a;
-    });
   }
 
   setTrack(track: Track): void {
@@ -397,46 +461,82 @@ export class RaceScene {
     this.track = track;
     this.world.clear();
     const flat = (): number => 0;
+    const panoTex = panoramaTexture(SKYLINES[track.id % SKYLINES.length]);
+    panoTex.repeat.set(2, 1);
+    const back = this.backdrop.material as THREE.MeshBasicMaterial;
+    back.map?.dispose();
+    back.map = panoTex;
+    back.needsUpdate = true;
+
     const road = new THREE.Mesh(strip(track, -ROAD_HALF, ROAD_HALF, 12, flat), roadMaterial());
     road.receiveShadow = true;
-    const dirt = ground("dirt", [1, 1], "#a88a70");
-    const left = new THREE.Mesh(strip(track, -SHOULDER, -ROAD_HALF, 3, () => -0.02, 1), dirt);
-    const right = new THREE.Mesh(strip(track, ROAD_HALF, SHOULDER, 3, () => -0.02, 1), dirt);
+    // dirt shoulders in the country, grey pavement in town (V10)
+    const dirt = ground("dirt", [1, 1], "#ffffff");
+    dirt.vertexColors = true;
+    const left = new THREE.Mesh(tint(track, strip(track, -SHOULDER, -ROAD_HALF, 3, () => -0.02, 1)), dirt);
+    const right = new THREE.Mesh(tint(track, strip(track, ROAD_HALF, SHOULDER, 3, () => -0.02, 1)), dirt);
     left.receiveShadow = right.receiveShadow = true;
-    const meadow = ground("grass", [1, 1], "#c8d8b0");
-    const bands = [SHOULDER, SHOULDER + 12, SHOULDER + 30, MEADOW];
-    for (let b = 0; b < bands.length - 1; b++) {
-      for (const side of [-1, 1]) {
-        const [a, z] = side < 0 ? [-bands[b + 1], -bands[b]] : [bands[b], bands[b + 1]];
-        const m = new THREE.Mesh(strip(track, a, z, 6, rise, (bands[b + 1] - bands[b]) / 6), meadow);
-        m.receiveShadow = b === 0;
-        this.world.add(m);
-      }
-    }
-    this.world.add(road, left, right);
+    this.world.add(road, left, right, ...ribbons(track, this.landMat), town(track));
 
-    // pines as three crossed cards each, instanced (V12)
-    const trees = track.scenery.filter((s) => s.kind === "tree");
-    const pineMat = new THREE.MeshStandardMaterial({ map: pineTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 });
-    const card = new THREE.PlaneGeometry(5, 10).translate(0, 5, 0);
-    const cards = [0, Math.PI / 3, (2 * Math.PI) / 3].map((a) => card.clone().rotateY(a));
+    this.terrain = new Terrain(track, this.landMat);
+    this.world.add(this.terrain.group);
+    const origin = frameAt(track, 0);
+    this.terrain.fill(origin.px, origin.pz);
+    this.sea = sea(track);
+    if (this.sea) this.world.add(this.sea);
+
+    const groundY = (z: number, x: number): number => frameAt(track, z, x).py + groundAt(track, z, x);
     const m4 = new THREE.Matrix4();
     const rand = rng(77);
-    const placements = trees.map((s) => {
-      const f = frameAt(track, s.z, s.x);
-      const scale = 0.75 + rand() * 0.7;
-      return m4
-        .compose(new THREE.Vector3(f.px, f.py + rise(s.z, s.x), f.pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rand() * 6, 0)), new THREE.Vector3(scale, scale * (0.85 + rand() * 0.4), scale))
-        .clone();
-    });
-    for (const g of cards) {
-      const inst = new THREE.InstancedMesh(g, pineMat, placements.length);
-      placements.forEach((p, i) => inst.setMatrixAt(i, p));
-      inst.castShadow = true;
-      this.world.add(inst);
+    // trees as three crossed cards each, instanced, the kind the country
+    // grows (V12)
+    const cards = (w: number, h: number): THREE.PlaneGeometry[] => {
+      const card = new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0);
+      return [0, Math.PI / 3, (2 * Math.PI) / 3].map((a) => card.clone().rotateY(a));
+    };
+    const forest = (items: { z: number; x: number }[], tex: THREE.Texture, w: number, h: number): void => {
+      if (!items.length) return;
+      const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 });
+      const placements = items.map((s) => {
+        const f = frameAt(track, s.z, s.x);
+        const scale = 0.75 + rand() * 0.7;
+        return m4
+          .compose(new THREE.Vector3(f.px, groundY(s.z, s.x) - 0.1, f.pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rand() * 6, 0)), new THREE.Vector3(scale, scale * (0.85 + rand() * 0.4), scale))
+          .clone();
+      });
+      for (const g of cards(w, h)) {
+        const inst = new THREE.InstancedMesh(g, mat, placements.length);
+        placements.forEach((p, i) => inst.setMatrixAt(i, p));
+        inst.castShadow = true;
+        this.world.add(inst);
+      }
+    };
+    const trees = track.scenery.filter((s) => s.kind === "tree");
+    const by = (b: Biome): { z: number; x: number }[] => trees.filter((s) => biomeAt(track, s.z) === b);
+    forest(by("alpine"), pineTexture(), 5, 10);
+    forest([...by("valley"), ...by("town")], crownTexture("broad"), 9, 9);
+    forest(by("coast"), crownTexture("coast"), 11, 8);
+    forest(by("canyon"), crownTexture("scrub"), 6, 5);
+    forest(
+      track.scenery.filter((s) => s.kind === "bush"),
+      crownTexture("bush"),
+      2.6,
+      1.8,
+    );
+    // boulders fallen to the foot of the walls
+    const rocks = track.scenery.filter((s) => s.kind === "rock");
+    if (rocks.length) {
+      const boulder = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: "#a07860", roughness: 1, flatShading: true }), rocks.length);
+      rocks.forEach((s, i) => {
+        const f = frameAt(track, s.z, s.x);
+        m4.compose(new THREE.Vector3(f.px, f.py + 0.4, f.pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(), rand() * 6, rand())), new THREE.Vector3(1.3, 0.9 + rand() * 0.5, 1.1));
+        boulder.setMatrixAt(i, m4);
+      });
+      boulder.castShadow = true;
+      this.world.add(boulder);
     }
 
-    const poles = track.scenery.filter((s) => s.kind === "pole");
+    const poles = track.scenery.filter((s) => s.kind === "pole" || s.kind === "lamp");
     const wood = new THREE.MeshStandardMaterial({ color: "#6e5238", roughness: 0.9 });
     const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.15, 8, 8).translate(0, 4, 0), wood, poles.length);
     const arms = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8, 0.12, 0.12).translate(0, 7.4, 0), wood, poles.length);
@@ -485,7 +585,8 @@ export class RaceScene {
     const k = track.curve;
     let start = -1;
     for (let i = 0; i <= track.segments; i++) {
-      const bend = i < track.segments && Math.abs(k[i]) > 1 / 260 ? Math.sign(k[i]) : 0;
+      const open = i < track.segments && track.wallL[i] >= OPEN && track.wallR[i] >= OPEN;
+      const bend = open && Math.abs(k[i]) > 1 / 330 ? Math.sign(k[i]) : 0;
       if (bend !== 0 && start < 0) start = i;
       if ((bend === 0 || i === track.segments) && start >= 0) {
         const side = -Math.sign(k[start]) * (SHOULDER + 0.3);
@@ -505,11 +606,30 @@ export class RaceScene {
       }
     }
 
+    // the sea rail, all along the coast's open side
+    let from = -1;
+    for (let i = 0; i <= track.segments; i++) {
+      const coast = i < track.segments && BIOMES[track.biome[i]] === "coast";
+      if (coast && from < 0) from = i;
+      if ((!coast || i === track.segments) && from >= 0) {
+        const off = track.wallR[from] - 0.1;
+        const g = strip(track, off, off + 0.02, 4, flat, 1);
+        const pos = g.getAttribute("position") as THREE.BufferAttribute;
+        for (let v = 0; v < pos.count; v++) pos.setY(v, pos.getY(v) + (v % 2 === 1 ? 0.8 : 0.4));
+        g.computeVertexNormals();
+        g.setDrawRange(from * 6, (i - from) * 6);
+        this.world.add(new THREE.Mesh(g, railMat));
+        from = -1;
+      }
+    }
+
     // start and finish: white line and chequered band across the road (V16)
     this.world.add(this.lineAcross(track, 30, false), this.lineAcross(track, track.length, true));
 
-    for (const r of this.riders.values()) this.scene.remove(r.root, r.bike);
+    for (const a of this.riders.values()) this.scene.remove(a.rider.mesh, a.bike.mesh, a.shadow, a.bikeShadow);
     this.riders.clear();
+    // every rider's frames, drawn once, the first time a road is shown
+    this.atlas ??= buildAtlas(this.renderer);
     for (const c of this.cars.values()) this.scene.remove(c);
     this.cars.clear();
   }
@@ -549,10 +669,9 @@ export class RaceScene {
     if (!track) return;
     this.placeCars(track, cars);
     const mine = riders.find((r) => r.id === me) ?? riders[0];
-    if (this.riderAsset) riders.forEach((r) => this.place(track, r));
-    for (const [id, model] of this.riders) {
+    for (const [id, a] of this.riders) {
       if (!riders.some((r) => r.id === id)) {
-        this.scene.remove(model.root, model.bike);
+        this.scene.remove(a.rider.mesh, a.bike.mesh, a.shadow, a.bikeShadow);
         this.riders.delete(id);
       }
     }
@@ -560,18 +679,27 @@ export class RaceScene {
     // the chase camera (V2): low, behind, never rolling
     const off = mine.phase === "thrown" || mine.phase === "running";
     const z = off ? Math.min(mine.z, mine.bikeZ) - 3 : mine.z;
-    const x = off ? (mine.x + mine.bikeX) / 2 : mine.x;
-    const eye = frameAt(track, z - 6.0, x * 0.9);
-    const look = frameAt(track, z + 14, x * 0.9);
+    // the camera trails the bike sideways and catches up over about half a
+    // second, as the original's does (docs/road-rash-feel.md §4)
+    const now = performance.now() / 1000;
+    const dt = Math.min(0.1, Math.max(0, now - this.lastDraw));
+    this.lastDraw = now;
+    const target = off ? (mine.x + mine.bikeX) / 2 : mine.x;
+    // ... but never far: the rider stays within about a fifth of the width
+    // of centre (0.16-0.21 W measured), not out at the edge
+    const lagged = this.camX + (target - this.camX) * (1 - Math.exp(-dt / 0.2));
+    this.camX = Math.abs(target - this.camX) > 12 ? target : Math.min(target + 1.5, Math.max(target - 1.5, lagged));
+    const x = this.camX;
+    const eye = frameAt(track, z - 6.0, x);
+    const look = frameAt(track, z + 14, x);
     this.camera.position.set(eye.px, eye.py + 1.95, eye.pz);
     // aim below the horizon so the rider sits above the dashboard (V2, V7)
     this.camera.lookAt(look.px, look.py + 0.55 - dashTop * 1.2, look.pz);
     this.backdrop.position.set(this.camera.position.x, this.camera.position.y + 380 - 40, this.camera.position.z);
-    // the plain sits a little below the road here, and its texture moves
-    // against it so the grass stays put in the world
-    const map = (this.plain.material as THREE.MeshStandardMaterial).map!;
-    this.plain.position.set(this.camera.position.x, eye.py + PLAIN, this.camera.position.z);
-    map.offset.set(this.camera.position.x / 10, -this.camera.position.z / 10);
+    this.terrain?.update(this.camera.position.x, this.camera.position.z);
+    this.sea?.position.set(this.camera.position.x, track.water ?? 0, this.camera.position.z);
+    this.camera.updateMatrixWorld();
+    riders.forEach((r) => this.place(track, r));
     // the sun's shadow box follows the camera
     const at = frameAt(track, z + 10, x);
     this.sun.target.position.set(at.px, at.py, at.pz);
@@ -602,129 +730,84 @@ export class RaceScene {
     }
   }
 
-  private model(r: Rider): RiderModel {
-    let model = this.riders.get(r.id);
-    if (model) return model;
+  private actor(r: Rider): Actor {
+    let a = this.riders.get(r.id);
+    if (a) return a;
     // a cop: navy uniform, white helmet, a white bike with black panels
     const [main, trim, helmet] = r.cop ? ["#1c2640", "#1c2640", "#f4f4f4"] : LEATHERS[r.id % LEATHERS.length];
-    const root = new THREE.Group();
-    const lean = new THREE.Group();
-    const seat = new THREE.Group();
-    const bike = r.cop ? buildBike("#f2f2f2", "#141418") : buildBike(main, trim);
-    const rig = buildRider(this.riderAsset!, { main, trim, helmet });
-    // either weapon can change hands mid-race (C6), so both are built
-    const held = { club: buildClub(), chain: buildChain() };
-    for (const w of Object.values(held)) rig.bones.hand_r.add(w);
-    lean.add(seat);
-    root.add(lean);
-    seat.add(rig.root);
-    // find where the clip's pelvis sits and put it on the saddle
-    rig.actions.Driving_Loop.play();
-    rig.mixer.setTime(0.4);
-    rig.root.updateMatrixWorld(true);
-    crouch(rig);
-    rig.root.updateMatrixWorld(true);
-    const p = new THREE.Vector3();
-    rig.bones.pelvis.getWorldPosition(p);
-    const seatOffset = new THREE.Vector3(0, 0.9 - p.y, -0.28 - p.z);
-    model = { root, lean, seat, bike, rig, seatOffset, held };
-    this.scene.add(root, bike);
-    this.riders.set(r.id, model);
-    return model;
-  }
-
-  private place(track: Track, r: Rider): void {
-    const model = this.model(r);
-    const { rig } = model;
-    const thrown = r.phase === "thrown";
-    const running = r.phase === "running";
-    const f = frameAt(track, r.z, r.x);
-    model.root.position.set(f.px, f.py, f.pz);
-    model.root.rotation.set(0, f.heading, 0);
-
-    // the bike: under the rider, or on its side where it fell (M2)
-    if (thrown || running) {
-      const b = frameAt(track, r.bikeZ, r.bikeX);
-      model.bike.position.set(b.px, b.py + 0.16, b.pz);
-      model.bike.rotation.set(0, b.heading + 0.5, Math.PI / 2);
-      model.lean.rotation.set(0, 0, 0);
-    } else {
-      model.bike.position.copy(model.root.position);
-      // the whole bike and rider roll together, up to about 35° (V5)
-      model.bike.rotation.set(0, f.heading, r.lean * 0.62, "YXZ");
-      model.lean.rotation.set(0, 0, r.lean * 0.62);
-    }
-
-    // the rider's clip, driven by the simulation's own clock so every
-    // browser shows the same moment
-    unbend(rig);
-    const play = (name: string, time: number, loop = true): void => {
-      for (const [n, a] of Object.entries(rig.actions)) {
-        if (n === name) {
-          if (!a.isRunning()) a.play();
-          a.setEffectiveWeight(1);
-          const d = a.getClip().duration;
-          a.time = loop ? time % d : Math.min(time, d - 0.001);
-        } else a.stop();
-      }
-      rig.mixer.update(0);
+    const look: Look = r.cop ? { main, trim, helmet, paint: "#f2f2f2", paintTrim: "#141418" } : { main, trim, helmet, paint: main, paintTrim: trim };
+    const shadow = (): THREE.Mesh => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), shadowMaterial());
+      m.renderOrder = 1;
+      return m;
     };
-    if (thrown) {
-      play("Death01", r.phaseT * 1.6, false);
-      rig.root.position.set(0, Math.sin(Math.min(1, r.phaseT / TUNE.thrownTime) * Math.PI) * 0.8, 0);
-      rig.root.rotation.set(0, Math.PI, 0);
-    } else if (running) {
-      play("Jog_Fwd_Loop", r.phaseT);
-      rig.root.position.set(0, 0, 0);
-      // face the bike
-      const dz = r.bikeZ - r.z;
-      const dx = r.bikeX - r.x;
-      rig.root.rotation.set(0, Math.atan2(-dx, dz), 0);
-    } else {
-      play("Driving_Loop", 0.4 + (r.id % 7) * 0.05);
-      rig.root.position.copy(model.seatOffset);
-      rig.root.rotation.set(0, 0, 0);
-      rig.root.updateMatrixWorld(true);
-      crouch(rig);
-      if (r.attack) this.swing(rig, r, r.attack.kind, r.attack.side, r.attack.t);
-    }
-    // the weapon, if any, in the hand that swings it
-    for (const [w, mesh] of Object.entries(model.held)) mesh.visible = r.weapon === w;
-    if (r.weapon) {
-      const hand = rig.bones[r.attack && r.attack.side < 0 ? "hand_l" : "hand_r"];
-      if (model.held[r.weapon].parent !== hand) hand.add(model.held[r.weapon]);
-    }
+    a = { rider: new RiderSprite(this.atlas!, look), bike: new RiderSprite(this.atlas!, look), shadow: shadow(), bikeShadow: shadow() };
+    this.scene.add(a.rider.mesh, a.bike.mesh, a.shadow, a.bikeShadow);
+    this.riders.set(r.id, a);
+    return a;
   }
 
   /**
-   * A swing throws an arm straight out sideways; a kick swings a leg out to
-   * the same side; a backhand sweeps the arm out behind (V15, C3).
+   * Stand a sprite at road coordinate (z, x), turned to the camera, showing
+   * `frame` as seen from wherever the camera is relative to `heading`.
    */
-  private swing(rig: RiderRig, r: Rider, kind: string, side: number, t: number): void {
-    const s = side > 0 ? "r" : "l"; // +x in road terms is the rider's right
-    const away = side > 0 ? -1 : 1; // which way "outward" turns about forward
-    const b = rig.bones;
-    const windup = windupOf(r, r.attack!);
-    if (kind === "kick") {
-      const out = Math.min(1, t / windup);
-      bend(rig, b[`thigh_${s}`], FORWARD, away * 0.9 * out);
-      bend(rig, b[`calf_${s}`], RIGHT, 1.0 * out);
-      return;
-    }
-    if (r.weapon && kind === "punch") {
-      // a weapon is raised and drawn back behind the shoulder - the pause in
-      // which it can be snatched (C6) - then brought round and down
-      const draw = Math.min(1, t / windup);
-      const strike = Math.min(1, Math.max(0, (t - windup) / 0.12));
-      bend(rig, b[`upperarm_${s}`], FORWARD, away * (2.3 - 0.8 * strike) * draw);
-      bend(rig, b[`upperarm_${s}`], UP, -away * (0.9 * draw - 1.6 * strike));
-      bend(rig, b[`lowerarm_${s}`], RIGHT, 0.9 * draw * (1 - strike) + 0.2);
-      return;
-    }
-    // shoulder out to the side, elbow straight
-    const out = Math.min(1, t / windup);
-    bend(rig, b[`upperarm_${s}`], FORWARD, away * (r.weapon ? 1.7 : 1.3) * out);
-    bend(rig, b[`lowerarm_${s}`], RIGHT, 0.6 * out);
-    if (kind === "backhand") bend(rig, b[`upperarm_${s}`], UP, -away * 0.9 * out);
+  private stand(track: Track, s: RiderSprite, frame: string, z: number, x: number, lift: number, lean: number, heading?: number): number {
+    const f = frameAt(track, z, x);
+    const cam = this.camera.position;
+    const cx = cam.x - f.px;
+    const cz = cam.z - f.pz;
+    const h = heading ?? f.heading;
+    const fx = Math.sin(h);
+    const fz = Math.cos(h);
+    // positive when the camera is off the rider's right
+    const view = Math.atan2(cx * -fz + cz * fx, -(cx * fx + cz * fz));
+    s.show(frame, view);
+    s.mesh.position.set(f.px, f.py + lift, f.pz);
+    // turned to face the camera, and leaned about the tyre's contact patch;
+    // a lean to the right tips the sprite clockwise from behind (V5)
+    s.mesh.rotation.set(0, Math.atan2(cx, cz), -lean * 0.62 * Math.cos(view), "YXZ");
+    return f.heading;
   }
+
+  private place(track: Track, r: Rider): void {
+    if (!this.atlas) return;
+    const a = this.actor(r);
+    const off = r.phase === "thrown" || r.phase === "running";
+    const shadowAt = (m: THREE.Mesh, z: number, x: number, w: number, l: number): void => {
+      const f = frameAt(track, z, x);
+      m.position.set(f.px, f.py + 0.03, f.pz);
+      m.rotation.set(0, f.heading, 0);
+      m.scale.set(w, 1, l);
+    };
+    a.bike.mesh.visible = a.bikeShadow.visible = off;
+    if (off) {
+      // the bike down on its side where it fell, sliding on (V13)
+      this.stand(track, a.bike, "bikeDown", r.bikeZ, r.bikeX, 0, 0);
+      shadowAt(a.bikeShadow, r.bikeZ, r.bikeX, 1.4, 2.2);
+    }
+    if (r.phase === "thrown") {
+      // thrown clear, spread-eagled and turning over, then down on the road
+      const u = r.phaseT / (TUNE.thrownTime * 0.75);
+      if (u < 1) {
+        const frame = `tumble${Math.floor(r.phaseT * 9) % 3}`;
+        this.stand(track, a.rider, frame, r.z, r.x, -0.75 + Math.sin(u * Math.PI) * 1.3, 0);
+      } else this.stand(track, a.rider, "lying", r.z, r.x, 0, 0);
+      shadowAt(a.shadow, r.z, r.x, 1.0, 1.6);
+      return;
+    }
+    if (r.phase === "running") {
+      // on foot, back to the bike: facing it
+      const from = frameAt(track, r.z, r.x);
+      const to = frameAt(track, r.bikeZ, r.bikeX);
+      const heading = Math.atan2(to.px - from.px, to.pz - from.pz);
+      this.stand(track, a.rider, `run${Math.floor(r.phaseT * 8) % 4}`, r.z, r.x, 0, 0, heading);
+      shadowAt(a.shadow, r.z, r.x, 0.6, 0.6);
+      return;
+    }
+    this.stand(track, a.rider, frameFor(r), r.z, r.x, 0, r.lean);
+    shadowAt(a.shadow, r.z, r.x, 0.9, 2.3);
+  }
+
+
+
 }

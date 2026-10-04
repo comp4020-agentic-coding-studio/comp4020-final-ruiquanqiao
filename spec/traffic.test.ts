@@ -102,7 +102,9 @@ describe("traffic", () => {
 
   it("keeps every car in a lane of its own direction for a whole race (T4)", () => {
     const r = startRace(makeTrack(1), 1, [{ id: 0, name: "h", human: true }], 3);
-    expect(r.cars.length).toBeGreaterThan(20);
+    // traffic is as sparse as the original's, a car every 30-60 s at cruise,
+    // so a level 1 road carries only a handful
+    expect(r.cars.length).toBeGreaterThan(5);
     for (let i = 0; i < 60 * 60; i++) step(r, new Map());
     for (const c of r.cars) {
       if (c.dir > 0) expect(c.x).toBeGreaterThan(0);

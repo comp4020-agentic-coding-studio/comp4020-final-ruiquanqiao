@@ -5,9 +5,10 @@
 
 import { type CarState, type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
+import { setMusic, sfx, startAudio, updateAudio } from "./audio.ts";
 import { RaceScene } from "./scene.ts";
-import { DT, type Input, MPH, NO_INPUT, type Race, type Rider, beginAttack, cap, nearest, separate, packInput, positionOf, ride, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
-import { MILE, makeTrack } from "../game/track.ts";
+import { DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, nearest, separate, packInput, positionOf, ride, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
+import { ROADS, makeTrack } from "../game/track.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
 const app = $("#app");
@@ -51,14 +52,16 @@ type Current = {
 let current: Current | null = null;
 
 function begin(msg: Extract<ToClient, { t: "start" }>): void {
-  const track = makeTrack(msg.level);
+  const track = makeTrack(msg.level, msg.track ?? 0);
   const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed);
   current = { id: msg.race, level: msg.level, race, you: msg.you, snaps: [], history: new Map(), steps: 0, offset: null, ended: false };
   if (msg.you !== null) {
     show("race");
     roadScene.setTrack(track);
     resize();
-    banner(`Level ${msg.level} · ${(track.length / MILE).toFixed(1)} miles`, 2500);
+    banner(`${track.name} · level ${msg.level} · ${(track.length / 1000).toFixed(1)} km`, 2500);
+    startAudio();
+    sfx("go");
     $("#touch").querySelectorAll("button").forEach((b) => b.classList.remove("down"));
   } else {
     $("#watch").hidden = false;
@@ -84,8 +87,12 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
   const before = r.phase;
   const predicted = c.history.get(Math.round(msg.time / DT));
   if (mine[8] !== "riding" || before !== "riding" || !predicted) {
-    // off the bike, back on it, or no prediction to compare: the server's word
+    // off the bike, back on it, or no prediction to compare: the server's word,
+    // except a swing begun here that the server has not heard of yet - taking
+    // its word for that wiped the player's own punch within 80 ms
+    const swing = r.attack;
     applyRider(r, mine);
+    if (!r.attack && swing && mine[8] === "riding" && swing.t < windupOf(r, swing) + 0.2) r.attack = swing;
   } else {
     // steer the prediction towards the server by the error it had then
     const ez = mine[1] - predicted.z;
@@ -103,6 +110,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     }
   }
   for (const e of msg.events) {
+    sound(c, e);
     if (e.kind === "hit" && e.on === c.you) flash();
     if (e.kind === "crash" && e.rider === c.you) banner(e.cause === "knockdown" ? "Knocked off" : "Down!", 1200);
     if (e.kind === "wrecked" && e.rider === c.you) banner("Wrecked", 3000);
@@ -114,6 +122,26 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     if (e.kind === "snatch" && e.from === c.you) banner(`Lost the ${e.weapon}`, 1500);
     if (e.kind === "finished" && e.rider === c.you) banner(e.place <= 3 ? `${ordinal(e.place)}: qualified` : ordinal(e.place), 3000);
   }
+}
+
+/** What this rider hears of a race event: their own blows and spills, and
+ * anything happening within earshot. */
+function sound(c: Current, e: Extract<ToClient, { t: "snap" }>["events"][number]): void {
+  const r = c.race.riders.find((x) => x.id === c.you);
+  if (!r) return;
+  const near = (id: number): boolean => {
+    const o = c.race.riders.find((x) => x.id === id);
+    return !!o && Math.abs(o.z - r.z) < 40;
+  };
+  if (e.kind === "hit" && (e.by === c.you || e.on === c.you || near(e.on))) {
+    const by = c.race.riders.find((x) => x.id === e.by);
+    if (e.on === c.you) sfx("hitTaken");
+    else sfx(e.move === "kick" ? "kick" : by?.weapon ?? "punch");
+  }
+  if (e.kind === "crash" && (e.rider === c.you || near(e.rider))) sfx(e.cause === "rearEnd" || e.cause === "headOn" ? "carCrash" : "crash");
+  if (e.kind === "snatch" && (e.by === c.you || e.from === c.you)) sfx("snatch");
+  if (e.kind === "busted" && e.rider === c.you) sfx("busted");
+  if (e.kind === "finished" && e.rider === c.you) sfx("finish");
 }
 
 function onMessage(msg: ToClient): void {
@@ -170,7 +198,7 @@ function queueButtons(): void {
 
 function board(): void {
   const body = $("#quals").querySelector("tbody")!;
-  const tracks = ["Ridge Road"];
+  const tracks = ROADS.map((r) => r.name);
   body.innerHTML = "";
   for (const t of tracks) {
     const tr = document.createElement("tr");
@@ -192,7 +220,10 @@ function board(): void {
 for (const b of document.querySelectorAll<HTMLButtonElement>(".queue button")) {
   b.addEventListener("click", () => {
     const level = Number(document.querySelector<HTMLInputElement>('input[name="level"]:checked')?.value ?? 1);
-    send({ t: "queue", mode: b.dataset.mode as Mode, level });
+    const track = Number(document.querySelector<HTMLInputElement>('input[name="road"]:checked')?.value ?? 0);
+    // the click is the gesture a browser wants before it will play sound
+    startAudio();
+    send({ t: "queue", mode: b.dataset.mode as Mode, level, track });
   });
 }
 $("#leave").addEventListener("click", () => {
@@ -222,7 +253,7 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
   const mine = standings.find((s, i) => s.human && c.race.riders.find((r) => r.id === c.you)?.name === s.name && i >= 0);
   const outcome = mine?.outcome ?? "unfinished";
   const lines: Record<Standing["outcome"], [string, string]> = {
-    qualified: ["Qualified", `${ordinal(mine!.place)} across the line. Ridge Road, level ${c.level}, goes on your board.`],
+    qualified: ["Qualified", `${ordinal(mine!.place)} across the line. ${c.race.track.name}, level ${c.level}, goes on your board.`],
     placed: ["Placed", `${ordinal(mine?.place ?? 0)}. You finished, but only the top three qualify.`],
     wrecked: ["Wrecked", "The bike gave out before the line."],
     busted: ["Busted", "You came off with a cop beside you. The race is over for you."],
@@ -265,6 +296,8 @@ const KEYMAP: Record<string, keyof Input> = {
   KeyD: "right",
   KeyJ: "hand",
   KeyK: "foot",
+  KeyL: "nitro",
+  Space: "nitro",
   ArrowUp: "throttle",
   ArrowDown: "brake",
   ArrowLeft: "left",
@@ -280,7 +313,15 @@ function setKey(k: keyof Input, down: boolean): void {
   keys[k] = down;
 }
 
+let musicOn = true;
+
 addEventListener("keydown", (e) => {
+  if (e.code === "KeyM" && document.activeElement?.tagName !== "INPUT") {
+    musicOn = !musicOn;
+    setMusic(musicOn);
+    banner(musicOn ? "Music on" : "Music off", 900);
+    return;
+  }
   const k = KEYMAP[e.code];
   if (!k || app.dataset.screen !== "race") return;
   e.preventDefault();
@@ -402,6 +443,7 @@ function frame(): void {
         const r = c.race.riders.find((x) => x.id === c.you);
         if (r) {
           ride(r, keys, c.race.track);
+          if (r.boost > TUNE.nitroTime - DT * 1.5) flash("#fff0b0");
           // the predicted bike stops at other bikes too, instead of passing
           // through them until the server's correction arrives
           if (r.phase === "riding") for (const o of c.race.riders) if (o !== r && o.phase === "riding") separate(r, o, 1);
@@ -419,6 +461,8 @@ function frame(): void {
     if (c.you !== null) {
       roadScene.draw(c.race.riders, c.you, dashCover / Math.max(1, dash.height), c.race.cars);
       hud(c);
+      const r = c.race.riders.find((x) => x.id === c.you);
+      if (r) updateAudio({ speed: r.speed, top: topSpeed(r), throttle: keys.throttle || r.boost > 0, riding: r.phase === "riding" });
     } else if (!$("#watch").hidden) {
       // watching: ride along behind whoever is leading
       const lead = c.race.riders.filter((r) => !r.cop).sort((p, q) => q.z - p.z)[0];
@@ -455,11 +499,14 @@ function hud(c: Current): void {
   const position = r.place || positionOf(c.race, r.id);
   dashCover = drawDash(dashCtx, dash.width, dash.height, {
     name: r.name,
-    mph: r.speed / MPH,
+    kmh: r.speed / KMH,
     // no gears (R4): the needle climbs with speed and the build-up (R17)
     rpm: 0.15 + 0.8 * Math.min(1, (r.speed / cap(r)) * (0.8 + 0.2 * r.build)),
     position,
-    miles: Math.max(0, r.z) / MILE, // an odometer, never a progress bar (T3)
+    km: Math.max(0, r.z) / 1000, // an odometer, never a progress bar (T3); km, as the dial is
+    nitro: r.nitro,
+    nitroMax: TUNE.nitroCharges,
+    boosting: r.boost > 0,
     damage: r.damage / 100,
     stamina: r.stamina / 100,
     opponent: o ? { name: o.name, stamina: o.stamina / 100, gap: o.z - r.z } : null,
@@ -485,10 +532,11 @@ window.__rash = {
     const c = current;
     const r = c?.race.riders.find((x) => x.id === c.you);
     return c && r
-      ? { race: c.id, you: c.you, t: c.race.t, mph: r.speed / MPH, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, stamina: r.stamina, damage: r.damage, weapon: r.weapon, threat: windingAt(c.race, r)?.id ?? null }
+      ? { race: c.id, you: c.you, t: c.race.t, kmh: r.speed / KMH, mph: r.speed / MPH, nitro: r.nitro, boost: r.boost, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, stamina: r.stamina, damage: r.damage, weapon: r.weapon, threat: windingAt(c.race, r)?.id ?? null }
       : { screen: app.dataset.screen, queued };
   },
   press: (k: keyof Input, down: boolean) => setKey(k, down),
+  scene: () => roadScene,
   riders: () => current?.race.riders.map((r) => ({ id: r.id, cop: r.cop, z: Math.round(r.z), x: r.x.toFixed(1), phase: r.phase, weapon: r.weapon, attack: r.attack && `${r.attack.kind}${r.attack.t.toFixed(2)}${r.attack.landed ? "L" : ""}` })),
 };
 

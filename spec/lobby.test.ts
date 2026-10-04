@@ -8,7 +8,7 @@ type Fake = Conn & { inbox: ToClient[] };
 
 function conn(rider: number, name = `r${rider}`): Fake {
   const inbox: ToClient[] = [];
-  return { rider, name, inbox, send: (m) => inbox.push(m), pool: null, level: 1, race: null, local: -1, seq: 0 };
+  return { rider, name, inbox, send: (m) => inbox.push(m), pool: null, level: 1, road: 0, race: null, local: -1, seq: 0 };
 }
 
 function lobby() {
