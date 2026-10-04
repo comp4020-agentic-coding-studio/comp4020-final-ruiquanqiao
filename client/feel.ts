@@ -33,8 +33,13 @@ export type Reaction = {
   launched: number | null;
 };
 
-/** Tilt away from something at x `from`, for a bike at x `at` (the rider's right is -x). */
-const away = (at: number, from: number): number => (from > at ? 1 : -1);
+/**
+ * Tilt away from something at road x `from`, for a bike at x `at`. On the
+ * road +x is the rider's right, as steering right makes it: this first read
+ * the three.js convention (-x is right) and tipped every bike towards what
+ * hit it, which a test written from the same misreading passed.
+ */
+const away = (at: number, from: number): number => (from > at ? -1 : 1);
 
 /** How one race event is felt by a rider at `me` (or a spectator, me null). */
 export function react(e: RaceEvent, riders: readonly Rider[], me: number | null): Reaction {

@@ -1,0 +1,31 @@
+import { describe, expect, it } from "vitest";
+import { ROADS } from "../game/track.ts";
+import { tally } from "../scripts/fights.ts";
+
+// The aggression detector (ledger C11). A player who rides flat out and never
+// swings, on every road, against a full field. The recording's rival rides up
+// beside the player and stays there six seconds and more, swinging about once
+// a second (351.5-357.5). The first AI only swung at whoever happened to be
+// within 1.6 m and held its line away from everyone else: 3-7 swings at the
+// player in 90 s, and never more than a few seconds alongside.
+
+describe("the field picks fights with a player", () => {
+  const all = ROADS.map((_, road) => tally(road, 11, 90, 1, 1));
+
+  it("swings at a player who never swings back at least ten times in 90 s, on every road", () => {
+    // measured: 16-36
+    for (const t of all) expect(t.swingsAtMe, t.road).toBeGreaterThanOrEqual(10);
+  });
+
+  it("rides alongside for as long as the recording's rival does, somewhere on every road", () => {
+    // measured: the longest stretch alongside 5.1-14 s
+    for (const t of all) expect(t.longest, t.road).toBeGreaterThan(4);
+  });
+
+  it("knocks such a player off now and then, but does not hound them off every few seconds", () => {
+    const down = all.reduce((n, t) => n + t.meDown, 0);
+    // measured: 13 in 450 s
+    expect(down).toBeGreaterThan(3);
+    expect(down).toBeLessThan(30);
+  });
+});

@@ -33,16 +33,31 @@ describe("each kind of touch is reported", () => {
     Object.assign(rider(r, 1), { z: 500, x: 0.7, speed: 40, vx: 0 });
     steps(r, 1);
     expect(bumps(r)).toMatchObject([{ rider: 1, other: 0, with: "rider" }]);
-    // and says where the shove came from: the rider's left (+x is left)
+    // and says where the shove came from: the rider's left (+x is right)
     expect(bumps(r)[0].from).toBeLessThan(rider(r, 1).x);
+    expect(react(bumps(r)[0], r.riders, 0).tilt.find((t) => t.id === 1)!.amp).toBeGreaterThan(0);
   });
 
   it("a shunt from behind, on the rider in front", () => {
     const r = race();
     Object.assign(rider(r, 0), { z: 500, x: 0, speed: 45 });
-    Object.assign(rider(r, 1), { z: 501.8, x: 0, speed: 30 });
+    Object.assign(rider(r, 1), { z: 501.8, x: 0, speed: 35 });
     steps(r, 1);
     expect(bumps(r)[0]).toMatchObject({ rider: 1, other: 0, with: "rider" });
+  });
+
+  it("run into from behind at 50 km/h faster or more, the rider in front is knocked off (K14)", () => {
+    const r = race();
+    const [a, b] = [rider(r, 0), rider(r, 1)];
+    Object.assign(a, { z: 500, x: 0, speed: 50 });
+    Object.assign(b, { z: 501.8, x: 0, speed: 50 - TUNE.shuntKnock - 1 });
+    steps(r, 1);
+    expect(b.phase).toBe("thrown");
+    expect(r.events).toContainEqual(expect.objectContaining({ kind: "crash", rider: 1, cause: "rub" }));
+    // the rammer stays up, checked hard, and feels it at full strength
+    expect(a.phase).toBe("riding");
+    expect(a.speed).toBeLessThan(45);
+    expect(bumps(r)[0]).toMatchObject({ rider: 0, other: 1, hard: 1 });
   });
 
   it("a car's flank brushed", () => {
@@ -99,8 +114,9 @@ describe("what a touch looks and sounds like", () => {
     expect(hit).toBeTruthy();
     const felt = react(hit, r.riders, 0);
     const tilt = (id: number): number => felt.tilt.find((t) => t.id === id)!.amp;
-    // the victim is on the striker's left (+x), so goes over to its own left
-    expect(tilt(1)).toBeLessThan(-0.3);
+    // the victim is on the striker's right (+x is right on the road, as
+    // steering right makes it), so goes over to its own right
+    expect(tilt(1)).toBeGreaterThan(0.3);
     expect(Math.abs(tilt(0))).toBeGreaterThan(0.1);
     expect(Math.abs(tilt(0))).toBeLessThan(Math.abs(tilt(1)));
   });
@@ -127,8 +143,8 @@ describe("what a touch looks and sounds like", () => {
     Object.assign(rider(r, 0), { x: 1 });
     const felt = react(e, r.riders, 0);
     expect(felt.car?.id).toBe(7);
-    // the car is on the left (+x): over to the right
-    expect(felt.tilt[0].amp).toBeGreaterThan(0.3);
+    // the car is on the right (+x): over to the left
+    expect(felt.tilt[0].amp).toBeLessThan(-0.3);
     expect(felt.sound?.kind).toBe("carBump");
   });
 

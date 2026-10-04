@@ -92,6 +92,7 @@ versions and the conflicts between sources that the table only summarises.
 | C8 | Stamina at zero knocks the rider off; they run back to the bike | PCM | planned | same | C8 |
 | C9 | A rider lying on the road can be run over | FADE | planned | same | C9 |
 | C10 | Whether a stolen weapon carries into the next race | RR1FAQ | built | adapted: the PC is undocumented here; I follow the Mega Drive rule that it does not | `spec/traffic.test.ts › some AI riders start armed, and every human starts empty-handed (C5, C10)` |
+| C11 | Rivals come at you: one rides up beside the player, matches speed and stays there trading blows, swinging about once a second | RRVID | built | adapted: the recording shows a rival alongside the player for six seconds and more (351.5-357.5), swinging every 0.96 s. Each AI rider here picks a foe near it, a human far more readily than another AI, rides to its flank, holds level with it, swings on that beat and now and then rubs it over, and gives up after 5-15 s. Riding a fight it rides flat out and uses its nitro to close, since the build-up every hit knocks back left it unable to catch a player who had not been touched | `spec/fights.test.ts › swings at a player who never swings back at least ten times in 90 s, on every road` |
 
 ## Meters and crashes
 
@@ -173,6 +174,7 @@ not settle a question, the row says which source filled it.
 | K11 | A downed rider and the separated bike stay in the lane as hazards for several seconds | YT1 | planned | same, with C9 | C9 |
 | K12 | Cliffs, canyon walls, buildings and the sea rail are solid: the bike rides along them or crashes into them, never through | RRVID | built | same. Glanced along, a wall slows the bike; ridden into faster than 6 m/s sideways, it throws the rider | `spec/feel.test.ts › scrapes a bike glancing along the coast's cliff, and crashes one ridden into it square` |
 | K13 | Every touch is felt: a struck bike tilts away on the very next frame, the striker's bike rocks for about four, and nothing shakes or flashes the screen | RRVID | built | adapted: the rub, the shunt, a car's flank brushed and a wall scraped each have a sound and a tilt of their own, synthesised as every sound here is (H5); the recording shows the tilts, and its sounds are not copied. One's own rub is felt as it is predicted, not a round trip later | `spec/touch.test.ts › a struck bike is over on the next frame and settled within about four` |
+| K14 | Running into the back of another bike: a nudge shoves it on, a hard hit knocks its rider off | PCM | built | adapted: the recording has no clean rear-end between two bikes, and the manual only says rear-ending slow traffic is nearly as bad as a head-on. Here a bike run into 50 km/h faster or more goes down in the slide a hard rub causes (K2), and the rammer stays up, checked to its speed; slower, it is shoved on and the touch is felt (K13). Bikes are never drawn inside each other: the player's own is kept off the others after they move each frame as well as at each step | `spec/ram.test.ts › from behind, 100 km/h faster, knocks them off: never drawn through them, and felt (K14)` |
 
 ## Look
 

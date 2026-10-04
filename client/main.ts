@@ -51,6 +51,8 @@ type Current = {
 let current: Current | null = null;
 /** when this tab last felt its own predicted bike touch another */
 let localBump = -9;
+/** the race events this tab has been sent lately, for the debugging handle */
+const heard: unknown[] = [];
 
 function begin(msg: Extract<ToClient, { t: "start" }>): void {
   const track = makeTrack(msg.level, msg.track ?? 0);
@@ -78,6 +80,8 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
   c.timeline.push(now, { time: msg.time, riders: msg.riders, cars: msg.cars });
   // every touch is seen and heard (K13): tilts, a knocked car, a rider launched
   for (const e of msg.events) {
+    heard.push(e);
+    if (heard.length > 300) heard.shift();
     // a rub of one's own was already felt as it was predicted
     if (e.kind === "bump" && e.with === "rider" && (e.rider === c.you || e.other === c.you) && now - localBump < 0.5) continue;
     const felt = react(e, c.race.riders, c.you);
@@ -385,6 +389,26 @@ function resize(): void {
 }
 addEventListener("resize", resize);
 
+/**
+ * The predicted bike stops at other bikes instead of passing through them
+ * until the server's correction arrives, and the touch is felt at once, not a
+ * round trip later (K13).
+ */
+function keepOff(c: Current, r: Rider, now: number): void {
+  if (r.phase !== "riding") return;
+  for (const o of c.race.riders) {
+    if (o === r || o.phase !== "riding") continue;
+    const closing = r.speed - o.speed;
+    const touch = separate(r, o, 1);
+    if (!touch || now - localBump < 0.25) continue;
+    localBump = now;
+    const hard = touch === "rear" && o.z > r.z ? closing / TUNE.shuntKnock : Math.abs(r.vx) / TUNE.rubKnock;
+    const felt = react({ t: c.race.t, kind: "bump", rider: r.id, other: o.id, with: "rider", hard: Math.min(1, Math.max(0.3, hard)), from: o.x }, c.race.riders, c.you);
+    roadScene.feel(felt);
+    if (felt.sound) sfx(felt.sound.kind, felt.sound.gain);
+  }
+}
+
 /** Everyone but the predicted rider, where the snapshots say they are now (client/netview.ts). */
 function interpolate(c: Current, now: number): void {
   const tl = c.timeline;
@@ -432,15 +456,7 @@ function frame(): void {
           if (r.boost > TUNE.nitroTime - DT * 1.5) flash("#fff0b0");
           // the predicted bike stops at other bikes too, instead of passing
           // through them until the server's correction arrives
-          if (r.phase === "riding")
-            for (const o of c.race.riders) {
-              if (o === r || o.phase !== "riding" || !separate(r, o, 1) || now - localBump < 0.25) continue;
-              // and the touch is felt at once, not a round trip later (K13)
-              localBump = now;
-              const felt = react({ t: c.race.t, kind: "bump", rider: r.id, other: o.id, with: "rider", hard: Math.min(1, Math.abs(r.vx) / TUNE.rubKnock), from: o.x }, c.race.riders, c.you);
-              roadScene.feel(felt);
-              if (felt.sound) sfx(felt.sound.kind, felt.sound.gain);
-            }
+          keepOff(c, r, now);
           if (r.attack) {
             r.attack.t += DT;
             if (r.attack.t >= windupOf(r, r.attack) + 0.2) r.attack = null;
@@ -451,6 +467,12 @@ function frame(): void {
     }
     if (c.you !== null) sendKeys(now);
     interpolate(c, now);
+    // and again once the others have moved this frame: the screen refreshes
+    // faster than the race steps, and between steps a bike moved up to where
+    // it is now was drawn into the player's, up to half a bike deep
+    // (.cache/ramlive.ts, 9 frames in 30 s of riding at the field)
+    const own = c.you === null ? null : c.race.riders.find((x) => x.id === c.you);
+    if (own) keepOff(c, own, now);
     if (c.you !== null) {
       roadScene.draw(c.race.riders, c.you, dashCover / Math.max(1, dash.height), c.race.cars);
       hud(c);
@@ -530,6 +552,9 @@ window.__rash = {
   },
   press: (k: keyof Input, down: boolean) => setKey(k, down),
   scene: () => roadScene,
+  heard: () => heard,
+  /** everyone as drawn this frame, unrounded */
+  drawn: () => current?.race.riders.map((r) => ({ id: r.id, z: r.z, x: r.x, phase: r.phase, cop: r.cop })),
   riders: () => current?.race.riders.map((r) => ({ id: r.id, cop: r.cop, z: Math.round(r.z), x: r.x.toFixed(1), phase: r.phase, weapon: r.weapon, attack: r.attack && `${r.attack.kind}${r.attack.t.toFixed(2)}${r.attack.landed ? "L" : ""}` })),
 };
 

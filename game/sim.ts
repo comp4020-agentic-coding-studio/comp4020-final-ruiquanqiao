@@ -72,6 +72,20 @@ export const TUNE = {
   // a blow is 6 frames drawn back and 5 out, at 25 fps, in the original
   windup: 0.22, // s from key to contact
   punchCooldown: 0.44,
+  // duels (C11): how readily a rider picks a fight per second, scaled by its
+  // aggression, with a human and with another AI rider; how long it keeps at
+  // it; how far off the foe's flank it rides; the beat it swings on (the
+  // recording's rival: every 0.96 s); and how often it rubs the foe over
+  foeHuman: 0.5,
+  foeAI: 0.04,
+  duelMin: 5,
+  duelSpread: 8,
+  duelGap: 1.15,
+  duelBeat: 0.96,
+  ramRate: 0.35,
+  // closing speed, m/s, at which running into the back of a bike knocks its
+  // rider off (K14): 50 km/h
+  shuntKnock: 14,
   kickCooldown: 0.6,
   punchStamina: 17,
   kickStamina: 7,
@@ -190,6 +204,14 @@ export type Rider = {
   line: number; // preferred x
   skill: number; // fraction of top speed it aims for
   aggression: number; // chance per second of starting something
+  /** the rider this one has picked a fight with (C11), or -1 */
+  foe: number;
+  /** race time the fight is given up at, or (with no foe) when another may be picked */
+  foeUntil: number;
+  /** race time of the next swing it means to take; the recording's rivals swing about once a second */
+  nextSwing: number;
+  /** race time until which it is steering into the foe's bike to rub it over */
+  ramUntil: number;
 };
 
 export type RaceEvent =
@@ -294,6 +316,10 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       line: col * 2.8,
       skill: 0,
       aggression: 0,
+      foe: -1,
+      foeUntil: 0,
+      nextSwing: 0,
+      ramUntil: 0,
     });
   });
   for (const r of race.riders) {
@@ -715,6 +741,14 @@ function contactPass(race: Race, riding: Rider[], transfer: boolean): void {
       const [back, front] = b.z >= a.z ? [a, b] : [b, a];
       if (back.speed > front.speed) {
         const diff = back.speed - front.speed;
+        // run into from behind hard enough, the bike in front goes down in a
+        // slide, as a hard rub puts it (K14); the rammer is checked to its speed
+        if (diff >= TUNE.shuntKnock && front.speed > 5) {
+          crash(front, "rub", race);
+          back.speed -= diff * 0.6;
+          bump(race, back, front.id, "rider", 1, front.x);
+          continue;
+        }
         front.speed += Math.min(7 * MPH, diff * 0.5);
         back.speed = front.speed;
         if (diff > 1) bump(race, front, back.id, "rider", diff / 10, back.x);
@@ -875,8 +909,46 @@ export function clearLine(race: Race, r: Rider, line: number): number | null {
   return options.reduce((best, x) => (Math.abs(x - r.x) < Math.abs(best - r.x) ? x : best));
 }
 
+/**
+ * Picking a fight (C11). In the recording a rival rides up beside the player,
+ * matches speed and stays there trading blows for six seconds and more
+ * (351.5-357.5), swinging about once a second. The first AI only swung at
+ * whoever happened to be within 1.6 m and held its line to avoid everyone
+ * else, so a player could ride a whole race untouched: 3-7 swings in 90 s
+ * (scripts/fights.ts). Now each AI rider picks a foe near it - a human far
+ * more readily than another AI - rides to its side and duels it.
+ */
+function pickFoe(race: Race, r: Rider): Rider | null {
+  let foe = r.foe >= 0 ? race.riders.find((o) => o.id === r.foe) : undefined;
+  if (foe && (foe.phase !== "riding" || race.t > r.foeUntil || Math.abs(foe.z - r.z) > 60)) {
+    // given up: a breather before the next
+    r.foe = -1;
+    r.foeUntil = race.t + 2 + random(race) * 3;
+    foe = undefined;
+  }
+  if (foe) return foe;
+  // nobody starts a fight on the grid, before the field has strung out
+  if (race.t < r.foeUntil || race.t < 4 || r.speed < 12) return null;
+  for (const o of race.riders) {
+    if (o === r || o.cop || o.phase !== "riding") continue;
+    const dz = o.z - r.z;
+    if (dz < -25 || dz > 50) continue;
+    // humans are who the field is out for; AI riders mostly leave each other be
+    const keen = r.aggression * (o.human ? TUNE.foeHuman : TUNE.foeAI);
+    if (random(race) < keen * DT) {
+      r.foe = o.id;
+      r.foeUntil = race.t + TUNE.duelMin + random(race) * TUNE.duelSpread * (0.5 + r.aggression);
+      r.nextSwing = race.t + 0.3 + random(race) * 0.5;
+      return o;
+    }
+  }
+  return null;
+}
+
 export function aiInput(race: Race, r: Rider): Input {
   if (r.cop) return copInput(race, r);
+  const foe = pickFoe(race, r);
+  if (foe) return duelInput(race, r, foe);
   const line = clearLine(race, r, r.line);
   const input: Input = { ...NO_INPUT, throttle: true };
   const curve = curveAt(race.track, r.z + r.speed * 1.2);
@@ -923,6 +995,50 @@ export function aiInput(race: Race, r: Rider): Input {
     input.left = false;
     input.right = false;
   }
+  return input;
+}
+
+/** Riding a duel: up beside the foe, held there, swinging on the beat, now and then rubbing it over. */
+function duelInput(race: Race, r: Rider, foe: Rider): Input {
+  const input: Input = { ...NO_INPUT, throttle: true };
+  const dz = foe.z - r.z;
+  // stay on whichever side of it this rider is already on
+  const side = r.x >= foe.x ? 1 : -1;
+  if (race.t >= r.ramUntil && Math.abs(dz) < 1.5 && random(race) < r.aggression * TUNE.ramRate * DT) r.ramUntil = race.t + 0.35;
+  const gap = race.t < r.ramUntil ? 0.4 : TUNE.duelGap;
+  let want = clamp(foe.x + side * gap, -(ROAD_HALF - 0.5), ROAD_HALF - 0.5);
+  // a car in the way comes first
+  const line = clearLine(race, r, want);
+  if (line === null) return { ...input, throttle: false, brake: true };
+  want = line;
+  const curve = curveAt(race.track, r.z + r.speed * 1.2);
+  const steer = want - r.x + TUNE.centrifugal * r.speed * r.speed * curve * 0.25;
+  if (steer > 0.25) input.right = true;
+  else if (steer < -0.25) input.left = true;
+  if (Math.abs(r.lean) > 0.85 && r.leanHeld > TUNE.leanLimit * 0.4) input.left = input.right = false;
+  // level with it: catch up, or ease off and brake when past it
+  const closing = r.speed - foe.speed;
+  const ahead = -dz + closing * 0.4;
+  if (ahead > 0.3) input.throttle = false;
+  if (ahead > 1.5) input.brake = true;
+  // riding a fight it rides flat out, whatever blows it has taken: with the
+  // build-up knocked back by every hit it could never catch a player who had
+  // not been touched, and the fight went to whoever was in front (R17)
+  r.build = 1;
+  // too far behind to close on the throttle: a burst of nitro (R8)
+  if (dz > 6 && closing < 4 && r.boost <= 0 && !r.prevNitro) input.nitro = true;
+  // bends still have to be ridden
+  const need = TUNE.centrifugal * r.speed * r.speed * Math.abs(curve);
+  if (need > 0.8 * TUNE.steerFast) input.throttle = false;
+  if (need > 1.05 * TUNE.steerFast) input.brake = true;
+  // swing on the beat when it is in reach (C1): hand mostly, foot to shove
+  if (race.t >= r.nextSwing && Math.abs(dz) < 1.6 && Math.abs(foe.x - r.x) < 1.7 && !r.attack) {
+    if (random(race) < 0.7) input.hand = true;
+    else input.foot = true;
+    r.nextSwing = race.t + TUNE.duelBeat * (0.8 + random(race) * 0.4);
+  }
+  // grabbing a weapon drawn back at it still comes first (C6)
+  if (!r.weapon && !r.prevHand && windingAt(race, r) && random(race) < r.aggression * DT * 3) input.hand = true;
   return input;
 }
 
