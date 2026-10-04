@@ -13,18 +13,18 @@ describe("the field picks fights with a player", () => {
   const all = ROADS.map((_, road) => tally(road, 11, 90, 1, 1));
 
   it("swings at a player who never swings back at least ten times in 90 s, on every road", () => {
-    // measured: 16-36
+    // measured: 13-25
     for (const t of all) expect(t.swingsAtMe, t.road).toBeGreaterThanOrEqual(10);
   });
 
   it("rides alongside for as long as the recording's rival does, somewhere on every road", () => {
-    // measured: the longest stretch alongside 5.1-14 s
+    // measured: the longest stretch alongside 5.9-11.4 s
     for (const t of all) expect(t.longest, t.road).toBeGreaterThan(4);
   });
 
   it("knocks such a player off now and then, but does not hound them off every few seconds", () => {
     const down = all.reduce((n, t) => n + t.meDown, 0);
-    // measured: 13 in 450 s
+    // measured: 16 in 450 s
     expect(down).toBeGreaterThan(3);
     expect(down).toBeLessThan(30);
   });

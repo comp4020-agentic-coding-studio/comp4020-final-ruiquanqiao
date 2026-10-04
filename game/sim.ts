@@ -76,7 +76,7 @@ export const TUNE = {
   // aggression, with a human and with another AI rider; how long it keeps at
   // it; how far off the foe's flank it rides; the beat it swings on (the
   // recording's rival: every 0.96 s); and how often it rubs the foe over
-  foeHuman: 0.5,
+  foeHuman: 1.5,
   foeAI: 0.04,
   duelMin: 5,
   duelSpread: 8,
@@ -722,8 +722,10 @@ export function separate(a: Rider, b: Rider, share = 0.5): "side" | "rear" | nul
 /** Bikes do not pass through each other; a faster bike behind pushes (R7). */
 function contact(race: Race): void {
   const riding = race.riders.filter((r) => r.phase === "riding");
-  // a few passes: pushing one pair apart can push one of them into a third
-  for (let pass = 0; pass < 4; pass++) contactPass(race, riding, pass === 0);
+  // several passes: pushing one pair apart can push one of them into a third.
+  // Four were enough until riders started duelling; six bikes packed into a
+  // fight were left 3 cm inside each other, and eight clear them
+  for (let pass = 0; pass < 8; pass++) contactPass(race, riding, pass === 0);
 }
 
 function contactPass(race: Race, riding: Rider[], transfer: boolean): void {
