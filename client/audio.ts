@@ -517,7 +517,7 @@ export function updateAudio(f: AudioFrame): void {
   e.windTone.frequency.setTargetAtTime(350 + 2400 * w, t, 0.15);
 }
 
-export type Sfx = "punch" | "kick" | "club" | "chain" | "hitTaken" | "crash" | "carCrash" | "snatch" | "busted" | "countdown" | "go" | "finish" | "bump" | "carBump" | "scrape";
+export type Sfx = "punch" | "kick" | "club" | "chain" | "hitTaken" | "crash" | "carCrash" | "snatch" | "busted" | "countdown" | "go" | "finish" | "bump" | "carBump" | "scrape" | "runOver";
 
 /** Play a sound effect; `gain` (0-1) for the touches, which come in sizes. */
 export function sfx(kind: Sfx, gain = 1): void {
@@ -577,6 +577,12 @@ export function sfx(kind: Sfx, gain = 1): void {
       blip(g, "sine", 120, 60, t, 0.16, 0.9 * v);
       for (const p of [431, 673, 1009]) blip(g, "triangle", p, p * 0.97, t, 0.22, 0.09 * v);
       hiss(g, "bandpass", 1800, 900, 2, t, 0.3, 0.45 * v);
+      break;
+    case "runOver": // a body under the front wheel: a heavy thud, a grunt, the bike landing
+      blip(g, "sine", 95, 40, t, 0.25, 1 * v);
+      blip(g, "sawtooth", 200, 80, t + 0.02, 0.16, 0.12 * v);
+      hiss(g, "lowpass", 900, 300, 0.7, t, 0.15, 0.6 * v);
+      blip(g, "sine", 120, 50, t + 0.17, 0.14, 0.7 * v);
       break;
     case "scrape": // along a wall or rail: the grind the recording holds for about a second
       blip(g, "sine", 150, 70, t, 0.08, 0.5 * v);

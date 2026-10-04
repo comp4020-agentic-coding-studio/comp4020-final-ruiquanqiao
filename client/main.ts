@@ -8,7 +8,7 @@ import { drawDash } from "./dash.ts";
 import { setMusic, sfx, startAudio, updateAudio } from "./audio.ts";
 import { react } from "./feel.ts";
 import { RaceScene } from "./scene.ts";
-import { DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, nearest, separate, packInput, positionOf, ride, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
+import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, nearest, onFoot, separate, packInput, positionOf, ride, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Prediction, Timeline } from "./netview.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 
@@ -51,6 +51,8 @@ type Current = {
 let current: Current | null = null;
 /** when this tab last felt its own predicted bike touch another */
 let localBump = -9;
+/** riders on foot this tab has felt its own bike ride over, and when */
+const ranOver = new Map<number, number>();
 /** the race events this tab has been sent lately, for the debugging handle */
 const heard: unknown[] = [];
 
@@ -84,6 +86,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     if (heard.length > 300) heard.shift();
     // a rub of one's own was already felt as it was predicted
     if (e.kind === "bump" && e.with === "rider" && (e.rider === c.you || e.other === c.you) && now - localBump < 0.5) continue;
+    if (e.kind === "runOver" && e.by === c.you && ranOver.has(e.on)) continue;
     const felt = react(e, c.race.riders, c.you);
     (c.you === null ? watchScene : roadScene).feel(felt);
     if (felt.sound && c.you !== null) sfx(felt.sound.kind, felt.sound.gain);
@@ -396,6 +399,17 @@ addEventListener("resize", resize);
  */
 function keepOff(c: Current, r: Rider, now: number): void {
   if (r.phase !== "riding") return;
+  // riding over someone on foot is felt as it happens, too (C9); the server
+  // throws them
+  for (const o of c.race.riders) {
+    if (o === r || !onFoot(o) || r.speed < 3 || ranOver.has(o.id)) continue;
+    if (Math.abs(o.z - r.z) > (BIKE.length + TUNE.walkerSize) / 2 || Math.abs(o.x - r.x) > (BIKE.width + TUNE.walkerSize) / 2) continue;
+    ranOver.set(o.id, now);
+    const felt = react({ t: c.race.t, kind: "runOver", by: r.id, on: o.id }, c.race.riders, c.you);
+    roadScene.feel(felt);
+    if (felt.sound) sfx(felt.sound.kind, felt.sound.gain);
+  }
+  for (const [id, at] of ranOver) if (now - at > 1) ranOver.delete(id);
   for (const o of c.race.riders) {
     if (o === r || o.phase !== "riding") continue;
     const closing = r.speed - o.speed;

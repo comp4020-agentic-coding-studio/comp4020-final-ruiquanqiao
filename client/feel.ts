@@ -22,15 +22,25 @@ export function wobble(age: number, amp: number): number {
   return amp * (1 + u) * Math.exp(-u);
 }
 
+/** s a bike is in the air after riding over someone: 318.08-318.24 */
+export const HOP = 0.16;
+
+/** How high, m, a bike that rode over someone is `age` s afterwards. */
+export function hopLift(age: number): number {
+  return age < 0 || age > HOP ? 0 : Math.sin((age / HOP) * Math.PI) * 0.35;
+}
+
 export type Reaction = {
   /** riders whose bikes tilt: positive to their right */
-  tilt: { id: number; amp: number }[];
+  tilt: { id: number; amp: number; after?: number }[];
   /** a car knocked, by id */
   car: { id: number; amp: number } | null;
   /** what is heard, and how loud (0-1), if anything */
   sound: { kind: Sfx; gain: number } | null;
   /** thrown high and far: over a car or off a tree, not down in a slide */
   launched: number | null;
+  /** a bike that has ridden over someone on foot: it hops, then rocks */
+  hop: number | null;
 };
 
 /**
@@ -43,7 +53,7 @@ const away = (at: number, from: number): number => (from > at ? -1 : 1);
 
 /** How one race event is felt by a rider at `me` (or a spectator, me null). */
 export function react(e: RaceEvent, riders: readonly Rider[], me: number | null): Reaction {
-  const out: Reaction = { tilt: [], car: null, sound: null, launched: null };
+  const out: Reaction = { tilt: [], car: null, sound: null, launched: null, hop: null };
   const find = (id: number): Rider | undefined => riders.find((r) => r.id === id);
   const self = (r?: Rider): boolean => !!r && r.id === me;
   const viewer = me === null ? null : find(me);
@@ -80,6 +90,15 @@ export function react(e: RaceEvent, riders: readonly Rider[], me: number | null)
       const g = heard(r);
       if (g > 0) out.sound = { kind: "scrape", gain: g * (0.4 + 0.6 * hard) };
     }
+  } else if (e.kind === "runOver") {
+    // the recording, 318.04-318.76: the walker thrown up at once, the bike in
+    // the air for four frames, then over hard and rocking back
+    const by = find(e.by);
+    const on = find(e.on);
+    out.hop = e.by;
+    if (by && on) out.tilt.push({ id: by.id, amp: 0.6 * away(by.x, on.x), after: HOP });
+    const g = Math.max(heard(by), heard(on));
+    if (g > 0) out.sound = { kind: "runOver", gain: g };
   } else if (e.kind === "crash") {
     // a square hit on a car, a tree or a rock throws the rider over it; a wall
     // ridden into, like a crate clipped (212.9), puts bike and rider down together

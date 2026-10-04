@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sfx } from "../client/audio.ts";
-import { react, wobble } from "../client/feel.ts";
+import { HOP, hopLift, react, wobble } from "../client/feel.ts";
 import { CAR, LANES, NO_INPUT, type Race, type RaceEvent, type Rider, TUNE, beginAttack, startRace, step } from "../game/sim.ts";
 import { makeTrack, wallAt } from "../game/track.ts";
 
@@ -157,5 +157,41 @@ describe("what a touch looks and sounds like", () => {
     expect(crash("rub")).toBeNull();
     expect(crash("wall")).toBeNull();
     expect(TUNE.thrownTime).toBeGreaterThan(1);
+  });
+});
+
+describe("someone on foot ridden into (C9)", () => {
+  it("is thrown, the bike rides on a little slower, and both are told", () => {
+    const r = race();
+    const [me, them] = [rider(r, 0), rider(r, 1)];
+    Object.assign(me, { z: 500, x: 0, speed: 30 });
+    Object.assign(them, { z: 501, x: 0.2, speed: 0, phase: "running", phaseT: 0, bikeZ: 530, bikeX: 0 });
+    steps(r, 1);
+    expect(them.phase).toBe("thrown");
+    // thrown on more slowly than the bike, and off to the side of it
+    expect(them.speed).toBeGreaterThan(5);
+    expect(them.speed).toBeLessThan(me.speed * 0.5);
+    expect(Math.abs(them.vx)).toBeGreaterThan(4);
+    expect(me.phase).toBe("riding");
+    expect(me.speed).toBeLessThan(30);
+    const e = r.events.find((x) => x.kind === "runOver")!;
+    expect(e).toMatchObject({ by: 0, on: 1 });
+    // the bike hops for four frames, then goes over hard; it is heard
+    const felt = react(e, r.riders, 0);
+    expect(felt.hop).toBe(0);
+    expect(hopLift(HOP / 2)).toBeGreaterThan(0.25);
+    expect(hopLift(HOP + 0.01)).toBe(0);
+    expect(Math.abs(felt.tilt[0].amp)).toBeGreaterThan(0.4);
+    expect(felt.tilt[0].after).toBe(HOP);
+    expect(felt.sound?.kind).toBe("runOver");
+  });
+
+  it("is not thrown again while still in the air from the first time", () => {
+    const r = race();
+    const [me, them] = [rider(r, 0), rider(r, 1)];
+    Object.assign(me, { z: 500, x: 0, speed: 30 });
+    Object.assign(them, { z: 501, x: 0, speed: 0, phase: "running", phaseT: 0, bikeZ: 530, bikeX: 0 });
+    steps(r, 20);
+    expect(r.events.filter((x) => x.kind === "runOver").length).toBe(1);
   });
 });

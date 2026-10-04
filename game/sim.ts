@@ -86,6 +86,8 @@ export const TUNE = {
   // closing speed, m/s, at which running into the back of a bike knocks its
   // rider off (K14): 50 km/h
   shuntKnock: 14,
+  /** m, across and along: a rider on foot as something a bike can hit (C9) */
+  walkerSize: 0.6,
   kickCooldown: 0.6,
   punchStamina: 17,
   kickStamina: 7,
@@ -221,6 +223,8 @@ export type RaceEvent =
   | { t: number; kind: "snatch"; by: number; from: number; weapon: Weapon }
   | { t: number; kind: "wrecked"; rider: number }
   | { t: number; kind: "finished"; rider: number; place: number }
+  /** a rider on foot, or lying in the road, ridden into (C9) */
+  | { t: number; kind: "runOver"; by: number; on: number }
   /** bikes touching without anyone coming off: a rub, a shunt, a car or wall glanced (K13) */
   | { t: number; kind: "bump"; rider: number; other: number; with: "rider" | "car" | "wall"; hard: number; from: number };
 
@@ -719,6 +723,37 @@ export function separate(a: Rider, b: Rider, share = 0.5): "side" | "rear" | nul
   return "rear";
 }
 
+/**
+ * A rider off the bike - running back to it, or lying where they landed - is
+ * run over by a bike ridden into them (C9). The first remake left them out of
+ * every collision, so a bike went straight through them. In the recording
+ * (318.04-318.44) the walker is thrown up spread-eagled at once and flies back
+ * past the camera in 0.4 s, while the bike that hit them hops and rides on.
+ */
+export function onFoot(o: Rider): boolean {
+  return o.phase === "running" || (o.phase === "thrown" && o.phaseT > TUNE.thrownTime * 0.75);
+}
+
+function runOver(race: Race): void {
+  for (const r of race.riders) {
+    if (r.phase !== "riding" || r.speed < 3) continue;
+    for (const o of race.riders) {
+      if (o === r || !onFoot(o)) continue;
+      if (Math.abs(o.z - r.z) > (BIKE.length + TUNE.walkerSize) / 2 || Math.abs(o.x - r.x) > (BIKE.width + TUNE.walkerSize) / 2) continue;
+      // thrown up and off to the side, far slower than the bike, so they go
+      // back past it towards the camera as the recording's walker does. At
+      // 0.55 of the bike's speed and 3 m/s sideways they were thrown on
+      // ahead and hidden behind the rider who hit them
+      setPhase(o, "thrown");
+      o.speed = r.speed * 0.3;
+      o.vx = (o.x >= r.x ? 1 : -1) * 6;
+      o.sinceHit = 0;
+      r.speed *= 0.85;
+      race.events.push({ t: race.t, kind: "runOver", by: r.id, on: o.id });
+    }
+  }
+}
+
 /** Bikes do not pass through each other; a faster bike behind pushes (R7). */
 function contact(race: Race): void {
   const riding = race.riders.filter((r) => r.phase === "riding");
@@ -1061,6 +1096,7 @@ export function step(race: Race, inputs: Map<number, Input>): void {
     recover(r);
   }
   contact(race);
+  runOver(race);
   drive(race);
   for (const r of race.riders) hitCars(race, r);
   busts(race);

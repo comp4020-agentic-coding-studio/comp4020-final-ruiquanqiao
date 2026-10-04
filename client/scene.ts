@@ -12,7 +12,7 @@ import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
 import { Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
 import { buildCar } from "./models.ts";
-import { type Reaction, wobble } from "./feel.ts";
+import { type Reaction, hopLift, wobble } from "./feel.ts";
 import { type Atlas, type Look, RiderSprite, buildAtlas, frameFor } from "./sprites.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
@@ -407,6 +407,8 @@ export class RaceScene {
   private carJolts = new Map<number, { at: number; amp: number }>();
   /** riders thrown off over a car or a wall, flying high and far, not sliding */
   private launched = new Set<number>();
+  /** bikes in the air after riding over someone, and since when */
+  private hops = new Map<number, number>();
 
   constructor(canvasEl: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, preserveDrawingBuffer: true });
@@ -672,7 +674,8 @@ export class RaceScene {
   /** Show how a race event is felt: bikes tilting, a car knocked, a rider launched. */
   feel(r: Reaction): void {
     const now = performance.now() / 1000;
-    for (const t of r.tilt) this.jolts.set(t.id, { at: now, amp: t.amp });
+    for (const t of r.tilt) this.jolts.set(t.id, { at: now + (t.after ?? 0), amp: t.amp });
+    if (r.hop !== null) this.hops.set(r.hop, now);
     if (r.car) this.carJolts.set(r.car.id, { at: now, amp: r.car.amp });
     if (r.launched !== null) this.launched.add(r.launched);
   }
@@ -833,7 +836,9 @@ export class RaceScene {
       shadowAt(a.shadow, r.z, r.x, 0.6, 0.6);
       return;
     }
-    this.stand(track, a.rider, frameFor(r), r.z, r.x, 0, r.lean + this.wobbleOf(this.jolts, r.id));
+    const hopAt = this.hops.get(r.id);
+    const lift = hopAt === undefined ? 0 : hopLift(performance.now() / 1000 - hopAt);
+    this.stand(track, a.rider, frameFor(r), r.z, r.x, lift, r.lean + this.wobbleOf(this.jolts, r.id));
     shadowAt(a.shadow, r.z, r.x, 0.9, 2.3);
   }
 

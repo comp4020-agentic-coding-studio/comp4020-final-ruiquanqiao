@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Prediction, Timeline } from "../client/netview.ts";
 import { encodeCar, encodeRider } from "../game/protocol.ts";
-import { BIKE, DT, type Input, NO_INPUT, type Race, type RaceEvent, ride, separate, startRace, step } from "../game/sim.ts";
+import { BIKE, DT, type Input, NO_INPUT, type Phase, type Race, type RaceEvent, ride, separate, startRace, step } from "../game/sim.ts";
 import { bake } from "../game/track.ts";
 import arrivals from "./fixtures/arrivals.json" with { type: "json" };
 
@@ -14,9 +14,9 @@ import arrivals from "./fixtures/arrivals.json" with { type: "json" };
 
 const straight = bake("straight", [{ length: 30000, curve: 0, climb: 0 }], 30000, 1);
 
-type Ram = { through: number; worst: number; bumps: number; crashes: number; frames: number };
+type Ram = { through: number; worst: number; bumps: number; crashes: number; frames: number; runOver: number };
 
-type Start = { me: { z: number; x: number; speed: number }; them: { z: number; x: number; speed: number } };
+type Start = { me: { z: number; x: number; speed: number }; them: { z: number; x: number; speed: number; phase?: Phase; phaseT?: number; bikeZ?: number; bikeX?: number } };
 
 /** The others as the first version drew them: by arrival time, 0.1 s back. */
 function firstDraw(): { push(at: number, time: number, s: ReturnType<typeof encodeRider>[]): void; at(local: number): ReturnType<typeof encodeRider> | null } {
@@ -64,7 +64,7 @@ function ram(start: Start, keys: (t: number) => Input, seconds = 3, draw: "now" 
   let sent = 0;
   let arrive = 0;
   let k = 0;
-  const out: Ram = { through: 0, worst: 0, bumps: 0, crashes: 0, frames: 0 };
+  const out: Ram = { through: 0, worst: 0, bumps: 0, crashes: 0, frames: 0, runOver: 0 };
   // them: holding their speed and line, as a rider minding their own business
   const steady: Input = { ...NO_INPUT, throttle: true };
   for (let n = 1; n <= seconds * 60; n++) {
@@ -82,6 +82,7 @@ function ram(start: Start, keys: (t: number) => Input, seconds = 3, draw: "now" 
       for (const e of m.events) {
         if (e.kind === "bump" && (e.rider === 0 || e.other === 0)) out.bumps++;
         if (e.kind === "crash") out.crashes++;
+        if (e.kind === "runOver" && e.by === 0) out.runOver++;
       }
       const mine = m.s.find((s) => s[0] === 0)!;
       if (!prediction.heard(n, m.time, mine[1], mine[2])) {
@@ -145,6 +146,19 @@ describe("riding into another rider", () => {
     const r = ram({ me: { z: 500, x: -1.6, speed: 50 }, them: { z: 500, x: 0, speed: 50 } }, () => ({ ...NO_INPUT, throttle: true, right: true }));
     expect(r, JSON.stringify(r)).toMatchObject({ through: 0 });
     expect(r.bumps + r.crashes).toBeGreaterThan(0);
+  });
+
+  it("on foot, running back to the bike: run over, not ridden through (C9)", () => {
+    // someone who came off, jogging up the road to a bike 40 m on
+    const them = { z: 500, x: 0, speed: 0, phase: "running" as const, bikeZ: 540, bikeX: 0 };
+    const r = ram({ me: { z: 470, x: 0, speed: 40 }, them }, throttle);
+    expect(r.runOver).toBe(1);
+  });
+
+  it("lying in the road where they landed: run over too (C9)", () => {
+    const them = { z: 500, x: 0.3, speed: 0, phase: "thrown" as const, phaseT: 0.9, bikeZ: 520, bikeX: 0 };
+    const r = ram({ me: { z: 480, x: 0, speed: 35 }, them }, throttle);
+    expect(r.runOver).toBe(1);
   });
 
   it("from behind and to one side, the way a pass goes wrong", () => {

@@ -121,6 +121,12 @@ What a touch looks like when no one comes off, read at 25 fps:
   1.25 s at 454.25–455.50, rising to the top of the frame, while the bike lies
   in the road. A crate clipped at 212.92 put bike and rider down together
   instead.
+- **A rider on foot ridden into** (塞利娜, 317.56-318.80, at about 20 km/h):
+  thrown up spread-eagled on the frame of contact (318.04), about a metre
+  off the road with a shadow under them, off to the side of the bike and
+  back towards the camera, out of frame by 318.44. The bike that hit them is
+  in the air 318.08-318.24 (four frames), then over hard and rocking back
+  318.52-318.76; the rider stays on.
 - Nothing shakes or flashes the screen (section 4).
 
 ## 3. Player crashes
