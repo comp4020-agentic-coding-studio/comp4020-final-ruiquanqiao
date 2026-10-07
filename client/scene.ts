@@ -6,7 +6,7 @@
 // the game itself.
 
 import * as THREE from "three";
-import { type Car, OFF_ROAD, type Rider, TUNE, type Weapon, windupOf } from "../game/sim.ts";
+import { type Car, type Rider, TUNE, type Weapon, windupOf } from "../game/sim.ts";
 import { BIOMES, type Biome, OPEN, ROAD_HALF, SEGMENT, SHOULDER, type Track, biomeAt, segmentAt } from "../game/track.ts";
 import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
@@ -799,13 +799,6 @@ export class RaceScene {
   private place(track: Track, r: Rider): void {
     if (!this.atlas) return;
     const a = this.actor(r);
-    // a cop not yet sent out is nowhere on the road (P2)
-    const away = r.z < OFF_ROAD / 2;
-    a.rider.mesh.visible = a.shadow.visible = !away;
-    if (away) {
-      a.bike.mesh.visible = a.bikeShadow.visible = false;
-      return;
-    }
     const off = r.phase === "thrown" || r.phase === "running";
     const shadowAt = (m: THREE.Mesh, z: number, x: number, w: number, l: number): void => {
       const f = frameAt(track, z, x);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAR, KMH, LANES, NO_INPUT, OFF_ROAD, type Race, type Rider, TUNE, beginAttack, humansDone, standings, startRace, step } from "../game/sim.ts";
+import { CAR, KMH, LANES, NO_INPUT, type Race, type Rider, TUNE, beginAttack, humansDone, standings, startRace, step } from "../game/sim.ts";
 import { SHOULDER, makeTrack } from "../game/track.ts";
 
 // Contact, traffic and police, each against its ledger row. Every test builds
@@ -10,7 +10,7 @@ function race(humans = 2): Race {
   const entrants = Array.from({ length: humans }, (_, i) => ({ id: i, name: `h${i}`, human: true }));
   const r = startRace(makeTrack(1), 1, entrants, 5);
   r.cars = [];
-  for (const c of r.riders.filter((x) => x.cop)) Object.assign(c, { z: 1e6, post: -1 }); // out of the way
+  for (const c of r.riders.filter((x) => x.cop)) Object.assign(c, { z: 1e6 }); // out of the way
   return r;
 }
 
@@ -151,54 +151,81 @@ describe("police", () => {
     const r = race(1);
     const me = rider(r, 0);
     const cop = r.riders.find((x) => x.cop)!;
-    Object.assign(cop, { z: 600, x: 8, speed: 0, chase: -1, post: -1 });
+    Object.assign(cop, { z: 600, x: 8, speed: 0, chase: -1 });
     return { r, me, cop };
   };
 
-  it("a cop is never seen waiting: off the road until a human nears his post, then in from behind and flat out (P2)", () => {
+  it("a cop patrols slowly down the right-hand edge of the road, and goes after no one who leaves him be (P2)", () => {
     const r = startRace(makeTrack(1), 1, [{ id: 0, name: "h", human: true }], 5);
     r.cars = [];
     const me = rider(r, 0);
-    const cop = r.riders.filter((x) => x.cop).sort((p, q) => p.post - q.post)[0];
-    const post = cop.post;
-    Object.assign(me, { z: post - 400, x: 1.75, speed: 70, build: 1 });
-    steps(r, 60, { ...NO_INPUT, throttle: true });
-    // still away: nowhere on the road
-    expect(cop.z).toBeLessThan(OFF_ROAD / 2);
-    while (me.z < post && r.t < 60) steps(r, 1, { ...NO_INPUT, throttle: true });
-    // sent out, behind the rider, already going faster than them
-    expect(cop.post).toBe(-1);
-    expect(cop.chase).toBe(0);
-    expect(cop.z).toBeLessThan(me.z);
-    expect(cop.z).toBeGreaterThan(me.z - 80);
-    expect(cop.speed).toBeGreaterThan(me.speed);
-    // and catches them: alongside within ten seconds at full speed
-    let caught = false;
-    for (let i = 0; i < 600 && !caught; i++) {
-      steps(r, 1, { ...NO_INPUT, throttle: true });
-      caught = Math.abs(cop.z - me.z) < 3;
-    }
-    expect(caught).toBe(true);
+    const cop = r.riders.find((x) => x.cop)!;
+    // on the road from the start, at the race's own bike
+    expect(cop.z).toBeGreaterThan(0);
+    expect(cop.bike).toBe(me.bike);
+    Object.assign(me, { z: cop.z - 300, x: 1.75, speed: 70, build: 1 });
+    // I go flat out past him
+    steps(r, 60 * 8, { ...NO_INPUT, throttle: true });
+    expect(me.z).toBeGreaterThan(cop.z + 100);
+    expect(cop.chase).toBe(-1);
+    expect(Math.abs(cop.speed - TUNE.copPatrol)).toBeLessThan(4);
+    expect(cop.x).toBeGreaterThan(LANES.with[1] + (CAR.width + 0.8) / 2);
   });
 
-  it("shaken off by 150 m, a cop leaves the road for good, and a crash after that is not a bust (P1, P2)", () => {
+  it("hit him and he comes after you on the race's own bike; hit by someone else, he goes after them (P7)", () => {
+    const r = startRace(makeTrack(1), 1, [{ id: 0, name: "a", human: true }, { id: 1, name: "b", human: true }], 5);
+    r.cars = [];
+    const [a, b] = [rider(r, 0), rider(r, 1)];
+    const cop = r.riders.find((x) => x.cop)!;
+    // slowed to his pace, alongside him at the edge of the road
+    Object.assign(cop, { z: 1000, x: 7, speed: TUNE.copPatrol });
+    Object.assign(a, { z: 1000, x: 5.9, speed: TUNE.copPatrol });
+    Object.assign(b, { z: 990, x: 3.8, speed: TUNE.copPatrol });
+    beginAttack(r, a, "hand");
+    expect(a.attack?.target).toBe(cop.id);
+    for (let i = 0; i < 30 && cop.chase < 0; i++) steps(r, 1, { ...NO_INPUT, throttle: true });
+    expect(cop.chase).toBe(0);
+    // and gives chase: faster than he patrols
+    steps(r, 60 * 2, { ...NO_INPUT, throttle: true });
+    expect(cop.speed).toBeGreaterThan(TUNE.copPatrol + 5);
+    // the other rider lands one on him: now it is them he is after
+    Object.assign(b, { z: cop.z, x: cop.x - 1.0, speed: cop.speed, attack: null, cooldown: 0 });
+    beginAttack(r, b, "hand");
+    for (let i = 0; i < 30 && cop.chase !== 1; i++) steps(r, 1, { ...NO_INPUT, throttle: true });
+    expect(cop.chase).toBe(1);
+  });
+
+  it("from in front of the one he is after, a cop drops back to them rather than ride ahead mirroring them", () => {
+    const r = startRace(makeTrack(1), 1, [{ id: 0, name: "h", human: true }], 5);
+    r.cars = [];
+    const me = rider(r, 0);
+    const cop = r.riders.find((x) => x.cop)!;
+    Object.assign(me, { z: 1000, x: 1.75, speed: 50, build: 1 });
+    Object.assign(cop, { z: 1008, x: 0, speed: 50, chase: 0 });
+    let back = false;
+    for (let i = 0; i < 60 * 3 && !back; i++) {
+      steps(r, 1, { ...NO_INPUT, throttle: true, left: i % 40 < 20, right: i % 40 >= 20 });
+      back = cop.z - me.z < 1.5;
+    }
+    expect(back).toBe(true);
+  });
+
+  it("got 150 m away from, he goes back to patrolling, and a crash after that is not a bust by him (P1, P7)", () => {
     const r = startRace(makeTrack(1), 1, [{ id: 0, name: "h", human: true }], 5);
     r.cars = [];
     const me = rider(r, 0);
     const cop = r.riders.find((x) => x.cop)!;
     // knocked off his bike in a fight, he is left behind
     Object.assign(me, { z: 2000, x: 1.75, speed: 70, build: 1 });
-    Object.assign(cop, { z: 1990, x: 0, speed: 0, chase: 0, post: -1, phase: "running", phaseT: 0, bikeZ: 1985, bikeX: 0 });
+    Object.assign(cop, { z: 1990, x: 0, speed: 0, chase: 0, phase: "running", phaseT: 0, bikeZ: 1985, bikeX: 0 });
     steps(r, 60 * 4, { ...NO_INPUT, throttle: true });
-    expect(cop.z).toBeLessThan(OFF_ROAD / 2);
+    expect(me.z - cop.z).toBeGreaterThan(TUNE.copLost);
+    expect(cop.chase).toBe(-1);
     // I come off, and lie in the road as long as I like
     Object.assign(me, { speed: 0, phase: "running", phaseT: 0, bikeZ: me.z + 30, bikeX: me.x });
     steps(r, 60 * 3);
     expect(me.phase).not.toBe("busted");
-    // and he is never sent out again
-    Object.assign(me, { phase: "riding", speed: 40 });
-    steps(r, 60 * 3, { ...NO_INPUT, throttle: true });
-    expect(cop.z).toBeLessThan(OFF_ROAD / 2);
+    expect(cop.chase).toBe(-1);
   });
 
   it("not shaken off, a crash with him close behind is still a bust (P1)", () => {
@@ -207,7 +234,7 @@ describe("police", () => {
     const me = rider(r, 0);
     const cop = r.riders.find((x) => x.cop)!;
     Object.assign(me, { z: 2000, x: 1.75, speed: 0, phase: "running", phaseT: 0, bikeZ: 2060, bikeX: 1.75 });
-    Object.assign(cop, { z: 1900, x: 0, speed: 60, chase: 0, post: -1, build: 1 });
+    Object.assign(cop, { z: 1900, x: 0, speed: 60, chase: 0, build: 1 });
     steps(r, 60 * 4);
     expect(me.phase).toBe("busted");
   });
@@ -215,18 +242,6 @@ describe("police", () => {
   it("puts one cop on a level 1 road, two on levels 2 and 3, three on 4 and 5", () => {
     const cops = (level: number): number => startRace(makeTrack(level), level, [{ id: 0, name: "h", human: true }], 5).riders.filter((x) => x.cop).length;
     expect([1, 2, 3, 4, 5].map(cops)).toEqual([1, 2, 2, 3, 3]);
-  });
-
-  it("never pulls over: a cop whose rider is out goes after another human close by", () => {
-    const r = startRace(makeTrack(1), 1, [{ id: 0, name: "a", human: true }, { id: 1, name: "b", human: true }], 5);
-    r.cars = [];
-    const cop = r.riders.find((x) => x.cop)!;
-    Object.assign(rider(r, 0), { z: 1000, phase: "busted" });
-    Object.assign(rider(r, 1), { z: 1100, x: 1.75, speed: 50 });
-    Object.assign(cop, { z: 1050, x: 0, speed: 40, chase: 0, post: -1 });
-    steps(r, 60 * 3, { ...NO_INPUT, throttle: true });
-    expect(cop.chase).toBe(1);
-    expect(cop.speed).toBeGreaterThan(40);
   });
 
   it("stopping beside a cop is Busted, and the race is over for that rider (P1)", () => {
@@ -332,7 +347,7 @@ describe("weapons", () => {
     const me = rider(r, 0);
     const cop = r.riders.find((x) => x.cop)!;
     Object.assign(me, { z: 600, x: 0, speed: 30 });
-    Object.assign(cop, { z: 600, x: 1.5, speed: 30, chase: 0, post: -1 });
+    Object.assign(cop, { z: 600, x: 1.5, speed: 30, chase: 0 });
     expect(cop.weapon).toBe("club");
     beginAttack(r, cop, "hand");
     steps(r, Math.ceil((TUNE.weaponWindup - TUNE.snatchWindow / 2) * 60), { ...NO_INPUT, throttle: true });
@@ -349,7 +364,7 @@ describe("contact with a cop (K10)", () => {
     const me = rider(r, 0);
     const cop = r.riders.find((x) => x.cop)!;
     Object.assign(me, { z: 600, x: 0, speed: 30, vx: 3 });
-    Object.assign(cop, { z: 600, x: 0.7, speed: 30, vx: 0, chase: 0, post: -1 });
+    Object.assign(cop, { z: 600, x: 0.7, speed: 30, vx: 0, chase: 0 });
     r.t = 10;
     steps(r, 1, { ...NO_INPUT, throttle: true });
     expect(me.phase).toBe("riding");

@@ -87,11 +87,10 @@ export const TUNE = {
    * the road, and the most it can throw either bike sideways, m/s */
   shuntBounce: 0.3,
   shuntSplit: 5,
-  /** cops (P2): how far before his post a human calls him out, and how far
-   * behind them he comes in */
-  copCall: 120,
-  copBehind: 45,
-  /** m between a cop and his rider, either way, at which he is shaken off and leaves the road (P1, P2) */
+  /** cops (P2): the speed a cop patrols at, m/s, down the right-hand edge
+   * of the road; and how far, either way, the one he is after has to get
+   * from him to shake him off (P1) */
+  copPatrol: 70 * KMH,
   copLost: 150,
   /** m, across and along: a rider on foot as something a bike can hit (C9) */
   walkerSize: 0.6,
@@ -219,14 +218,12 @@ export type Rider = {
   bikeSpeed: number; // a riderless bike still moving (K5)
   cop: boolean; // a motorcycle cop (P2): never finishes, never placed
   weapon: Weapon | null; // one at a time (C5); cops carry a club (C7)
-  chase: number; // the rider a cop is after, or -1 while waiting
+  chase: number; // the rider a cop is after: the last one to hit him; -1 while he patrols
   attack: Attack | null;
   cooldown: number;
   sinceHit: number;
   /** race time of the last bump reported for this rider, so a long rub is not a drum roll */
   bumpedAt: number;
-  /** a cop's post along the road, until he is sent out after someone; -1 after (P2) */
-  post: number;
   /** thrown by a bike that ran them over: flung on with it, not tumbling to a stop (C9) */
   flung: boolean;
   /** thrown off: m above the road under them, and m/s upwards; air 0 is down */
@@ -359,7 +356,6 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       downAt: 0,
       tilt: 0,
       overAt: -99,
-      post: -1,
       prevHand: false,
       prevFoot: false,
       prevNitro: false,
@@ -389,45 +385,45 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
   return race;
 }
 
-/** Where a cop is kept until he is sent out: off the road, nowhere a camera looks. */
-export const OFF_ROAD = -1e5;
-
 /**
- * Motorcycle cops have posts at fixed points along the road (P2), more of
- * them at higher levels. A cop is never seen idling: he is held off the road
- * until a human nears his post, then comes up from behind already flat out
- * and after them. Parked on the shoulder and pulling out as someone passed,
- * the first cops were seen sitting still, then trailing along slower than
- * the field (P3 made them slower at low levels), like someone out for a ride.
- * Everything here comes off the seeded generator, so every browser builds the
- * same race.
+ * Motorcycle cops patrol the road (P2): one on a level 1 road, two on 2 and 3,
+ * three on 4 and 5, each starting from a fixed point and riding slowly down
+ * the right-hand edge of the road, clear of the traffic. A cop goes after no
+ * one of his own accord, since every rider is over any limit there is; he
+ * goes after whoever hits him (P7). Everything here comes off the seeded
+ * generator, so every browser builds the same race.
+ *
+ * Before this, cops were held off the road and sent in from behind, flat out,
+ * at whichever human neared a post, on a bike a level better than the race's
+ * and always at full build-up. They shot past the player, then held the
+ * player's speed and steered to the player's line plus 1.4 m, so they sat
+ * just ahead mirroring every move; and riding alongside, they made every
+ * crash a bust (28 of 38 crashes with a cop out, in 30 races).
  */
 function placeCops(race: Race, level: number, bike: Bike): void {
-  // one cop on a level 1 road, two on 2 and 3, three on 4 and 5. It was two
-  // more than the level, as the City's three at level 1 suggest (ARGURO); a
-  // cop rides alongside the one he chases, so in 30 races a player riding
-  // flat out crashed with a cop out 38 times and was Busted 28
   const count = 1 + Math.floor(level / 2);
   const marks = ([[0.45], [0.3, 0.7], [0.2, 0.5, 0.8]] as const)[count - 1];
   marks.forEach((m, i) => {
     const template = race.riders[0];
+    const z = m * race.track.length;
+    const x = patrolLine(race.track, z);
     race.riders.push({
       ...template,
       id: 1000 + i,
       name: "Police",
       human: false,
-      // the next bike up from the level's, so he can catch the one he chases
-      bike: BIKES[Math.min(BIKES.length - 1, level)],
+      // the race's own bike: no faster than anyone he chases
+      bike,
       lbs: 200,
-      z: OFF_ROAD,
-      x: 0,
-      bikeZ: OFF_ROAD,
-      bikeX: 0,
+      z,
+      x,
+      speed: TUNE.copPatrol,
+      bikeZ: z,
+      bikeX: x,
       cop: true,
       weapon: "club",
       chase: -1,
-      post: m * race.track.length,
-      line: 0,
+      line: x,
       skill: 1,
       aggression: 2.5,
       attack: null,
@@ -435,47 +431,21 @@ function placeCops(race: Race, level: number, bike: Bike): void {
   });
 }
 
-/** A cop's post once he has left the road for good: past any rider, so he is never sent out again. */
-export const GONE = 1e9;
+/** Where a patrolling cop rides: the right-hand edge of the asphalt, clear of the outer lane's cars, or off a wall there. */
+const patrolLine = (track: Track, z: number): number => Math.min(ROAD_HALF, wallAt(track, z, 1) - 0.6);
 
 /**
- * A cop his rider has got 150 m away from is shaken off, and leaves the road
- * for good: a crash after that is not a bust. So does one whose rider is out
- * of the race, unless another human is that close. He used to chase for the
- * rest of the race and go after the next human when his rider was out.
+ * The one a cop is after got 150 m away from him, either way, or is out of
+ * the race: he gives up and goes back to patrolling, and a crash after that
+ * is not a bust by him.
  */
 function shakeOff(race: Race): void {
   const out = (o?: Rider): boolean => !o || o.phase === "finished" || o.phase === "wrecked" || o.phase === "busted";
   for (const cop of race.riders) {
-    if (!cop.cop || cop.post >= 0) continue;
-    let prey = race.riders.find((o) => o.id === cop.chase);
-    if (out(prey)) {
-      prey = race.riders.find((o) => o.human && !out(o) && Math.abs(o.z - cop.z) < TUNE.copLost);
-      if (prey) cop.chase = prey.id;
-    }
-    if (prey && Math.abs(prey.z - cop.z) < TUNE.copLost) continue;
-    setPhase(cop, "riding");
-    cop.post = GONE;
+    if (!cop.cop || cop.chase < 0) continue;
+    const prey = race.riders.find((o) => o.id === cop.chase);
+    if (!out(prey) && Math.abs(prey!.z - cop.z) < TUNE.copLost) continue;
     cop.chase = -1;
-    cop.z = cop.bikeZ = OFF_ROAD;
-    cop.x = cop.bikeX = 0;
-    cop.speed = cop.bikeSpeed = 0;
-    cop.attack = null;
-  }
-}
-
-/** Send out any cop whose post a human is coming up to: in from behind, at speed, after them. */
-function sendCops(race: Race): void {
-  for (const cop of race.riders) {
-    if (!cop.cop || cop.post < 0) continue;
-    const prey = race.riders.find((o) => o.human && o.phase === "riding" && o.z > cop.post - TUNE.copCall && o.z < cop.post + 200);
-    if (!prey) continue;
-    cop.post = -1;
-    cop.chase = prey.id;
-    cop.z = cop.bikeZ = prey.z - TUNE.copBehind;
-    cop.x = cop.bikeX = prey.x > 0 ? prey.x - 2 : prey.x + 2;
-    cop.speed = prey.speed + 12;
-    cop.build = 1;
   }
 }
 
@@ -835,6 +805,8 @@ function hit(race: Race, by: Rider, on: Rider, move: AttackKind): void {
   on.build = Math.max(0, on.build - TUNE.buildHitLoss);
   if (move === "kick") on.shove = (on.x >= by.x ? 1 : -1) * TUNE.kickShove; // (C4)
   race.events.push({ t: race.t, kind: "hit", by: by.id, on: on.id, move });
+  // hit a cop and he is after you, whoever he was after before (P7)
+  if (on.cop && !by.cop) on.chase = by.id;
   if (on.stamina <= 0) crash(on, "knockdown", race); // (C8)
 }
 
@@ -1045,25 +1017,30 @@ function rub(race: Race, a: Rider, b: Rider, closing: number): void {
   bump(race, struck, mover.id, "rider", Math.abs(closing) / TUNE.rubKnock, mover.x);
 }
 
-/** What a cop does: wait on the shoulder, then ride down a human (P2). */
+/** What a cop does: patrol slowly down the edge of the road, or ride down whoever last hit him (P2, P7). */
 function copInput(race: Race, r: Rider): Input {
-  const input: Input = { ...NO_INPUT, throttle: true };
-  if (r.post >= 0) return { ...NO_INPUT };
-  // he never pulls over: he chases until he is shaken off (shakeOff); AI
-  // riders are never chased (P4)
-  const target = race.riders.find((o) => o.id === r.chase);
-  r.build = 1;
+  const input: Input = { ...NO_INPUT };
+  const target = r.chase >= 0 ? race.riders.find((o) => o.id === r.chase) : undefined;
   if (!target) {
-    r.line = 0;
+    // patrolling: held at patrol speed, back over to the edge
+    r.line = patrolLine(race.track, r.z);
+    input.throttle = r.speed < TUNE.copPatrol;
+    input.brake = r.speed > TUNE.copPatrol + 4;
   } else {
-    // ride alongside, on whichever side he is already
-    const side = r.x >= target.x ? 1 : -1;
-    r.line = target.phase === "riding" ? target.x + side * 1.4 : target.x;
     const behind = target.z - r.z;
-    // flat out until level, then matched to them; nitro to close a gap
-    input.throttle = behind > -1 || r.speed < target.speed;
-    if (behind < -2 && r.speed > target.speed) input.brake = true;
-    if (behind > 8 && r.boost <= 0 && !r.prevNitro) input.nitro = true;
+    if (behind > -1.5) {
+      // coming up from behind, flat out with nitro to close, and on to
+      // whichever flank he is already on once he is close
+      input.throttle = behind > 1 || r.speed < target.speed + 1;
+      if (behind > 12 && r.boost <= 0 && !r.prevNitro) input.nitro = true;
+      const side = r.x >= target.x ? 1 : -1;
+      r.line = behind < 10 && target.phase === "riding" ? target.x + side * 1.4 : r.line;
+    } else {
+      // past them: off the throttle and let them come back to him, holding
+      // his own line. Matching their speed and line from in front was what
+      // left a cop sitting just ahead mirroring every move
+      input.brake = behind < -6;
+    }
     if (target.phase === "riding" && Math.abs(behind) < 1.8 && Math.abs(target.x - r.x) < 2 && random(race) < r.aggression * DT * 4) input.hand = true;
   }
   // bends ridden as the field rides them, so flat out does not mean off the road
@@ -1325,7 +1302,6 @@ export function step(race: Race, inputs: Map<number, Input>): void {
   }
   contact(race);
   runOver(race);
-  sendCops(race);
   shakeOff(race);
   drive(race);
   for (const r of race.riders) hitCars(race, r);

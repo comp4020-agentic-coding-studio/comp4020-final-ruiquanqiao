@@ -79,7 +79,6 @@ export class Timeline {
     if (!sb) return null;
     // a rider who came off, got up or got back on between the two is not
     // somewhere in between: they are where the newer one says, carried on
-    // and so is a cop sent out from off the road (OFF_ROAD) between the two
     if (!sa || sa[8] !== sb[8] || Math.abs(sb[1] - sa[1]) > 60) return { z: sb[1] + sb[3] * Math.max(0, t - w.b.time), x: sb[2], lean: sb[4], s: sb };
     const dt = w.b.time - w.a.time || 1;
     const f = Math.max(0, Math.min(w.f, 1 + 0.3 / dt));
