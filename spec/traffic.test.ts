@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAR, LANES, NO_INPUT, type Race, type Rider, TUNE, beginAttack, humansDone, standings, startRace, step } from "../game/sim.ts";
+import { CAR, KMH, LANES, NO_INPUT, OFF_ROAD, type Race, type Rider, TUNE, beginAttack, humansDone, standings, startRace, step } from "../game/sim.ts";
 import { SHOULDER, makeTrack } from "../game/track.ts";
 
 // Contact, traffic and police, each against its ledger row. Every test builds
@@ -10,7 +10,7 @@ function race(humans = 2): Race {
   const entrants = Array.from({ length: humans }, (_, i) => ({ id: i, name: `h${i}`, human: true }));
   const r = startRace(makeTrack(1), 1, entrants, 5);
   r.cars = [];
-  for (const c of r.riders.filter((x) => x.cop)) c.z = 1e6; // out of the way
+  for (const c of r.riders.filter((x) => x.cop)) Object.assign(c, { z: 1e6, post: -1 }); // out of the way
   return r;
 }
 
@@ -100,6 +100,18 @@ describe("traffic", () => {
     expect(me.x).toBeGreaterThan(LANES.with[0] + (CAR.width + 0.8) / 2 - 0.05);
   });
 
+  it("drives cars at 100-150 km/h, and puts no police cars on the road (T4, P2)", () => {
+    // at 58-86 km/h, as first set, a car ahead closed at 200 km/h and looked parked
+    for (const level of [1, 3, 5]) {
+      const r = startRace(makeTrack(level), level, [{ id: 0, name: "h", human: true }], level);
+      for (const c of r.cars) {
+        expect(c.speed / KMH).toBeGreaterThanOrEqual(100);
+        expect(c.speed / KMH).toBeLessThanOrEqual(150);
+        expect(c.kind).not.toBe("police");
+      }
+    }
+  });
+
   it("keeps every car in a lane of its own direction for a whole race (T4)", () => {
     const r = startRace(makeTrack(1), 1, [{ id: 0, name: "h", human: true }], 3);
     // traffic is as sparse as the original's, a car every 30-60 s at cruise,
@@ -120,19 +132,46 @@ describe("police", () => {
     const r = race(1);
     const me = rider(r, 0);
     const cop = r.riders.find((x) => x.cop)!;
-    Object.assign(cop, { z: 600, x: 8, speed: 0, chase: -1 });
+    Object.assign(cop, { z: 600, x: 8, speed: 0, chase: -1, post: -1 });
     return { r, me, cop };
   };
 
-  it("a cop waits on the shoulder until a human comes by, then gives chase (P2)", () => {
-    const { r, me, cop } = withCop();
-    Object.assign(me, { z: 200, speed: 0 });
-    steps(r, 60);
-    expect(cop.chase).toBe(-1);
-    Object.assign(me, { z: 590, x: 3, speed: 35 });
-    steps(r, 60 * 2, { ...NO_INPUT, throttle: true });
+  it("a cop is never seen waiting: off the road until a human nears his post, then in from behind and flat out (P2)", () => {
+    const r = startRace(makeTrack(1), 1, [{ id: 0, name: "h", human: true }], 5);
+    r.cars = [];
+    const me = rider(r, 0);
+    const cop = r.riders.filter((x) => x.cop).sort((p, q) => p.post - q.post)[0];
+    const post = cop.post;
+    Object.assign(me, { z: post - 400, x: 1.75, speed: 70, build: 1 });
+    steps(r, 60, { ...NO_INPUT, throttle: true });
+    // still away: nowhere on the road
+    expect(cop.z).toBeLessThan(OFF_ROAD / 2);
+    while (me.z < post && r.t < 60) steps(r, 1, { ...NO_INPUT, throttle: true });
+    // sent out, behind the rider, already going faster than them
+    expect(cop.post).toBe(-1);
     expect(cop.chase).toBe(0);
-    expect(cop.speed).toBeGreaterThan(10);
+    expect(cop.z).toBeLessThan(me.z);
+    expect(cop.z).toBeGreaterThan(me.z - 80);
+    expect(cop.speed).toBeGreaterThan(me.speed);
+    // and catches them: alongside within ten seconds at full speed
+    let caught = false;
+    for (let i = 0; i < 600 && !caught; i++) {
+      steps(r, 1, { ...NO_INPUT, throttle: true });
+      caught = Math.abs(cop.z - me.z) < 3;
+    }
+    expect(caught).toBe(true);
+  });
+
+  it("never gives up or pulls over: a cop who loses his rider goes after the next human", () => {
+    const r = startRace(makeTrack(1), 1, [{ id: 0, name: "a", human: true }, { id: 1, name: "b", human: true }], 5);
+    r.cars = [];
+    const cop = r.riders.find((x) => x.cop)!;
+    Object.assign(rider(r, 0), { z: 1000, phase: "busted" });
+    Object.assign(rider(r, 1), { z: 1100, x: 1.75, speed: 50 });
+    Object.assign(cop, { z: 1050, x: 0, speed: 40, chase: 0, post: -1 });
+    steps(r, 60 * 3, { ...NO_INPUT, throttle: true });
+    expect(cop.chase).toBe(1);
+    expect(cop.speed).toBeGreaterThan(40);
   });
 
   it("stopping beside a cop is Busted, and the race is over for that rider (P1)", () => {
@@ -225,7 +264,7 @@ describe("weapons", () => {
     const me = rider(r, 0);
     const cop = r.riders.find((x) => x.cop)!;
     Object.assign(me, { z: 600, x: 0, speed: 30 });
-    Object.assign(cop, { z: 600, x: 1.5, speed: 30, chase: 0 });
+    Object.assign(cop, { z: 600, x: 1.5, speed: 30, chase: 0, post: -1 });
     expect(cop.weapon).toBe("club");
     beginAttack(r, cop, "hand");
     steps(r, 6, { ...NO_INPUT, throttle: true });
@@ -242,7 +281,7 @@ describe("contact with a cop (K10)", () => {
     const me = rider(r, 0);
     const cop = r.riders.find((x) => x.cop)!;
     Object.assign(me, { z: 600, x: 0, speed: 30, vx: 3 });
-    Object.assign(cop, { z: 600, x: 0.7, speed: 30, vx: 0, chase: 0 });
+    Object.assign(cop, { z: 600, x: 0.7, speed: 30, vx: 0, chase: 0, post: -1 });
     r.t = 10;
     steps(r, 1, { ...NO_INPUT, throttle: true });
     expect(me.phase).toBe("riding");

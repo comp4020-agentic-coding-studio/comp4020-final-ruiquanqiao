@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Measure, type Tile, frameFor, measure, tileFor } from "../client/sprites.ts";
+import { type Measure, type Tile, frameFor, measure, tileFor, tileSize } from "../client/sprites.ts";
 import { type Rider, TUNE, startRace } from "../game/sim.ts";
 import { makeTrack } from "../game/track.ts";
 
@@ -117,5 +117,20 @@ describe("which drawn direction a bike is shown from", () => {
     const pass = swaps(tileFor, 30, 4, 1.8, 0.08);
     expect(pass.tiles).toBeGreaterThan(3);
     expect(pass.swaps).toBe(pass.tiles - 1);
+  });
+});
+
+describe("how finely the frames are drawn", () => {
+  it("draws every tile at 224 px on a desktop GPU, and keeps the atlas inside 4096 px", () => {
+    // at 96 and then 128 px a rider near the camera showed texels 5-6 screen
+    // pixels across, coarser than the original's own sprites
+    const desk = tileSize(16384, false);
+    expect(desk.tile).toBe(224);
+    expect(desk.perRow * desk.tile).toBeLessThanOrEqual(4096);
+    expect(desk.rows * desk.tile).toBeLessThanOrEqual(4096);
+    // a phone gets less, and a small GPU still gets an atlas it can hold
+    expect(tileSize(4096, true).tile).toBeLessThanOrEqual(160);
+    const small = tileSize(2048, false);
+    expect(small.rows * small.tile).toBeLessThanOrEqual(2048);
   });
 });

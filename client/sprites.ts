@@ -184,14 +184,29 @@ export type FrameName = string;
 
 /** Directions each frame is drawn from: 0 is from straight behind, 180 from in front, positive from the rider's right. */
 const YAWS = [0, 20, 40, 65, 90, 120, 150, 180];
-// 128 px a tile, up from 96, so a limb is drawn with its shape and not as a
-// line of a few texels. Frames are laid out two abreast, which keeps the atlas
-// 2048 px wide and under 2500 tall: a single column of them at this size
-// would be 4600 px tall, past the 4096 a lot of phones' GPUs can hold
-const TILE = 128; // px
-const BANDS = 2;
+/**
+ * How big a tile is drawn, px: the largest whose atlas fits the GPU, up to
+ * 224 (160 on a touch screen, to spare a phone's memory). At 96 and then 128
+ * a rider close to the camera showed texels five or six screen pixels across,
+ * coarser than the original's own sprites; at 224 a texel near the camera is
+ * about three. Tiles run left to right, row after row, so the atlas stays
+ * square-ish and inside 4096 px, the most many GPUs can hold.
+ */
+export function tileSize(maxTexture: number, touch: boolean, tiles = FRAMES.length * YAWS.length): { tile: number; perRow: number; rows: number } {
+  const max = Math.min(4096, maxTexture);
+  for (const tile of [224, 192, 160, 128, 96, 64]) {
+    if (touch && tile > 160) continue;
+    const perRow = Math.floor(max / tile);
+    const rows = Math.ceil(tiles / perRow);
+    if (rows * tile <= max) return { tile, perRow, rows };
+  }
+  return { tile: 48, perRow: Math.floor(max / 48), rows: Math.ceil(tiles / Math.floor(max / 48)) };
+}
 /** Where frame `i` seen from yaw column `col` sits in the atlas, in tiles. */
-const tileAt = (i: number, col: number): { x: number; y: number } => ({ x: (i % BANDS) * YAWS.length + col, y: Math.floor(i / BANDS) });
+const tileAt = (i: number, col: number, perRow: number): { x: number; y: number } => {
+  const n = i * YAWS.length + col;
+  return { x: n % perRow, y: Math.floor(n / perRow) };
+};
 /** metres the tile spans, square; the ground is at ANCHOR of its height */
 export const SPAN = 2.8;
 const ELEVATION = 0.17; // rad: the chase camera looks down on a rider at about this
@@ -232,22 +247,29 @@ class Puppet {
     // so an arm has a shoulder, a biceps and a wrist and a leg a thigh, a
     // calf and an ankle. Straight cylinders read as sticks the moment an arm
     // or a leg went out straight for a blow
-    const limb = (profile: [number, number][]): THREE.BufferGeometry =>
-      new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 16).translate(0, 0, 0);
-    const upper = limb([[0.001, -0.56], [0.95, -0.5], [1.18, -0.3], [1.22, -0.1], [1.0, 0.25], [0.8, 0.5], [0.001, 0.56]]);
-    const fore = limb([[0.001, -0.55], [0.9, -0.5], [1.12, -0.3], [1.0, -0.05], [0.72, 0.35], [0.6, 0.5], [0.001, 0.55]]);
-    const thigh = limb([[0.001, -0.55], [1.12, -0.5], [1.18, -0.25], [1.0, 0.15], [0.78, 0.5], [0.001, 0.55]]);
-    const shin = limb([[0.001, -0.55], [0.82, -0.5], [1.08, -0.25], [0.95, 0.05], [0.65, 0.4], [0.6, 0.5], [0.001, 0.55]]);
-    const add = (name: string, geo: THREE.BufferGeometry, part: number, colour = "#ffffff", rough = 0.6): void => {
+    const lathe = (profile: [number, number][], stripe = false): THREE.BufferGeometry =>
+      stripe
+        ? // a panel down the outside only: a sixth of the way round, centred on +x, standing just proud
+          new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r * 1.05, y)), 6, Math.PI / 2 - Math.PI / 6, Math.PI / 3)
+        : new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 20);
+    const UPPER: [number, number][] = [[0.001, -0.56], [0.95, -0.5], [1.18, -0.3], [1.22, -0.1], [1.0, 0.25], [0.8, 0.5], [0.001, 0.56]];
+    const FORE: [number, number][] = [[0.001, -0.55], [0.9, -0.5], [1.12, -0.3], [1.0, -0.05], [0.72, 0.35], [0.6, 0.5], [0.001, 0.55]];
+    const THIGH: [number, number][] = [[0.001, -0.55], [1.12, -0.5], [1.18, -0.25], [1.0, 0.15], [0.78, 0.5], [0.001, 0.55]];
+    const SHIN: [number, number][] = [[0.001, -0.55], [0.82, -0.5], [1.08, -0.25], [0.95, 0.05], [0.65, 0.4], [0.6, 0.5], [0.001, 0.55]];
+    const [upper, fore, thigh, shin] = [UPPER, FORE, THIGH, SHIN].map((p) => lathe(p));
+    const [upperS, foreS, thighS, shinS] = [UPPER, FORE, THIGH, SHIN].map((p) => lathe(p, true));
+    // the trunk in one piece, hips to collar, wider across than it is deep:
+    // a stack of three balls read as a balloon animal, not a rider in leathers
+    const torso = lathe([[0.001, -0.02], [0.78, 0], [0.86, 0.12], [0.8, 0.26], [0.72, 0.4], [0.86, 0.6], [1.0, 0.78], [0.94, 0.92], [0.5, 1.0], [0.001, 1.02]]);
+    // leather is shiny: highlights pick out the shapes the tint alone flattened
+    const add = (name: string, geo: THREE.BufferGeometry, part: number, colour = "#ffffff", rough = 0.38): void => {
       const m = new THREE.Mesh(geo, this.mat(part ? "#ffffff" : colour, rough, 0)) as unknown as Part;
       m.userData.part = part;
       this.parts[name] = m;
       this.body.add(m);
     };
     // leathers: the suit in the main colour, shoulders, elbows and knees in the trim
-    add("pelvis", ball, PART.main);
-    add("belly", ball, PART.main);
-    add("chest", ball, PART.main);
+    add("torso", torso, PART.main);
     add("hump", ball, PART.trim);
     add("neck", cyl, PART.fixed, "#1a1a1a");
     add("helmet", ball, PART.helmet, "#ffffff", 0.25);
@@ -255,14 +277,18 @@ class Puppet {
     add("visor", ball, PART.fixed, "#101318", 0.1);
     for (const s of ["R", "L"]) {
       add(`shoulder${s}`, ball, PART.trim);
-      add(`upper${s}`, upper, PART.trim);
-      add(`elbow${s}`, ball, PART.main);
+      add(`upper${s}`, upper, PART.main);
+      add(`upperS${s}`, upperS, PART.trim);
+      add(`elbow${s}`, ball, PART.trim);
       add(`fore${s}`, fore, PART.main);
+      add(`foreS${s}`, foreS, PART.trim);
       add(`glove${s}`, ball, PART.fixed, "#151515");
       add(`hip${s}`, ball, PART.main);
       add(`thigh${s}`, thigh, PART.main);
+      add(`thighS${s}`, thighS, PART.trim);
       add(`knee${s}`, ball, PART.trim);
       add(`shin${s}`, shin, PART.main);
+      add(`shinS${s}`, shinS, PART.trim);
       add(`boot${s}`, new THREE.BoxGeometry(1, 1, 1), PART.fixed, "#121212");
     }
     const wood = this.mat("#8a5a30", 0.8, 0);
@@ -300,17 +326,29 @@ class Puppet {
       m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up.clone().normalize());
       m.scale.set(...s);
     };
-    const bone = (m: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3, r: number): void => {
-      const d = b.clone().sub(a);
-      m.position.copy(a).addScaledVector(d, 0.5);
-      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize());
-      m.scale.set(r, d.length(), r);
+    /** Turn a mesh so its y runs along `up` and its x points as near `out` as it can. */
+    const orient = (m: THREE.Mesh, up: THREE.Vector3, out: THREE.Vector3): void => {
+      const y = up.clone().normalize();
+      const x = out.clone().addScaledVector(y, -out.dot(y));
+      if (x.lengthSq() < 1e-6) x.copy(Math.abs(y.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1)).addScaledVector(y, -y.x);
+      x.normalize();
+      const z = new THREE.Vector3().crossVectors(x, y);
+      m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
     };
-    blob(P.pelvis, pelvis.clone().addScaledVector(spine, 0.04), [0.17, 0.12, 0.15]);
-    blob(P.belly, pelvis.clone().addScaledVector(spine, 0.22), [0.16, 0.16, 0.13]);
-    blob(P.chest, chest.clone().addScaledVector(spine, -0.06), [0.21, 0.17, 0.15]);
+    const bone = (m: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3, r: number, out = across.clone(), stripe?: THREE.Mesh): void => {
+      const d = b.clone().sub(a);
+      for (const k of stripe ? [m, stripe] : [m]) {
+        k.position.copy(a).addScaledVector(d, 0.5);
+        orient(k, d, out);
+        k.scale.set(r, d.length(), r);
+      }
+    };
+    // the trunk along the spine, hips at the pelvis, its width across the shoulders
+    P.torso.position.copy(pelvis);
+    orient(P.torso, spine, across);
+    P.torso.scale.set(0.205, 0.59, 0.145);
     // the back protector hump, behind the shoulders
-    blob(P.hump, chest.clone().addScaledVector(spine, -0.08).addScaledVector(fwd, -0.09), [0.15, 0.17, 0.07]);
+    blob(P.hump, chest.clone().addScaledVector(spine, -0.08).addScaledVector(fwd, -0.11), [0.13, 0.15, 0.06]);
     const neckTop = chest.clone().addScaledVector(spine, 0.13);
     bone(P.neck, chest, neckTop, 0.06);
     const head = neckTop.clone().addScaledVector(spine, 0.1).addScaledVector(fwd, 0.04);
@@ -331,11 +369,13 @@ class Puppet {
       const hand = v(s === "R" ? p.handR : p.handL);
       const elbowPole = v((s === "R" ? p.elbowR : p.elbowL) ?? [sign * -0.6, 1, -0.1]);
       const elbow = ik(shoulder, hand, ARM, ARM, elbowPole);
-      blob(P[`shoulder${s}`], shoulder, [0.085, 0.085, 0.085]);
-      bone(P[`upper${s}`], shoulder, elbow, 0.072);
-      blob(P[`elbow${s}`], elbow, [0.058, 0.058, 0.058]);
+      // the panel down each limb faces away from the body
+      const out = across.clone().multiplyScalar(sign);
+      blob(P[`shoulder${s}`], shoulder, [0.078, 0.078, 0.078]);
+      bone(P[`upper${s}`], shoulder, elbow, 0.072, out, P[`upperS${s}`]);
+      blob(P[`elbow${s}`], elbow, [0.06, 0.06, 0.06]);
       const handAt = elbow.clone().add(hand.clone().sub(elbow).normalize().multiplyScalar(ARM));
-      bone(P[`fore${s}`], elbow, handAt, 0.064);
+      bone(P[`fore${s}`], elbow, handAt, 0.064, out, P[`foreS${s}`]);
       // a gauntlet: a fist, wider across the knuckles than it is thick
       blob(P[`glove${s}`], handAt, [0.08, 0.075, 0.09], handAt.clone().sub(elbow));
       const hip = pelvis.clone().addScaledVector(across, sign * 0.11);
@@ -343,10 +383,10 @@ class Puppet {
       const kneePole = v((s === "R" ? p.kneeR : p.kneeL) ?? [sign * -0.4, 0.9, 0.4]);
       const knee = ik(hip, foot, LEG, LEG, kneePole);
       blob(P[`hip${s}`], hip, [0.09, 0.09, 0.09]);
-      bone(P[`thigh${s}`], hip, knee, 0.092);
-      blob(P[`knee${s}`], knee, [0.074, 0.074, 0.074]);
+      bone(P[`thigh${s}`], hip, knee, 0.092, out, P[`thighS${s}`]);
+      blob(P[`knee${s}`], knee, [0.076, 0.076, 0.076]);
       const footAt = knee.clone().add(foot.clone().sub(knee).normalize().multiplyScalar(LEG));
-      bone(P[`shin${s}`], knee, footAt, 0.07);
+      bone(P[`shin${s}`], knee, footAt, 0.07, out, P[`shinS${s}`]);
       const boot = P[`boot${s}`];
       boot.position.copy(footAt).add(new THREE.Vector3(0, -0.02, 0.05));
       boot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), knee.clone().sub(footAt).normalize());
@@ -453,7 +493,8 @@ export function measure(frame: string): Measure {
 
 // ---- the atlas ----
 
-export type Atlas = { colour: THREE.DataTexture; ids: THREE.DataTexture; frames: Map<string, number>; anchor: number };
+/** The frames, drawn: colour in RGB, and in alpha which part each pixel is (0 where there is nothing). */
+export type Atlas = { colour: THREE.DataTexture; frames: Map<string, number>; anchor: number; perRow: number; rows: number };
 
 /**
  * Render every frame from every direction, once. About 250 tiles; a frame of
@@ -463,19 +504,20 @@ export function buildAtlas(renderer: THREE.WebGLRenderer): Atlas {
   const puppet = new Puppet();
   const scene = new THREE.Scene();
   scene.add(puppet.root);
-  scene.add(new THREE.HemisphereLight("#ffffff", "#606070", 1.4));
-  const sun = new THREE.DirectionalLight("#ffffff", 2.2);
+  scene.add(new THREE.HemisphereLight("#ffffff", "#404050", 0.9));
+  const sun = new THREE.DirectionalLight("#ffffff", 3.0);
   scene.add(sun, sun.target);
   const half = SPAN / 2;
   const cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, 40);
+  const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const { tile: TILE, perRow, rows } = tileSize(renderer.capabilities.maxTextureSize, touch);
   const rt = new THREE.WebGLRenderTarget(TILE, TILE);
   rt.texture.colorSpace = THREE.SRGBColorSpace;
-  const cols = YAWS.length * BANDS;
-  const rows = Math.ceil(FRAMES.length / BANDS);
-  const W = cols * TILE;
+  const W = perRow * TILE;
   const H = rows * TILE;
+  // one texture: the part numbers ride in the colour's alpha, which halves
+  // the memory a second atlas of them took
   const colour = new Uint8Array(W * H * 4);
-  const ids = new Uint8Array(W * H * 4);
   const buf = new Uint8Array(TILE * TILE * 4);
   const frames = new Map<string, number>();
   const centre = new THREE.Vector3(0, 0.95, 0);
@@ -484,11 +526,21 @@ export function buildAtlas(renderer: THREE.WebGLRenderer): Atlas {
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.setClearColor(0x000000, 0);
 
-  const copy = (into: Uint8Array, row: number, col: number): void => {
+  const copy = (row: number, col: number): void => {
+    renderer.readRenderTargetPixels(rt, 0, 0, TILE, TILE, buf);
+    for (let y = 0; y < TILE; y++) colour.set(buf.subarray(y * TILE * 4, (y + 1) * TILE * 4), ((row * TILE + y) * W + col * TILE) * 4);
+  };
+  /** Write the part numbers just rendered into the alpha of the tile's colour. */
+  const copyIds = (row: number, col: number): void => {
     renderer.readRenderTargetPixels(rt, 0, 0, TILE, TILE, buf);
     for (let y = 0; y < TILE; y++) {
       const dst = ((row * TILE + y) * W + col * TILE) * 4;
-      into.set(buf.subarray(y * TILE * 4, (y + 1) * TILE * 4), dst);
+      for (let x = 0; x < TILE; x++) {
+        const o = dst + x * 4 + 3;
+        // part n (written as n*40 in red) becomes 40 + n*40; nothing stays 0
+        if (colour[o] >= 128) colour[o] = 40 + Math.round(buf[(y * TILE + x) * 4] / 40) * 40;
+        else colour[o] = 0;
+      }
     }
   };
 
@@ -503,18 +555,19 @@ export function buildAtlas(renderer: THREE.WebGLRenderer): Atlas {
       cam.position.copy(centre).addScaledVector(dir, 12);
       cam.lookAt(centre);
       cam.updateMatrixWorld();
-      // light from over the camera's left shoulder, the same on every tile
-      sun.position.copy(cam.position).add(new THREE.Vector3(0, 6, 0)).addScaledVector(new THREE.Vector3(-dir.z, 0, dir.x), 5);
+      // light from high over the camera's left shoulder, the same on every tile: from
+      // just over the camera the back of a rider came out one flat colour
+      sun.position.copy(cam.position).add(new THREE.Vector3(0, 9, 0)).addScaledVector(new THREE.Vector3(-dir.z, 0, dir.x), 9);
       sun.target.position.copy(centre);
       renderer.setRenderTarget(rt);
       renderer.clear();
       renderer.render(scene, cam);
-      const at = tileAt(row, col);
-      copy(colour, at.y, at.x);
+      const at = tileAt(row, col, perRow);
+      copy(at.y, at.x);
       puppet.ids(true);
       renderer.clear();
       renderer.render(scene, cam);
-      copy(ids, at.y, at.x);
+      copyIds(at.y, at.x);
       puppet.ids(false);
     });
   });
@@ -533,7 +586,7 @@ export function buildAtlas(renderer: THREE.WebGLRenderer): Atlas {
   };
   // where the ground (y = 0) falls in a tile, as a fraction of its height up
   const anchor = 0.5 - (centre.y * Math.cos(ELEVATION)) / SPAN;
-  return { colour: tex(colour), ids: tex(ids), frames, anchor };
+  return { colour: tex(colour), frames, anchor, perRow, rows };
 }
 
 // ---- drawing a frame ----
@@ -549,23 +602,37 @@ void main() {
 
 const FRAG = `
 uniform sampler2D map;
-uniform sampler2D ids;
 uniform vec4 tile;
+uniform vec2 texel;
 uniform float flip;
 uniform vec3 tints[6];
 uniform float shade;
 uniform float flash;
 varying vec2 vUv;
+int idAt(vec4 c) { return c.a < 0.08 ? -1 : int(floor(c.a * 255.0 / 40.0 + 0.5)) - 1; }
+vec4 near(vec2 uv, vec2 d) { return texture2D(map, clamp(uv + d * texel, tile.xy + texel * 0.5, tile.xy + tile.zw - texel * 0.5)); }
 void main() {
   vec2 uv = vUv;
   if (flip > 0.5) uv.x = 1.0 - uv.x;
   uv = tile.xy + uv * tile.zw;
   vec4 c = texture2D(map, uv);
-  if (c.a < 0.5) discard;
-  int id = int(floor(texture2D(ids, uv).r * 255.0 / 40.0 + 0.5));
+  int id = idAt(c);
+  int l = idAt(near(uv, vec2(-1.0, 0.0)));
+  int r = idAt(near(uv, vec2(1.0, 0.0)));
+  int u = idAt(near(uv, vec2(0.0, 1.0)));
+  int d = idAt(near(uv, vec2(0.0, -1.0)));
+  // a dark line one texel wide round the whole figure, as the original's
+  // hand-drawn sprites have
+  if (id < 0) {
+    if (max(max(l, r), max(u, d)) < 0) discard;
+    gl_FragColor = vec4(mix(vec3(0.06, 0.05, 0.07), vec3(1.0, 0.97, 0.85), flash), 1.0);
+    return;
+  }
   vec3 t = vec3(1.0);
   for (int i = 1; i < 6; i++) if (i == id) t = tints[i];
-  gl_FragColor = vec4(mix(c.rgb * t * shade, vec3(1.0, 0.97, 0.85), flash), 1.0);
+  // and a softer one where one part meets another of a different colour
+  float seam = (l >= 0 && l != id) || (u >= 0 && u != id) ? 0.62 : 1.0;
+  gl_FragColor = vec4(mix(c.rgb * t * shade * seam, vec3(1.0, 0.97, 0.85), flash), 1.0);
 }`;
 
 export type Tile = { col: number; flip: boolean };
@@ -595,7 +662,7 @@ export function tileFor(view: number, last: Tile): Tile {
 /** A billboard showing one rider's frames in their own colours. */
 export class RiderSprite {
   readonly mesh: THREE.Mesh;
-  private u: { tile: { value: THREE.Vector4 }; flip: { value: number }; shade: { value: number }; flash: { value: number } };
+  private u: { tile: { value: THREE.Vector4 }; texel: { value: THREE.Vector2 }; flip: { value: number }; shade: { value: number }; flash: { value: number } };
 
   private atlas: Atlas;
   private tile: Tile = { col: 0, flip: false };
@@ -609,9 +676,9 @@ export class RiderSprite {
       return new THREE.Vector3(o.r, o.g, o.b);
     };
     const tints = [new THREE.Vector3(1, 1, 1), srgb(look.main), srgb(look.trim), srgb(look.helmet), srgb(look.paint), srgb(look.paintTrim)];
-    this.u = { tile: { value: new THREE.Vector4() }, flip: { value: 0 }, shade: { value: 1 }, flash: { value: 0 } };
+    this.u = { tile: { value: new THREE.Vector4() }, texel: { value: new THREE.Vector2(1 / atlas.colour.image.width, 1 / atlas.colour.image.height) }, flip: { value: 0 }, shade: { value: 1 }, flash: { value: 0 } };
     const mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: atlas.colour }, ids: { value: atlas.ids }, tints: { value: tints }, ...this.u },
+      uniforms: { map: { value: atlas.colour }, tints: { value: tints }, ...this.u },
       vertexShader: VERT,
       fragmentShader: FRAG,
     });
@@ -637,9 +704,9 @@ export class RiderSprite {
     const { col, flip } = this.tile;
     // seen from the left: the right-hand view, mirrored, of the other side's move
     const frame = !flip ? name : name.endsWith(".R") ? name.slice(0, -2) + ".L" : name.endsWith(".L") ? name.slice(0, -2) + ".R" : name;
-    const at = tileAt(a.frames.get(frame) ?? 0, col);
-    const cols = YAWS.length * BANDS;
-    const rows = Math.ceil(a.frames.size / BANDS);
+    const at = tileAt(a.frames.get(frame) ?? 0, col, a.perRow);
+    const cols = a.perRow;
+    const rows = a.rows;
     // DataTexture rows run bottom-up, the same as readRenderTargetPixels
     this.u.tile.value.set(at.x / cols, at.y / rows, 1 / cols, 1 / rows);
     this.u.flip.value = flip ? 1 : 0;

@@ -359,11 +359,10 @@ function rigCentre(rig: RiderRig): number {
 const CAR_PAINT = ["#8a8f96", "#b8bcc0", "#5a2a2a", "#26384e", "#d8d4c8", "#3c4a34", "#7a6440"];
 
 /** A car about 4.6 m long, facing +z: body, glasshouse, roof, wheels, lights. */
-export function buildCar(kind: "sedan" | "taxi" | "pickup" | "police", id: number): THREE.Group {
-  const paint = kind === "taxi" ? "#e8b818" : kind === "police" ? "#141418" : CAR_PAINT[id % CAR_PAINT.length];
+export function buildCar(kind: "sedan" | "taxi" | "pickup", id: number): THREE.Group {
+  const paint = kind === "taxi" ? "#e8b818" : CAR_PAINT[id % CAR_PAINT.length];
   const m = {
     paint: new THREE.MeshPhysicalMaterial({ color: paint, roughness: 0.3, metalness: 0.3, clearcoat: 1, clearcoatRoughness: 0.1 }),
-    white: new THREE.MeshPhysicalMaterial({ color: "#f2f2f2", roughness: 0.3, clearcoat: 1 }),
     glass: new THREE.MeshPhysicalMaterial({ color: "#1c2430", roughness: 0.05, metalness: 0.4, clearcoat: 1 }),
     tyre: new THREE.MeshStandardMaterial({ color: "#141414", roughness: 0.9 }),
     rim: new THREE.MeshStandardMaterial({ color: "#a8a8b0", roughness: 0.3, metalness: 0.9 }),
@@ -385,25 +384,7 @@ export function buildCar(kind: "sedan" | "taxi" | "pickup" | "police", id: numbe
     }
   } else {
     car.add(panel([[-1.4, 0.92], [-1.0, 1.42], [0.55, 1.44], [1.18, 0.92]], 1.62, 0.06, m.glass));
-    car.add(panel([[-0.95, 1.4], [0.5, 1.42], [0.5, 1.49], [-0.95, 1.47]], 1.66, 0.03, kind === "police" ? m.white : m.paint));
-  }
-  if (kind === "police") {
-    // white doors on the black-and-white, a light bar on the roof
-    for (const side of [-1, 1]) {
-      const door = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.42, 1.9), m.white);
-      door.position.set(side * 0.94, 0.66, 0.05);
-      car.add(door);
-    }
-    const bar = new THREE.Group();
-    const red = new THREE.MeshStandardMaterial({ color: "#d01010", emissive: "#ff0000", emissiveIntensity: 1.5 });
-    const blue = new THREE.MeshStandardMaterial({ color: "#1030d0", emissive: "#0030ff", emissiveIntensity: 1.5 });
-    const l = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.12, 0.22), red);
-    l.position.x = 0.3;
-    const r = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.12, 0.22), blue);
-    r.position.x = -0.3;
-    bar.add(l, r);
-    bar.position.set(0, 1.56, -0.2);
-    car.add(bar);
+    car.add(panel([[-0.95, 1.4], [0.5, 1.42], [0.5, 1.49], [-0.95, 1.47]], 1.66, 0.03, m.paint));
   }
   if (kind === "taxi") {
     const sign = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.18, 0.25), new THREE.MeshStandardMaterial({ color: "#f8f0d0", emissive: "#f0e0a0", emissiveIntensity: 0.4 }));

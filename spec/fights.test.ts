@@ -13,7 +13,9 @@ describe("the field picks fights with a player", () => {
   const all = ROADS.map((_, road) => tally(road, 11, 90, 1, 1));
 
   it("swings at a player who never swings back, on every road", () => {
-    // measured: 7-28 a road in 90 s, 20 on average. The race is chaotic, so
+    // measured: 7-19 a road in 90 s, 12 on average, now that a cop rides
+    // alongside the player for much of a race and takes a flank a rider would
+    // otherwise duel from (7-28 and 20 before). The race is chaotic, so
     // any change to the riding moves one road's count a lot: the floor is on
     // every road, and the bar on the average
     for (const t of all) expect(t.swingsAtMe, t.road).toBeGreaterThanOrEqual(5);

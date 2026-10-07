@@ -38,7 +38,7 @@ const sizes: [number, number][] = [
 const context = await chromium.launchPersistentContext(profile, {
   executablePath: CHROME,
   headless: true,
-  args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
+  args: process.env.GPU ? ["--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist"] : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
 });
 
 for (const [w, h] of sizes) {

@@ -16,7 +16,7 @@ function race(humans = 2, road = 0): Race {
   const entrants = Array.from({ length: humans }, (_, i) => ({ id: i, name: `h${i}`, human: true }));
   const r = startRace(makeTrack(1, road), 1, entrants, 5);
   r.cars = [];
-  for (const c of r.riders.filter((x) => x.cop)) c.z = 1e6;
+  for (const c of r.riders.filter((x) => x.cop)) Object.assign(c, { z: 1e6, post: -1 });
   r.track = { ...r.track, scenery: [] };
   return r;
 }

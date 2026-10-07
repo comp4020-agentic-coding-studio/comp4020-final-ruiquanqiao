@@ -6,7 +6,7 @@
 // the game itself.
 
 import * as THREE from "three";
-import { type Car, type Rider, TUNE, type Weapon, windupOf } from "../game/sim.ts";
+import { type Car, OFF_ROAD, type Rider, TUNE, type Weapon, windupOf } from "../game/sim.ts";
 import { BIOMES, type Biome, OPEN, ROAD_HALF, SEGMENT, SHOULDER, type Track, biomeAt, segmentAt } from "../game/track.ts";
 import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
@@ -798,7 +798,6 @@ export class RaceScene {
 
   /** Traffic: a model per car, made the first time it is near (V17). */
   private placeCars(track: Track, cars: readonly Car[]): void {
-    const flash = Math.floor(performance.now() / 250) % 2;
     for (const c of cars) {
       let g = this.cars.get(c.id);
       if (!g) {
@@ -813,11 +812,6 @@ export class RaceScene {
       // knocked by a bike, it slews and rocks for a moment
       const j = this.wobbleOf(this.carJolts, c.id);
       g.rotation.set(0, f.heading + (c.dir < 0 ? Math.PI : 0) + j, j * 0.5);
-      if (c.kind === "police") {
-        // the light bar alternates red and blue
-        const bar = g.children.find((o) => o.position.y > 1.5 && o.children.length === 2);
-        bar?.children.forEach((o, i) => (((o as THREE.Mesh).material as THREE.MeshStandardMaterial).emissiveIntensity = i === flash ? 2.5 : 0.2));
-      }
     }
   }
 
@@ -863,6 +857,13 @@ export class RaceScene {
   private place(track: Track, r: Rider): void {
     if (!this.atlas) return;
     const a = this.actor(r);
+    // a cop not yet sent out is nowhere on the road (P2)
+    const away = r.z < OFF_ROAD / 2;
+    a.rider.mesh.visible = a.shadow.visible = !away;
+    if (away) {
+      a.bike.mesh.visible = a.bikeShadow.visible = false;
+      return;
+    }
     const off = r.phase === "thrown" || r.phase === "running";
     const shadowAt = (m: THREE.Mesh, z: number, x: number, w: number, l: number): void => {
       const f = frameAt(track, z, x);
