@@ -132,12 +132,8 @@ export const TUNE = {
    * scrapes along it, m/s; and how much speed a scrape costs, per second */
   wallCrash: 6,
   wallScrape: 0.8,
-  /** sideways closing speed of a hard rub (K2), and the stamina it costs the
-   * rider rubbed at that speed; softer costs less, harder up to half as much again */
+  /** sideways closing speed of a hard rub (K2): the shove a rub gives grows up to it */
   rubKnock: 6.5,
-  rubStamina: 8,
-  /** below this sideways closing speed a rub only shoves, m/s */
-  rubHurt: 2,
   /** sideways shove from a rub that does not (K1), m/s */
   rubShove: 4,
   /** closing speed along the road above which hitting a car is a crash */
@@ -234,8 +230,6 @@ export type Rider = {
   sinceHit: number;
   /** race time of the last bump reported for this rider, so a long rub is not a drum roll */
   bumpedAt: number;
-  /** race time a rub last cost this rider stamina: no more than twice a second */
-  rubbedAt: number;
   /** thrown by a bike that ran them over: flung on with it, not tumbling to a stop (C9) */
   flung: boolean;
   /** thrown off: m above the road under them, and m/s upwards; air 0 is down */
@@ -362,7 +356,6 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       cooldown: 0,
       sinceHit: 99,
       bumpedAt: -99,
-      rubbedAt: -99,
       flung: false,
       air: 0,
       vy: 0,
@@ -1017,20 +1010,9 @@ function rub(race: Race, a: Rider, b: Rider, closing: number): void {
   const bIn = -(b.vx + b.shove) * towards;
   const [mover, struck] = aIn >= bIn ? [a, b] : [b, a];
   const away = struck.x >= mover.x ? 1 : -1;
-  // a hard rub costs the rider rubbed stamina, as a blow does, and puts them
-  // down only once it is gone (K2). It first put them down outright at 6.5
-  // m/s across: of 108 riders put down by another in ten AI races, 68 went
-  // that way, often a blow or two into a fight
-  const fast = Math.min(mover.speed, struck.speed) > 15;
-  if (fast && Math.abs(closing) >= TUNE.rubHurt && race.t - struck.rubbedAt >= 0.5) {
-    struck.rubbedAt = race.t;
-    struck.stamina = Math.max(0, struck.stamina - TUNE.rubStamina * Math.min(1.5, Math.abs(closing) / TUNE.rubKnock));
-    struck.sinceHit = 0;
-    if (struck.stamina <= 0) {
-      crash(struck, "rub", race);
-      return;
-    }
-  }
+  // a rub only shoves, however hard (K2): stamina is for blows. It first put
+  // the rider rubbed down outright at 6.5 m/s across (68 of 108 riders put
+  // down by another in ten AI races went that way), then cost them stamina
   struck.shove = away * Math.max(Math.abs(struck.shove), TUNE.rubShove * Math.min(1, Math.abs(closing) / TUNE.rubKnock));
   mover.vx *= 0.5;
   bump(race, struck, mover.id, "rider", Math.abs(closing) / TUNE.rubKnock, mover.x);

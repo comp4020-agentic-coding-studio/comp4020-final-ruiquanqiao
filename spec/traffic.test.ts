@@ -30,25 +30,29 @@ describe("contact between riders", () => {
     expect(b.shove).toBeGreaterThan(0);
   });
 
-  it("a hard rub at speed costs the other rider stamina, and puts them down only once it is gone, at no cost to the bike (K2, K6)", () => {
-    const rubbed = (stamina: number): Rider => {
+  it("a rub only shoves, however hard: it costs no stamina and puts no one down (K2)", () => {
+    for (const stamina of [100, 5]) {
       const r = race();
       const [a, b] = [rider(r, 0), rider(r, 1)];
-      Object.assign(a, { z: 500, x: 0, speed: 40, vx: 8 });
-      Object.assign(b, { z: 500, x: 0.75, speed: 40, vx: 0, stamina });
+      Object.assign(a, { z: 500, x: 0, speed: 40, vx: 12 });
+      Object.assign(b, { z: 500, x: 0.75, speed: 40, vx: 0, stamina, sinceHit: 0 });
       steps(r, 1);
-      if (b.phase === "thrown") expect(r.events.some((e) => e.kind === "crash" && e.rider === 1 && e.cause === "rub")).toBe(true);
-      return b;
-    };
-    // fresh, it takes it and rides on, shoved over
-    const fresh = rubbed(100);
-    expect(fresh.phase).toBe("riding");
-    expect(fresh.stamina).toBeLessThan(100);
-    expect(fresh.stamina).toBeGreaterThan(80);
-    // worn down by a fight, the same rub is the end of it
-    const spent = rubbed(5);
-    expect(spent.phase).toBe("thrown");
-    expect(spent.damage).toBe(100);
+      expect(b.phase).toBe("riding");
+      expect(b.stamina).toBe(stamina);
+      expect(b.shove).toBeGreaterThan(2);
+      expect(r.events.some((e) => e.kind === "bump" && e.rider === 1)).toBe(true);
+    }
+  });
+
+  it("knocked off by another rider's blows, the bike takes no damage (K6)", () => {
+    const r = race();
+    const [a, b] = [rider(r, 0), rider(r, 1)];
+    Object.assign(a, { z: 500, x: 0, speed: 30 });
+    Object.assign(b, { z: 500, x: 1.2, speed: 30, stamina: 5 });
+    beginAttack(r, a, "hand");
+    steps(r, 30);
+    expect(r.events).toContainEqual(expect.objectContaining({ kind: "crash", rider: 1, cause: "knockdown" }));
+    expect(b.damage).toBe(100);
   });
 
   it("stamina comes back fast once the blows stop: a second clear, then empty to full in five (M1)", () => {
@@ -415,10 +419,11 @@ describe("contact with a cop (K10)", () => {
     r.t = 10;
     steps(r, 1, { ...NO_INPUT, throttle: true });
     expect(me.phase).toBe("riding");
-    // now the cop rubs me off the bike, worn down
+    // now the cop clubs me off the bike, worn down
     Object.assign(me, { z: 620, x: 0, speed: 30, vx: 0, stamina: 5 });
-    Object.assign(cop, { z: 620, x: -0.7, speed: 30, vx: 12 });
-    steps(r, 2);
+    Object.assign(cop, { z: 620, x: -1.2, speed: 30, vx: 0, attack: null, cooldown: 0 });
+    beginAttack(r, cop, "hand");
+    steps(r, 40);
     expect(me.phase).toBe("busted");
   });
 });

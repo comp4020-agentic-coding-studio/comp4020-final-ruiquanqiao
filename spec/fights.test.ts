@@ -33,9 +33,14 @@ describe("the field picks fights with a player", () => {
   });
 
   it("knocks such a player off now and then, but does not hound them off every few seconds", () => {
-    const down = all.reduce((n, t) => n + t.meDown, 0);
-    // measured: 16 in 450 s
+    // measured: 16 in 450 s on one seed, while rubs could put a rider down
+    // and stamina came back slowly. With rubs only shoving and stamina back
+    // in a second, that seed gives none, so four seeds are counted: 12 in
+    // 1800 s, once every two and a half minutes for a player who never
+    // swings back
+    const more = [3, 7, 19].flatMap((seed) => ROADS.map((_, road) => tally(road, seed, 90, 1, 1)));
+    const down = [...all, ...more].reduce((n, t) => n + t.meDown, 0);
     expect(down).toBeGreaterThan(3);
-    expect(down).toBeLessThan(30);
+    expect(down).toBeLessThan(60);
   });
 });
