@@ -2,7 +2,7 @@
 // pools can be tested with a fake clock (spec/lobby.test.ts) and the server
 // just calls tick() with the real one.
 
-import { type Entry, GRID, type Mode, POOL_WAIT, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
+import { type Entry, GRID, MAX_AI, type Mode, POOL_WAIT, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 
@@ -13,6 +13,8 @@ export type Conn = {
   pool: Mode | null;
   level: number;
   road: number; // the road this connection voted for (N4)
+  /** how many AI riders this connection asked to race against (N2), or undefined for a full grid */
+  field?: number;
   race: Live | null;
   local: number; // this connection's rider id inside its race
   seq: number; // last input sequence number applied
@@ -71,12 +73,13 @@ export class Lobby {
 
   // ---- the pools (N2, N3) ----
 
-  join(conn: Conn, mode: Mode, level: number, now: number, road = 0): void {
+  join(conn: Conn, mode: Mode, level: number, now: number, road = 0, field?: number): void {
     if (conn.race && !conn.race.ended) return; // already racing
     this.leave(conn, now);
     conn.pool = mode;
     conn.level = Math.min(5, Math.max(1, Math.round(level) || 1));
     conn.road = Math.min(ROADS.length - 1, Math.max(0, Math.round(road) || 0));
+    conn.field = field === undefined || !Number.isFinite(field) ? undefined : Math.min(MAX_AI, Math.max(0, Math.round(field)));
     const pool = this.pools[mode];
     pool.members.push(conn);
     if (mode === "ai") {
@@ -172,8 +175,13 @@ export class Lobby {
       entrants.push({ id: i, name: n > 1 ? `${c.name} (${n})` : c.name, human: true });
     });
     if (mode === "ai") {
+      // as many AI riders as asked for (N2): the median of what everyone in
+      // the pool asked, so one person cannot empty or flood the road alone;
+      // anyone who did not say wants the original's full grid of fifteen
+      const asks = members.map((c) => c.field ?? Math.max(0, GRID - members.length)).sort((p, q) => p - q);
+      const ai = asks[Math.floor((asks.length - 1) / 2)];
       const names = [...AI_NAMES].sort(() => this.random() - 0.5);
-      for (let i = entrants.length; i < GRID; i++) entrants.push({ id: i, name: names[(i - members.length) % names.length], human: false });
+      for (let i = entrants.length; i < members.length + ai; i++) entrants.push({ id: i, name: names[(i - members.length) % names.length], human: false });
     }
 
     const track = makeTrack(level, road);

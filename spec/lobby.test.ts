@@ -141,3 +141,31 @@ describe("the race a pool starts", () => {
     expect(finished[0].find((s) => s.human)?.outcome).toBe("quit");
   });
 });
+
+describe("choosing how many AI riders (N2)", () => {
+  it("races as many as asked for, alone", () => {
+    const { l } = lobby();
+    const a = conn(1);
+    l.join(a, "ai", 1, 0, 0, 4);
+    l.tick(5);
+    const race = [...l.races.values()][0];
+    expect(race.entrants.filter((e) => !e.human)).toHaveLength(4);
+  });
+
+  it("takes the median of what the pool asked for, up to the most allowed", () => {
+    const { l } = lobby();
+    l.join(conn(1), "ai", 1, 0, 0, 0);
+    l.join(conn(2), "ai", 1, 1, 0, 20);
+    l.join(conn(3), "ai", 1, 2, 0, 500);
+    l.tick(5);
+    const race = [...l.races.values()][0];
+    expect(race.entrants.filter((e) => !e.human)).toHaveLength(20);
+  });
+
+  it("can race a human alone against nobody", () => {
+    const { l } = lobby();
+    l.join(conn(1), "ai", 1, 0, 0, 0);
+    l.tick(5);
+    expect([...l.races.values()][0].entrants).toHaveLength(1);
+  });
+});

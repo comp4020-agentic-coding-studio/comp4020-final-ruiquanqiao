@@ -12,7 +12,7 @@ import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
 import { Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
 import { buildCar } from "./models.ts";
-import { type Reaction, hopLift, wobble } from "./feel.ts";
+import { FLASH, RECOIL, type Reaction, hopLift, wobble } from "./feel.ts";
 import { type Atlas, type Look, RiderSprite, buildAtlas, frameFor } from "./sprites.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
@@ -368,6 +368,36 @@ const LEATHERS: [string, string, string][] = [
 type Actor = { rider: RiderSprite; bike: RiderSprite; shadow: THREE.Mesh; bikeShadow: THREE.Mesh };
 
 /** A soft dark ellipse for under a bike, as the original casts one. */
+/**
+ * The spark where a blow lands: a jagged star, white-hot in the middle, that
+ * bursts and is gone in a tenth of a second. Keyboards have no rumble, so the
+ * hit has to land in the eye and the ear.
+ */
+const sparkMaterial = (() => {
+  let m: THREE.SpriteMaterial | null = null;
+  return (): THREE.SpriteMaterial => {
+    if (m) return m;
+    const [c, ctx] = canvas(64, 64);
+    ctx.translate(32, 32);
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const r = i % 2 ? 9 : i % 4 ? 22 : 31;
+      const a = (i / 16) * Math.PI * 2;
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "#ffd23a";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    return (m = new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
+  };
+})();
+
 const shadowMaterial = (() => {
   let m: THREE.MeshBasicMaterial | null = null;
   return (): THREE.MeshBasicMaterial => {
@@ -408,7 +438,11 @@ export class RaceScene {
   /** riders thrown off over a car or a wall, flying high and far, not sliding */
   private launched = new Set<number>();
   /** bikes in the air after riding over someone, and since when */
-  private hops = new Map<number, number>();
+  private hops = new Map<number, { at: number; size: number }>();
+  /** riders flung by a bike, and riders struck by a blow, and since when */
+  private flung = new Set<number>();
+  private struck = new Map<number, { at: number; side: 1 | -1; by: number }>();
+  private sparks: { sprite: THREE.Sprite; at: number; on: number; by: number }[] = [];
 
   constructor(canvasEl: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, preserveDrawingBuffer: true });
@@ -675,7 +709,15 @@ export class RaceScene {
   feel(r: Reaction): void {
     const now = performance.now() / 1000;
     for (const t of r.tilt) this.jolts.set(t.id, { at: now + (t.after ?? 0), amp: t.amp });
-    if (r.hop !== null) this.hops.set(r.hop, now);
+    if (r.hop !== null) this.hops.set(r.hop.id, { at: now, size: r.hop.size });
+    if (r.flung !== null) this.flung.add(r.flung);
+    if (r.struck) {
+      this.struck.set(r.struck.id, { at: now, side: r.struck.side, by: r.struck.by });
+      const sprite = new THREE.Sprite(sparkMaterial());
+      sprite.renderOrder = 5;
+      this.scene.add(sprite);
+      this.sparks.push({ sprite, at: now, on: r.struck.id, by: r.struck.by });
+    }
     if (r.car) this.carJolts.set(r.car.id, { at: now, amp: r.car.amp });
     if (r.launched !== null) this.launched.add(r.launched);
   }
@@ -725,11 +767,33 @@ export class RaceScene {
     this.sea?.position.set(this.camera.position.x, track.water ?? 0, this.camera.position.z);
     this.camera.updateMatrixWorld();
     riders.forEach((r) => this.place(track, r));
+    this.placeSparks(track, riders);
     // the sun's shadow box follows the camera
     const at = frameAt(track, z + 10, x);
     this.sun.target.position.set(at.px, at.py, at.pz);
     this.sun.position.set(at.px - 30, at.py + 60, at.pz - 20);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /** Each spark at shoulder height between the two riders, bursting and gone in 0.12 s. */
+  private placeSparks(track: Track, riders: readonly Rider[]): void {
+    const now = performance.now() / 1000;
+    this.sparks = this.sparks.filter((s) => {
+      const age = now - s.at;
+      if (age > 0.12) {
+        this.scene.remove(s.sprite);
+        return false;
+      }
+      const on = riders.find((r) => r.id === s.on);
+      const by = riders.find((r) => r.id === s.by);
+      if (!on) return true;
+      const f = frameAt(track, on.z, by ? (on.x * 2 + by.x) / 3 : on.x);
+      s.sprite.position.set(f.px, f.py + 1.35, f.pz);
+      const k = 0.5 + 1.1 * Math.sin(Math.min(1, age / 0.12) * Math.PI);
+      s.sprite.scale.set(k, k, 1);
+      s.sprite.material.rotation = s.at * 7;
+      return true;
+    });
   }
 
   /** Traffic: a model per car, made the first time it is near (V17). */
@@ -807,12 +871,25 @@ export class RaceScene {
       m.scale.set(w, 1, l);
     };
     a.bike.mesh.visible = a.bikeShadow.visible = off;
+    a.rider.setFlash(0);
     if (!off) this.launched.delete(r.id);
+    if (r.phase !== "thrown") this.flung.delete(r.id);
     const launched = this.launched.has(r.id);
+    const flung = this.flung.has(r.id);
     if (off) {
       // the bike down on its side where it fell, sliding on (V13)
       this.stand(track, a.bike, "bikeDown", r.bikeZ, r.bikeX, 0, 0);
       shadowAt(a.bikeShadow, r.bikeZ, r.bikeX, 1.4, 2.2);
+    }
+    if (r.phase === "thrown" && flung) {
+      // flung up by a bike that ran them over: up ahead of it and off to the
+      // side, spread-eagled and turning, about a metre and a half up with the
+      // shadow left on the road, carried on level with the bike (318.04-318.44)
+      const u = r.phaseT / TUNE.flungAir;
+      if (u < 1) this.stand(track, a.rider, `tumble${Math.floor(r.phaseT * 10) % 3}`, r.z, r.x, -0.5 + Math.sin(u * Math.PI) * 1.8, 0);
+      else this.stand(track, a.rider, "lying", r.z, r.x, 0, 0);
+      shadowAt(a.shadow, r.z, r.x, 1.0, 1.6);
+      return;
     }
     if (r.phase === "thrown") {
       // thrown clear, spread-eagled and turning over, then down on the road;
@@ -836,9 +913,16 @@ export class RaceScene {
       shadowAt(a.shadow, r.z, r.x, 0.6, 0.6);
       return;
     }
-    const hopAt = this.hops.get(r.id);
-    const lift = hopAt === undefined ? 0 : hopLift(performance.now() / 1000 - hopAt);
-    this.stand(track, a.rider, frameFor(r), r.z, r.x, lift, r.lean + this.wobbleOf(this.jolts, r.id));
+    const now = performance.now() / 1000;
+    const hop = this.hops.get(r.id);
+    const lift = hop === undefined ? 0 : hopLift(now - hop.at, hop.size);
+    // struck: the frame of being hit, lit white for its first frames (C2)
+    const hit = this.struck.get(r.id);
+    const age = hit ? now - hit.at : 99;
+    if (hit && age > RECOIL) this.struck.delete(r.id);
+    const frame = hit && age <= RECOIL && !r.attack ? `recoil.${hit.side > 0 ? "R" : "L"}` : frameFor(r);
+    a.rider.setFlash(age < FLASH ? 0.85 : 0);
+    this.stand(track, a.rider, frame, r.z, r.x, lift, r.lean + this.wobbleOf(this.jolts, r.id));
     shadowAt(a.shadow, r.z, r.x, 0.9, 2.3);
   }
 

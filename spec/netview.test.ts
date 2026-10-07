@@ -82,14 +82,16 @@ function stutter(make: () => Sampler, seconds = 40): { jerks: number; frames: nu
   const lags: number[] = [];
   let collisions = 0;
   let offAtCollision = 0;
-  /** Whether rider `id` changed speed by more than 15 m/s in one step within 0.3 s before t: run into something. */
+  /**
+   * Whether rider `id` changed speed by more than 12 m/s within three steps,
+   * in the 0.3 s before t: run into something. No brake does that (it is 240
+   * m/s²); a shunt or a rammed bike checked to its speed does, and since a
+   * duel packs riders together a check can land over two steps, not one
+   */
   const collided = (id: number, t: number): boolean => {
     const k = Math.round(t / DT) - 1;
-    for (let i = Math.max(2, k - 18); i <= Math.min(truth.length - 1, k); i++) {
-      const v1 = (truth[i].z.get(id)! - truth[i - 1].z.get(id)!) / DT;
-      const v0 = (truth[i - 1].z.get(id)! - truth[i - 2].z.get(id)!) / DT;
-      if (Math.abs(v1 - v0) > 15) return true;
-    }
+    const v = (i: number): number => (truth[i].z.get(id)! - truth[i - 1].z.get(id)!) / DT;
+    for (let i = Math.max(4, k - 18); i <= Math.min(truth.length - 1, k); i++) if (Math.abs(v(i) - v(i - 3)) > 12) return true;
     return false;
   };
   const truthAt = (id: number, t: number): number | null => {

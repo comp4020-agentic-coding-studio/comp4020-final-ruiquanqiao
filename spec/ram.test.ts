@@ -82,7 +82,7 @@ function ram(start: Start, keys: (t: number) => Input, seconds = 3, draw: "now" 
       for (const e of m.events) {
         if (e.kind === "bump" && (e.rider === 0 || e.other === 0)) out.bumps++;
         if (e.kind === "crash") out.crashes++;
-        if (e.kind === "runOver" && e.by === 0) out.runOver++;
+        if (e.kind === "runOver" && e.by === 0 && e.what === "rider") out.runOver++;
       }
       const mine = m.s.find((s) => s[0] === 0)!;
       if (!prediction.heard(n, m.time, mine[1], mine[2])) {

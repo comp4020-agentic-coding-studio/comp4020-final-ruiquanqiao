@@ -168,18 +168,23 @@ describe("someone on foot ridden into (C9)", () => {
     Object.assign(them, { z: 501, x: 0.2, speed: 0, phase: "running", phaseT: 0, bikeZ: 530, bikeX: 0 });
     steps(r, 1);
     expect(them.phase).toBe("thrown");
-    // thrown on more slowly than the bike, and off to the side of it
-    expect(them.speed).toBeGreaterThan(5);
-    expect(them.speed).toBeLessThan(me.speed * 0.5);
-    expect(Math.abs(them.vx)).toBeGreaterThan(4);
+    // flung on at the bike's speed or a little more, and off to the side of
+    // it, so they fly up beside it where they can be seen (318.04-318.44)
+    expect(them.flung).toBe(true);
+    expect(them.speed).toBeGreaterThanOrEqual(me.speed);
+    expect(Math.abs(them.vx)).toBeGreaterThan(3);
+    // a second in the air later they have come down and fallen behind
+    steps(r, 70);
+    expect(them.z).toBeLessThan(me.z);
     expect(me.phase).toBe("riding");
     expect(me.speed).toBeLessThan(30);
     const e = r.events.find((x) => x.kind === "runOver")!;
     expect(e).toMatchObject({ by: 0, on: 1 });
     // the bike hops for four frames, then goes over hard; it is heard
     const felt = react(e, r.riders, 0);
-    expect(felt.hop).toBe(0);
-    expect(hopLift(HOP / 2)).toBeGreaterThan(0.25);
+    expect(felt.hop).toEqual({ id: 0, size: 1 });
+    expect(felt.flung).toBe(1);
+    expect(hopLift(HOP / 2)).toBeGreaterThan(0.5);
     expect(hopLift(HOP + 0.01)).toBe(0);
     expect(Math.abs(felt.tilt[0].amp)).toBeGreaterThan(0.4);
     expect(felt.tilt[0].after).toBe(HOP);

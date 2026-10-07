@@ -58,6 +58,8 @@ button:hover { border-color: var(--gold); }
 .panel h2 { margin: 0 0 0.5rem; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gold); }
 .field { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin: 0 0 0.8rem; border: 0; padding: 0; }
 .field > span, .field legend { color: var(--dim); min-width: 3.5rem; float: left; padding: 0; margin-right: 0.6rem; }
+#ai-count { width: 12rem; max-width: 60%; accent-color: var(--hot); }
+#ai-count-out { min-width: 2ch; font-variant-numeric: tabular-nums; }
 #name { background: var(--bg); border: 2px solid var(--edge); border-radius: 4px; padding: 0.4em 0.6em; width: 14rem; max-width: 100%; }
 #levels label, #roads label { display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.6rem; }
 .queue { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }

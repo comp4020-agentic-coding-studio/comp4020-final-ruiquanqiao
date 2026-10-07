@@ -86,7 +86,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     if (heard.length > 300) heard.shift();
     // a rub of one's own was already felt as it was predicted
     if (e.kind === "bump" && e.with === "rider" && (e.rider === c.you || e.other === c.you) && now - localBump < 0.5) continue;
-    if (e.kind === "runOver" && e.by === c.you && ranOver.has(e.on)) continue;
+    if (e.kind === "runOver" && e.by === c.you && ranOver.has(e.what === "bike" ? -1 - e.on : e.on)) continue;
     const felt = react(e, c.race.riders, c.you);
     (c.you === null ? watchScene : roadScene).feel(felt);
     if (felt.sound && c.you !== null) sfx(felt.sound.kind, felt.sound.gain);
@@ -225,13 +225,25 @@ function board(): void {
   }
 }
 
+// how many AI riders to race (N2), remembered by this browser
+const aiCount = $<HTMLInputElement>("#ai-count");
+const showAi = (): void => {
+  $("#ai-count-out").textContent = aiCount.value;
+};
+aiCount.value = localStorage.getItem("aiRiders") ?? aiCount.value;
+showAi();
+aiCount.addEventListener("input", () => {
+  showAi();
+  localStorage.setItem("aiRiders", aiCount.value);
+});
+
 for (const b of document.querySelectorAll<HTMLButtonElement>(".queue button")) {
   b.addEventListener("click", () => {
     const level = Number(document.querySelector<HTMLInputElement>('input[name="level"]:checked')?.value ?? 1);
     const track = Number(document.querySelector<HTMLInputElement>('input[name="road"]:checked')?.value ?? 0);
     // the click is the gesture a browser wants before it will play sound
     startAudio();
-    send({ t: "queue", mode: b.dataset.mode as Mode, level, track });
+    send({ t: "queue", mode: b.dataset.mode as Mode, level, track, ai: Number(aiCount.value) });
   });
 }
 $("#leave").addEventListener("click", () => {
@@ -405,7 +417,16 @@ function keepOff(c: Current, r: Rider, now: number): void {
     if (o === r || !onFoot(o) || r.speed < 3 || ranOver.has(o.id)) continue;
     if (Math.abs(o.z - r.z) > (BIKE.length + TUNE.walkerSize) / 2 || Math.abs(o.x - r.x) > (BIKE.width + TUNE.walkerSize) / 2) continue;
     ranOver.set(o.id, now);
-    const felt = react({ t: c.race.t, kind: "runOver", by: r.id, on: o.id }, c.race.riders, c.you);
+    const felt = react({ t: c.race.t, kind: "runOver", by: r.id, on: o.id, what: "rider" }, c.race.riders, c.you);
+    roadScene.feel(felt);
+    if (felt.sound) sfx(felt.sound.kind, felt.sound.gain);
+  }
+  // and over a fallen bike
+  for (const o of c.race.riders) {
+    if (o === r || (o.phase !== "thrown" && o.phase !== "running") || r.speed < 3 || ranOver.has(-1 - o.id)) continue;
+    if (Math.abs(o.bikeZ - r.z) > BIKE.length || Math.abs(o.bikeX - r.x) > BIKE.width) continue;
+    ranOver.set(-1 - o.id, now);
+    const felt = react({ t: c.race.t, kind: "runOver", by: r.id, on: o.id, what: "bike" }, c.race.riders, c.you);
     roadScene.feel(felt);
     if (felt.sound) sfx(felt.sound.kind, felt.sound.gain);
   }

@@ -88,6 +88,9 @@ export const TUNE = {
   shuntKnock: 14,
   /** m, across and along: a rider on foot as something a bike can hit (C9) */
   walkerSize: 0.6,
+  /** s a rider flung by a bike stays carried on with it, and how hard they slow meanwhile (C9) */
+  flungAir: 0.9,
+  flungDecel: 12,
   kickCooldown: 0.6,
   punchStamina: 17,
   kickStamina: 7,
@@ -195,6 +198,10 @@ export type Rider = {
   sinceHit: number;
   /** race time of the last bump reported for this rider, so a long rub is not a drum roll */
   bumpedAt: number;
+  /** thrown by a bike that ran them over: flung on with it, not tumbling to a stop (C9) */
+  flung: boolean;
+  /** race time this rider's bike last rode over something lying in the road */
+  overAt: number;
   prevHand: boolean;
   prevFoot: boolean;
   prevNitro: boolean;
@@ -224,7 +231,7 @@ export type RaceEvent =
   | { t: number; kind: "wrecked"; rider: number }
   | { t: number; kind: "finished"; rider: number; place: number }
   /** a rider on foot, or lying in the road, ridden into (C9) */
-  | { t: number; kind: "runOver"; by: number; on: number }
+  | { t: number; kind: "runOver"; by: number; on: number; what: "rider" | "bike" }
   /** bikes touching without anyone coming off: a rub, a shunt, a car or wall glanced (K13) */
   | { t: number; kind: "bump"; rider: number; other: number; with: "rider" | "car" | "wall"; hard: number; from: number };
 
@@ -310,6 +317,8 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       cooldown: 0,
       sinceHit: 99,
       bumpedAt: -99,
+      flung: false,
+      overAt: -99,
       prevHand: false,
       prevFoot: false,
       prevNitro: false,
@@ -417,8 +426,10 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
 
   if (r.phase === "thrown") {
     // the rider tumbles on ahead
-    // 280 km/h down to 20 in under a second, as measured off the original
-    r.speed = Math.max(0, r.speed - (10 + 3 * r.speed) * dt);
+    // 280 km/h down to 20 in under a second, as measured off the original;
+    // flung by a bike, carried on through the air with it before coming down
+    const decel = r.flung && r.phaseT < TUNE.flungAir ? TUNE.flungDecel : 10 + 3 * r.speed;
+    r.speed = Math.max(0, r.speed - decel * dt);
     r.z += r.speed * dt;
     r.x += r.vx * dt;
     r.vx *= Math.exp(-3 * dt);
@@ -530,6 +541,8 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
 const decelOf = (r: Rider): number => (r.bikeSpeed > 6 ? TUNE.coastDecel : TUNE.slideDecel);
 
 function setPhase(r: Rider, phase: Phase): void {
+  // a crash of one's own, or getting up, ends any flight a bike started
+  r.flung = false;
   r.phase = phase;
   r.phaseT = 0;
 }
@@ -740,16 +753,29 @@ function runOver(race: Race): void {
     for (const o of race.riders) {
       if (o === r || !onFoot(o)) continue;
       if (Math.abs(o.z - r.z) > (BIKE.length + TUNE.walkerSize) / 2 || Math.abs(o.x - r.x) > (BIKE.width + TUNE.walkerSize) / 2) continue;
-      // thrown up and off to the side, far slower than the bike, so they go
-      // back past it towards the camera as the recording's walker does. At
-      // 0.55 of the bike's speed and 3 m/s sideways they were thrown on
-      // ahead and hidden behind the rider who hit them
+      // flung up and forward to the side: the recording's walker (318.04-
+      // 318.44) goes up ahead of the bike and off to one side, and lands
+      // still level with it. Thrown slower than the bike (0.3 of its speed,
+      // the first try) and slowed like a rider's own crash, they were gone
+      // behind the camera in 0.2 s at racing speed and easy to miss
       setPhase(o, "thrown");
-      o.speed = r.speed * 0.3;
-      o.vx = (o.x >= r.x ? 1 : -1) * 6;
+      o.flung = true;
+      o.speed = Math.min(r.speed * 1.1, r.speed + 6);
+      o.vx = (o.x >= r.x ? 1 : -1) * 4;
       o.sinceHit = 0;
       r.speed *= 0.85;
-      race.events.push({ t: race.t, kind: "runOver", by: r.id, on: o.id });
+      r.overAt = race.t;
+      race.events.push({ t: race.t, kind: "runOver", by: r.id, on: o.id, what: "rider" });
+    }
+    // a bike lying in the road is ridden over with a jolt, and slows you (K9, K11)
+    if (race.t - r.overAt < 0.5) continue;
+    for (const o of race.riders) {
+      if (o === r || (o.phase !== "thrown" && o.phase !== "running")) continue;
+      if (Math.abs(o.bikeZ - r.z) > BIKE.length || Math.abs(o.bikeX - r.x) > BIKE.width) continue;
+      r.speed *= 0.9;
+      r.overAt = race.t;
+      race.events.push({ t: race.t, kind: "runOver", by: r.id, on: o.id, what: "bike" });
+      break;
     }
   }
 }

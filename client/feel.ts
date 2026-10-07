@@ -22,13 +22,21 @@ export function wobble(age: number, amp: number): number {
   return amp * (1 + u) * Math.exp(-u);
 }
 
-/** s a bike is in the air after riding over someone: 318.08-318.24 */
-export const HOP = 0.16;
+/**
+ * s a bike is in the air after riding over someone: the recording's is off
+ * the road from 318.04 to 318.24, its shadow a wheel's height below it. The
+ * first hop (0.16 s, 0.35 m) was too small to see at racing speed.
+ */
+export const HOP = 0.24;
 
-/** How high, m, a bike that rode over someone is `age` s afterwards. */
-export function hopLift(age: number): number {
-  return age < 0 || age > HOP ? 0 : Math.sin((age / HOP) * Math.PI) * 0.35;
+/** How high, m, a bike that rode over something `size` (1 a body, smaller a bike) is `age` s afterwards. */
+export function hopLift(age: number, size = 1): number {
+  return age < 0 || age > HOP ? 0 : Math.sin((age / HOP) * Math.PI) * 0.6 * size;
 }
+
+/** s a struck rider shows the frame of being hit, and is lit white for the first of it */
+export const RECOIL = 0.28;
+export const FLASH = 0.07;
 
 export type Reaction = {
   /** riders whose bikes tilt: positive to their right */
@@ -39,8 +47,12 @@ export type Reaction = {
   sound: { kind: Sfx; gain: number } | null;
   /** thrown high and far: over a car or off a tree, not down in a slide */
   launched: number | null;
-  /** a bike that has ridden over someone on foot: it hops, then rocks */
-  hop: number | null;
+  /** a bike that has ridden over something lying in the road: it hops, then rocks */
+  hop: { id: number; size: number } | null;
+  /** a rider struck by a blow: knocked into the frame of being hit, lit, a spark where it landed */
+  struck: { id: number; side: 1 | -1; by: number } | null;
+  /** a rider flung by a bike, carried on beside it through the air (C9) */
+  flung: number | null;
 };
 
 /**
@@ -53,7 +65,7 @@ const away = (at: number, from: number): number => (from > at ? -1 : 1);
 
 /** How one race event is felt by a rider at `me` (or a spectator, me null). */
 export function react(e: RaceEvent, riders: readonly Rider[], me: number | null): Reaction {
-  const out: Reaction = { tilt: [], car: null, sound: null, launched: null, hop: null };
+  const out: Reaction = { tilt: [], car: null, sound: null, launched: null, hop: null, struck: null, flung: null };
   const find = (id: number): Rider | undefined => riders.find((r) => r.id === id);
   const self = (r?: Rider): boolean => !!r && r.id === me;
   const viewer = me === null ? null : find(me);
@@ -66,6 +78,8 @@ export function react(e: RaceEvent, riders: readonly Rider[], me: number | null)
       out.tilt.push({ id: on.id, amp: 0.5 * away(on.x, by.x) });
       // the striker's bike rocks back from the blow
       out.tilt.push({ id: by.id, amp: 0.18 * away(by.x, on.x) });
+      // struck on the side the blow came from (+x is the rider's right)
+      out.struck = { id: on.id, side: by.x > on.x ? 1 : -1, by: by.id };
     }
   } else if (e.kind === "bump") {
     const r = find(e.rider);
@@ -95,10 +109,13 @@ export function react(e: RaceEvent, riders: readonly Rider[], me: number | null)
     // the air for four frames, then over hard and rocking back
     const by = find(e.by);
     const on = find(e.on);
-    out.hop = e.by;
-    if (by && on) out.tilt.push({ id: by.id, amp: 0.6 * away(by.x, on.x), after: HOP });
+    const body = e.what !== "bike";
+    out.hop = { id: e.by, size: body ? 1 : 0.6 };
+    if (body) out.flung = e.on;
+    const fromX = body ? on?.x : on?.bikeX;
+    if (by && fromX !== undefined) out.tilt.push({ id: by.id, amp: (body ? 0.6 : 0.4) * away(by.x, fromX), after: HOP });
     const g = Math.max(heard(by), heard(on));
-    if (g > 0) out.sound = { kind: "runOver", gain: g };
+    if (g > 0) out.sound = { kind: body ? "runOver" : "rideOver", gain: g };
   } else if (e.kind === "crash") {
     // a square hit on a car, a tree or a rock throws the rider over it; a wall
     // ridden into, like a crate clipped (212.9), puts bike and rider down together

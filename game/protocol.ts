@@ -7,10 +7,12 @@ export type Mode = "ai" | "human";
 
 export const POOL_WAIT = { ai: 5, human: 10 } as const; // seconds (ledger N2, N3)
 export const GRID = 15; // riders in an AI-pool race (O1)
+/** the most AI riders anyone can ask for (N2): ten rows of three on the grid */
+export const MAX_AI = 29;
 export const SNAPSHOT_HZ = 20;
 
 export type ToServer =
-  | { t: "queue"; mode: Mode; level: number; track?: number }
+  | { t: "queue"; mode: Mode; level: number; track?: number; ai?: number }
   | { t: "leave" }
   | { t: "in"; seq: number; keys: number }
   | { t: "name"; name: string };

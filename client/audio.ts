@@ -517,7 +517,7 @@ export function updateAudio(f: AudioFrame): void {
   e.windTone.frequency.setTargetAtTime(350 + 2400 * w, t, 0.15);
 }
 
-export type Sfx = "punch" | "kick" | "club" | "chain" | "hitTaken" | "crash" | "carCrash" | "snatch" | "busted" | "countdown" | "go" | "finish" | "bump" | "carBump" | "scrape" | "runOver";
+export type Sfx = "punch" | "kick" | "club" | "chain" | "hitTaken" | "crash" | "carCrash" | "snatch" | "busted" | "countdown" | "go" | "finish" | "bump" | "carBump" | "scrape" | "runOver" | "rideOver";
 
 /** Play a sound effect; `gain` (0-1) for the touches, which come in sizes. */
 export function sfx(kind: Sfx, gain = 1): void {
@@ -584,6 +584,12 @@ export function sfx(kind: Sfx, gain = 1): void {
       hiss(g, "lowpass", 900, 300, 0.7, t, 0.15, 0.6 * v);
       blip(g, "sine", 120, 50, t + 0.17, 0.14, 0.7 * v);
       break;
+    case "rideOver": // over a fallen bike: the wheels bang up and down on metal
+      blip(g, "sine", 110, 50, t, 0.12, 0.8 * v);
+      for (const p of [523, 811, 1187]) blip(g, "triangle", p, p * 0.95, t, 0.18, 0.08 * v);
+      hiss(g, "bandpass", 2600, 1200, 2, t, 0.12, 0.5 * v);
+      blip(g, "sine", 130, 55, t + 0.22, 0.12, 0.8 * v);
+      break;
     case "scrape": // along a wall or rail: the grind the recording holds for about a second
       blip(g, "sine", 150, 70, t, 0.08, 0.5 * v);
       hiss(g, "bandpass", 3200, 1600, 3, t, 0.5, 0.45 * v);
@@ -613,7 +619,16 @@ export function sfx(kind: Sfx, gain = 1): void {
       });
       break;
   }
-  if (kind === "punch" || kind === "kick" || kind === "club" || kind === "chain" || kind === "hitTaken") duck(g, 0.8);
+  if (kind === "punch" || kind === "kick" || kind === "club" || kind === "chain" || kind === "hitTaken") {
+    // the impact itself: a slap of bright noise over in 20 ms and a sub-bass
+    // thump under it, felt in the chest on speakers as a pad's rumble would be
+    // felt in the hands. The thump alone, as first written, read as a muffled
+    // bump; the music now dips harder under it as well
+    hiss(g, "highpass", 2500, 2500, 0.7, t, 0.02, 0.9);
+    hiss(g, "bandpass", 900, 500, 1.5, t, 0.04, 0.6);
+    blip(g, "sine", 62, 38, t, 0.16, 1);
+    duck(g, 0.5);
+  }
 }
 
 /** Dip the music under a big sound and let it back up over 0.4 s. */
