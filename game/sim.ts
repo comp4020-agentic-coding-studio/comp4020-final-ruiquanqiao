@@ -100,16 +100,16 @@ export const TUNE = {
   /** how hard a rider in the air slows, m/s² (C9, M2) */
   flungDecel: 12,
   kickCooldown: 0.6,
-  punchStamina: 17,
-  kickStamina: 7,
+  punchStamina: 12,
+  kickStamina: 5,
   kickShove: 7, // m/s sideways given to the target
-  // stamina comes back fast once the blows stop (M1): in the recording the
-  // player's wedge, knocked to about half at 413, is filling again after
-  // about two seconds clear and near full by 421. It was 4 a second after
-  // 2.5 s, half a wedge in 15 s, so blows from one fight were still there
-  // in the next and a rider went down a blow or two into it
-  staminaRegen: 12, // per second, after
-  staminaRest: 2, // seconds without a hit
+  // stamina comes back fast once the blows stop (M1). It was 4 a second
+  // after 2.5 s clear, then 12 after 2 s as read off the recording; but a
+  // duellist swings about once a second for 5-15 s, so the rest never came
+  // inside a fight: riding 20 races of 90 s the player lost 167 to blows and
+  // 54 to rubs a race and got back 49. Ridden, both read as harsh
+  staminaRegen: 20, // per second, after
+  staminaRest: 1, // seconds without a hit
   thrownTime: 1.1, // s from coming off to getting up, at the least
   /** a rider thrown off flies under gravity from the seat's height, with the
    * road's own rise or fall carried into the flight (M2, K3) */
@@ -135,7 +135,7 @@ export const TUNE = {
   /** sideways closing speed of a hard rub (K2), and the stamina it costs the
    * rider rubbed at that speed; softer costs less, harder up to half as much again */
   rubKnock: 6.5,
-  rubStamina: 12,
+  rubStamina: 8,
   /** below this sideways closing speed a rub only shoves, m/s */
   rubHurt: 2,
   /** sideways shove from a rub that does not (K1), m/s */
@@ -149,9 +149,9 @@ export const TUNE = {
   /** a weapon is swung with the punch key (C5); the chain reaches further,
    * the club hits harder */
   reach: { club: { z: 2.0, x: 2.1 }, chain: { z: 2.2, x: 2.6 } },
-  // a full rival went to empty in about five club blows in the recording
-  // (353-357.5); at 26, four did it
-  weaponStamina: { club: 21, chain: 19 },
+  // seven club blows from full, eight fists; five and six (21 and 17), as the
+  // recording's rival seemed to go (353-357.5), were too few to ride
+  weaponStamina: { club: 15, chain: 14 },
   /** the draw-back before a weapon lands, and the last part of it, with the
    * weapon all the way back, when a punch takes it (C6) */
   weaponWindup: 0.36,
@@ -234,6 +234,8 @@ export type Rider = {
   sinceHit: number;
   /** race time of the last bump reported for this rider, so a long rub is not a drum roll */
   bumpedAt: number;
+  /** race time a rub last cost this rider stamina: no more than twice a second */
+  rubbedAt: number;
   /** thrown by a bike that ran them over: flung on with it, not tumbling to a stop (C9) */
   flung: boolean;
   /** thrown off: m above the road under them, and m/s upwards; air 0 is down */
@@ -360,6 +362,7 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       cooldown: 0,
       sinceHit: 99,
       bumpedAt: -99,
+      rubbedAt: -99,
       flung: false,
       air: 0,
       vy: 0,
@@ -920,20 +923,25 @@ function runOver(race: Race): void {
 
 /** Bikes do not pass through each other; a faster bike behind pushes (R7). */
 function contact(race: Race): void {
-  const riding = race.riders.filter((r) => r.phase === "riding");
+  // front to back, so a last sweep can settle a nose-to-tail line in one go
+  const riding = race.riders.filter((r) => r.phase === "riding").sort((p, q) => q.z - p.z);
   // several passes: pushing one pair apart can push one of them into a third.
   // Four were enough until riders started duelling; six bikes packed into a
   // fight were left 3 cm inside each other, and eight clear them
-  for (let pass = 0; pass < 8; pass++) contactPass(race, riding, pass === 0);
+  for (let pass = 0; pass < 8; pass++) contactPass(race, riding, pass === 0, false);
+  // and then one where the bike further back gives way all the way. Halving
+  // each overlap, a line of bikes nose to tail was still 1-2 cm inside each
+  // other after twelve passes
+  contactPass(race, riding, false, true);
 }
 
-function contactPass(race: Race, riding: Rider[], transfer: boolean): void {
+function contactPass(race: Race, riding: Rider[], transfer: boolean, last: boolean): void {
   for (let i = 0; i < riding.length; i++) {
     for (let j = i + 1; j < riding.length; j++) {
       const a = riding[i];
       const b = riding[j];
       const closing = a.vx + a.shove - (b.vx + b.shove);
-      const kind = separate(a, b);
+      const kind = separate(a, b, last ? (b.z <= a.z ? 0 : 1) : 0.5);
       if (!kind || !transfer) continue;
       if (kind === "side") {
         rub(race, a, b, closing);
@@ -1014,7 +1022,8 @@ function rub(race: Race, a: Rider, b: Rider, closing: number): void {
   // m/s across: of 108 riders put down by another in ten AI races, 68 went
   // that way, often a blow or two into a fight
   const fast = Math.min(mover.speed, struck.speed) > 15;
-  if (fast && Math.abs(closing) >= TUNE.rubHurt && race.t - struck.bumpedAt >= 0.25) {
+  if (fast && Math.abs(closing) >= TUNE.rubHurt && race.t - struck.rubbedAt >= 0.5) {
+    struck.rubbedAt = race.t;
     struck.stamina = Math.max(0, struck.stamina - TUNE.rubStamina * Math.min(1.5, Math.abs(closing) / TUNE.rubKnock));
     struck.sinceHit = 0;
     if (struck.stamina <= 0) {
@@ -1315,11 +1324,15 @@ export function step(race: Race, inputs: Map<number, Input>): void {
     scenery(race, r);
     recover(r);
   }
+  // cars first, then bikes kept off each other: a car pushing a bike off its
+  // flank after the bikes were parted pushed it back into the one beside it,
+  // and a pack grinding along a car was left overlapping (19 steps of one
+  // 90 s race)
+  drive(race);
+  for (const r of race.riders) hitCars(race, r);
   contact(race);
   runOver(race);
   shakeOff(race);
-  drive(race);
-  for (const r of race.riders) hitCars(race, r);
   busts(race);
   for (const r of race.riders) {
     if (r.cop) continue;

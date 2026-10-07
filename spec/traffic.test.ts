@@ -51,17 +51,17 @@ describe("contact between riders", () => {
     expect(spent.damage).toBe(100);
   });
 
-  it("stamina comes back fast once the blows stop: two seconds clear, then full within six more (M1)", () => {
+  it("stamina comes back fast once the blows stop: a second clear, then empty to full in five (M1)", () => {
     const r = race(1);
     const me = rider(r, 0);
-    Object.assign(me, { z: 500, x: 0, speed: 30, stamina: 40, sinceHit: 0 });
+    Object.assign(me, { z: 500, x: 0, speed: 30, stamina: 1, sinceHit: 0 });
     steps(r, Math.round(60 * (TUNE.staminaRest - 0.2)));
-    expect(me.stamina).toBe(40);
-    steps(r, 60 * 6);
+    expect(me.stamina).toBe(1);
+    steps(r, 60 * 5.3);
     expect(me.stamina).toBe(100);
   });
 
-  it("five club blows a second apart take a full rider to empty, as the recording's rival went (C2, M1)", () => {
+  it("seven club blows close together take a full rider to empty (C2, M1)", () => {
     const r = race();
     const [a, b] = [rider(r, 0), rider(r, 1)];
     Object.assign(a, { z: 500, x: 0, speed: 30, weapon: "club", lbs: 180 });
@@ -70,10 +70,10 @@ describe("contact between riders", () => {
     while (b.phase === "riding" && blows < 10) {
       Object.assign(a, { z: b.z, x: b.x - 1.2, attack: null, cooldown: 0 });
       beginAttack(r, a, "hand");
-      steps(r, 60);
+      steps(r, 50);
       if (r.events.some((e) => e.kind === "hit" && e.on === 1)) blows = r.events.filter((e) => e.kind === "hit" && e.on === 1).length;
     }
-    expect(blows).toBe(5);
+    expect(blows).toBe(7);
     expect(b.phase).toBe("thrown");
   });
 
