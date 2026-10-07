@@ -78,6 +78,9 @@ export const TUNE = {
   // recording's rival: every 0.96 s); and how often it rubs the foe over
   foeHuman: 1.5,
   foeAI: 0.04,
+  /** and with a patrolling cop up ahead, unarmed (after his club, C7) and armed (P7) */
+  foeCopUnarmed: 0.7,
+  foeCopArmed: 0.2,
   duelMin: 5,
   duelSpread: 8,
   duelGap: 1.15,
@@ -100,8 +103,13 @@ export const TUNE = {
   punchStamina: 17,
   kickStamina: 7,
   kickShove: 7, // m/s sideways given to the target
-  staminaRegen: 4, // per second, after
-  staminaRest: 2.5, // seconds without a hit
+  // stamina comes back fast once the blows stop (M1): in the recording the
+  // player's wedge, knocked to about half at 413, is filling again after
+  // about two seconds clear and near full by 421. It was 4 a second after
+  // 2.5 s, half a wedge in 15 s, so blows from one fight were still there
+  // in the next and a rider went down a blow or two into it
+  staminaRegen: 12, // per second, after
+  staminaRest: 2, // seconds without a hit
   thrownTime: 1.1, // s from coming off to getting up, at the least
   /** a rider thrown off flies under gravity from the seat's height, with the
    * road's own rise or fall carried into the flight (M2, K3) */
@@ -141,7 +149,9 @@ export const TUNE = {
   /** a weapon is swung with the punch key (C5); the chain reaches further,
    * the club hits harder */
   reach: { club: { z: 2.0, x: 2.1 }, chain: { z: 2.2, x: 2.6 } },
-  weaponStamina: { club: 26, chain: 22 },
+  // a full rival went to empty in about five club blows in the recording
+  // (353-357.5); at 26, four did it
+  weaponStamina: { club: 21, chain: 19 },
   /** the draw-back before a weapon lands, and the last part of it, with the
    * weapon all the way back, when a punch takes it (C6) */
   weaponWindup: 0.36,
@@ -1162,7 +1172,7 @@ export function clearLine(race: Race, r: Rider, line: number): number | null {
  */
 function pickFoe(race: Race, r: Rider): Rider | null {
   let foe = r.foe >= 0 ? race.riders.find((o) => o.id === r.foe) : undefined;
-  if (foe && (foe.phase !== "riding" || race.t > r.foeUntil || Math.abs(foe.z - r.z) > 60)) {
+  if (foe && (foe.phase !== "riding" || race.t > r.foeUntil || Math.abs(foe.z - r.z) > (foe.cop ? 260 : 60))) {
     // given up: a breather before the next
     r.foe = -1;
     r.foeUntil = race.t + 2 + random(race) * 3;
@@ -1172,11 +1182,14 @@ function pickFoe(race: Race, r: Rider): Rider | null {
   // nobody starts a fight on the grid, before the field has strung out
   if (race.t < r.foeUntil || race.t < 4 || r.speed < 12) return null;
   for (const o of race.riders) {
-    if (o === r || o.cop || o.phase !== "riding") continue;
+    if (o === r || o.phase !== "riding") continue;
     const dz = o.z - r.z;
-    if (dz < -25 || dz > 50) continue;
-    // humans are who the field is out for; AI riders mostly leave each other be
-    const keen = r.aggression * (o.human ? TUNE.foeHuman : TUNE.foeAI);
+    // a cop is picked from far enough back to brake down to his patrol speed
+    if (dz < -25 || dz > (o.cop ? 250 : 50)) continue;
+    // humans are who the field is out for; AI riders mostly leave each other
+    // be; a patrolling cop is a fight they pick too, keener without a weapon
+    // of their own, since his club is the easiest one to take (C7, P7)
+    const keen = r.aggression * (o.cop ? (o.chase >= 0 ? 0 : r.weapon ? TUNE.foeCopArmed : TUNE.foeCopUnarmed) : o.human ? TUNE.foeHuman : TUNE.foeAI);
     if (random(race) < keen * DT) {
       r.foe = o.id;
       r.foeUntil = race.t + TUNE.duelMin + random(race) * TUNE.duelSpread * (0.5 + r.aggression);
@@ -1260,7 +1273,9 @@ function duelInput(race: Race, r: Rider, foe: Rider): Input {
   if (Math.abs(r.lean) > 0.85 && r.leanHeld > TUNE.leanLimit * 0.4) input.left = input.right = false;
   // level with it: catch up, or ease off and brake when past it
   const closing = r.speed - foe.speed;
-  const ahead = -dz + closing * 0.4;
+  // and from far back, braked in time to arrive at its speed rather than
+  // shoot past: a patrolling cop is 200 km/h slower than the field
+  const ahead = -dz + Math.max(closing * 0.4, closing > 0 ? (closing * closing) / (2 * TUNE.brake) + 1 : 0);
   if (ahead > 0.3) input.throttle = false;
   if (ahead > 1.5) input.brake = true;
   // riding a fight it rides flat out, whatever blows it has taken: with the

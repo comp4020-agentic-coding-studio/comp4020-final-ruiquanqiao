@@ -51,6 +51,32 @@ describe("contact between riders", () => {
     expect(spent.damage).toBe(100);
   });
 
+  it("stamina comes back fast once the blows stop: two seconds clear, then full within six more (M1)", () => {
+    const r = race(1);
+    const me = rider(r, 0);
+    Object.assign(me, { z: 500, x: 0, speed: 30, stamina: 40, sinceHit: 0 });
+    steps(r, Math.round(60 * (TUNE.staminaRest - 0.2)));
+    expect(me.stamina).toBe(40);
+    steps(r, 60 * 6);
+    expect(me.stamina).toBe(100);
+  });
+
+  it("five club blows a second apart take a full rider to empty, as the recording's rival went (C2, M1)", () => {
+    const r = race();
+    const [a, b] = [rider(r, 0), rider(r, 1)];
+    Object.assign(a, { z: 500, x: 0, speed: 30, weapon: "club", lbs: 180 });
+    Object.assign(b, { z: 500, x: 1.2, speed: 30, lbs: 180 });
+    let blows = 0;
+    while (b.phase === "riding" && blows < 10) {
+      Object.assign(a, { z: b.z, x: b.x - 1.2, attack: null, cooldown: 0 });
+      beginAttack(r, a, "hand");
+      steps(r, 60);
+      if (r.events.some((e) => e.kind === "hit" && e.on === 1)) blows = r.events.filter((e) => e.kind === "hit" && e.on === 1).length;
+    }
+    expect(blows).toBe(5);
+    expect(b.phase).toBe("thrown");
+  });
+
   it("getting back on the bike, a rider's stamina is full again (C8)", () => {
     const r = race(1);
     const me = rider(r, 0);
@@ -193,6 +219,27 @@ describe("police", () => {
     beginAttack(r, b, "hand");
     for (let i = 0; i < 30 && cop.chase !== 1; i++) steps(r, 1, { ...NO_INPUT, throttle: true });
     expect(cop.chase).toBe(1);
+  });
+
+  it("an AI rider picks a fight with a patrolling cop: brakes down to him from racing speed and lands blows (P7)", () => {
+    // every unarmed AI rider in a race, one at a time, coming up on the cop at racing speed
+    let fought = 0;
+    let tries = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const r = startRace(makeTrack(1), 1, [{ id: 0, name: "h", human: true }, { id: 1, name: "ai", human: false }], seed);
+      r.cars = [];
+      const ai = rider(r, 1);
+      const cop = r.riders.find((x) => x.cop)!;
+      Object.assign(ai, { z: cop.z - 400, x: 1.75, speed: 70, build: 1, weapon: null, aggression: 0.5 });
+      Object.assign(rider(r, 0), { z: 100, speed: 0 });
+      r.t = 30;
+      tries++;
+      for (let i = 0; i < 60 * 25 && cop.chase !== 1; i++) steps(r, 1);
+      if (cop.chase === 1) fought++;
+      // never thrown off doing it
+      expect(ai.phase).toBe("riding");
+    }
+    expect(fought / tries).toBeGreaterThanOrEqual(0.5);
   });
 
   it("from in front of the one he is after, a cop drops back to them rather than ride ahead mirroring them", () => {
