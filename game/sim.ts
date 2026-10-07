@@ -91,6 +91,8 @@ export const TUNE = {
    * behind them he comes in */
   copCall: 120,
   copBehind: 45,
+  /** m between a cop and his rider, either way, at which he is shaken off and leaves the road (P1, P2) */
+  copLost: 150,
   /** m, across and along: a rider on foot as something a bike can hit (C9) */
   walkerSize: 0.6,
   /** how hard a rider in the air slows, m/s² (C9, M2) */
@@ -401,7 +403,12 @@ export const OFF_ROAD = -1e5;
  * same race.
  */
 function placeCops(race: Race, level: number, bike: Bike): void {
-  const marks = [0.13, 0.51, 0.85, 0.32, 0.68].slice(0, 2 + level);
+  // one cop on a level 1 road, two on 2 and 3, three on 4 and 5. It was two
+  // more than the level, as the City's three at level 1 suggest (ARGURO); a
+  // cop rides alongside the one he chases, so in 30 races a player riding
+  // flat out crashed with a cop out 38 times and was Busted 28
+  const count = 1 + Math.floor(level / 2);
+  const marks = ([[0.45], [0.3, 0.7], [0.2, 0.5, 0.8]] as const)[count - 1];
   marks.forEach((m, i) => {
     const template = race.riders[0];
     race.riders.push({
@@ -426,6 +433,35 @@ function placeCops(race: Race, level: number, bike: Bike): void {
       attack: null,
     });
   });
+}
+
+/** A cop's post once he has left the road for good: past any rider, so he is never sent out again. */
+export const GONE = 1e9;
+
+/**
+ * A cop his rider has got 150 m away from is shaken off, and leaves the road
+ * for good: a crash after that is not a bust. So does one whose rider is out
+ * of the race, unless another human is that close. He used to chase for the
+ * rest of the race and go after the next human when his rider was out.
+ */
+function shakeOff(race: Race): void {
+  const out = (o?: Rider): boolean => !o || o.phase === "finished" || o.phase === "wrecked" || o.phase === "busted";
+  for (const cop of race.riders) {
+    if (!cop.cop || cop.post >= 0) continue;
+    let prey = race.riders.find((o) => o.id === cop.chase);
+    if (out(prey)) {
+      prey = race.riders.find((o) => o.human && !out(o) && Math.abs(o.z - cop.z) < TUNE.copLost);
+      if (prey) cop.chase = prey.id;
+    }
+    if (prey && Math.abs(prey.z - cop.z) < TUNE.copLost) continue;
+    setPhase(cop, "riding");
+    cop.post = GONE;
+    cop.chase = -1;
+    cop.z = cop.bikeZ = OFF_ROAD;
+    cop.x = cop.bikeX = 0;
+    cop.speed = cop.bikeSpeed = 0;
+    cop.attack = null;
+  }
 }
 
 /** Send out any cop whose post a human is coming up to: in from behind, at speed, after them. */
@@ -1013,14 +1049,9 @@ function rub(race: Race, a: Rider, b: Rider, closing: number): void {
 function copInput(race: Race, r: Rider): Input {
   const input: Input = { ...NO_INPUT, throttle: true };
   if (r.post >= 0) return { ...NO_INPUT };
-  // he never gives up and never pulls over: lose the one he was after and he
-  // goes after the nearest other human; AI riders are never chased (P4)
-  let target = race.riders.find((o) => o.id === r.chase);
-  const gone = (o?: Rider): boolean => !o || o.phase === "finished" || o.phase === "wrecked" || o.phase === "busted";
-  if (gone(target)) {
-    target = race.riders.filter((o) => o.human && !gone(o)).sort((p, q) => Math.abs(p.z - r.z) - Math.abs(q.z - r.z))[0];
-    r.chase = target ? target.id : -2;
-  }
+  // he never pulls over: he chases until he is shaken off (shakeOff); AI
+  // riders are never chased (P4)
+  const target = race.riders.find((o) => o.id === r.chase);
   r.build = 1;
   if (!target) {
     r.line = 0;
@@ -1295,6 +1326,7 @@ export function step(race: Race, inputs: Map<number, Input>): void {
   contact(race);
   runOver(race);
   sendCops(race);
+  shakeOff(race);
   drive(race);
   for (const r of race.riders) hitCars(race, r);
   busts(race);

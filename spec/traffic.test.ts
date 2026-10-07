@@ -181,7 +181,43 @@ describe("police", () => {
     expect(caught).toBe(true);
   });
 
-  it("never gives up or pulls over: a cop who loses his rider goes after the next human", () => {
+  it("shaken off by 150 m, a cop leaves the road for good, and a crash after that is not a bust (P1, P2)", () => {
+    const r = startRace(makeTrack(1), 1, [{ id: 0, name: "h", human: true }], 5);
+    r.cars = [];
+    const me = rider(r, 0);
+    const cop = r.riders.find((x) => x.cop)!;
+    // knocked off his bike in a fight, he is left behind
+    Object.assign(me, { z: 2000, x: 1.75, speed: 70, build: 1 });
+    Object.assign(cop, { z: 1990, x: 0, speed: 0, chase: 0, post: -1, phase: "running", phaseT: 0, bikeZ: 1985, bikeX: 0 });
+    steps(r, 60 * 4, { ...NO_INPUT, throttle: true });
+    expect(cop.z).toBeLessThan(OFF_ROAD / 2);
+    // I come off, and lie in the road as long as I like
+    Object.assign(me, { speed: 0, phase: "running", phaseT: 0, bikeZ: me.z + 30, bikeX: me.x });
+    steps(r, 60 * 3);
+    expect(me.phase).not.toBe("busted");
+    // and he is never sent out again
+    Object.assign(me, { phase: "riding", speed: 40 });
+    steps(r, 60 * 3, { ...NO_INPUT, throttle: true });
+    expect(cop.z).toBeLessThan(OFF_ROAD / 2);
+  });
+
+  it("not shaken off, a crash with him close behind is still a bust (P1)", () => {
+    const r = startRace(makeTrack(1), 1, [{ id: 0, name: "h", human: true }], 5);
+    r.cars = [];
+    const me = rider(r, 0);
+    const cop = r.riders.find((x) => x.cop)!;
+    Object.assign(me, { z: 2000, x: 1.75, speed: 0, phase: "running", phaseT: 0, bikeZ: 2060, bikeX: 1.75 });
+    Object.assign(cop, { z: 1900, x: 0, speed: 60, chase: 0, post: -1, build: 1 });
+    steps(r, 60 * 4);
+    expect(me.phase).toBe("busted");
+  });
+
+  it("puts one cop on a level 1 road, two on levels 2 and 3, three on 4 and 5", () => {
+    const cops = (level: number): number => startRace(makeTrack(level), level, [{ id: 0, name: "h", human: true }], 5).riders.filter((x) => x.cop).length;
+    expect([1, 2, 3, 4, 5].map(cops)).toEqual([1, 2, 2, 3, 3]);
+  });
+
+  it("never pulls over: a cop whose rider is out goes after another human close by", () => {
     const r = startRace(makeTrack(1), 1, [{ id: 0, name: "a", human: true }, { id: 1, name: "b", human: true }], 5);
     r.cars = [];
     const cop = r.riders.find((x) => x.cop)!;
