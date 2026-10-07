@@ -83,7 +83,7 @@ export class Timeline {
     if (!sa || sa[8] !== sb[8] || Math.abs(sb[1] - sa[1]) > 60) return { z: sb[1] + sb[3] * Math.max(0, t - w.b.time), x: sb[2], lean: sb[4], s: sb };
     const dt = w.b.time - w.a.time || 1;
     const f = Math.max(0, Math.min(w.f, 1 + 0.3 / dt));
-    const lerp = (i: 1 | 2 | 4): number => sa[i] + (sb[i] - sa[i]) * Math.min(1, f);
+    const lerp = (i: 1 | 2 | 4 | 17): number => sa[i] + (sb[i] - sa[i]) * Math.min(1, f);
     // how it was moving at each snapshot, from where it had got to since the
     // one before. The speed a snapshot carries was tried first and jumps when
     // a bike is shunted from behind, which threw the drawn bike 1.2 m forward
@@ -95,7 +95,11 @@ export class Timeline {
     // beyond the newest snapshot, keep going the way the last two were going
     const past = Math.max(0, f - 1) * dt;
     // and carried forward to the present
-    return { z: lerp(1) + out(1) * past + v(1) * DELAY, x: lerp(2) + out(2) * past + v(2) * DELAY, lean: lerp(4), s: sb };
+    // a rider in the air is drawn at the height between the two, not stepped
+    // up and down twenty times a second
+    const s: RiderState = sb[8] === "thrown" ? [...sb] : sb;
+    if (sb[8] === "thrown") s[17] = Math.max(0, lerp(17));
+    return { z: lerp(1) + out(1) * past + v(1) * DELAY, x: lerp(2) + out(2) * past + v(2) * DELAY, lean: lerp(4), s };
   }
 
   /** Car `id` as drawn at race time `t`, or null when the server has dropped it. */

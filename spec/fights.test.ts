@@ -17,9 +17,13 @@ describe("the field picks fights with a player", () => {
     // alongside the player for much of a race and takes a flank a rider would
     // otherwise duel from (7-28 and 20 before). The race is chaotic, so
     // any change to the riding moves one road's count a lot: the floor is on
-    // every road, and the bar on the average
+    // every road, and the bar on the average. Since a rub costs stamina
+    // instead of knocking a rider off and a shunt never does, over four seeds
+    // and every road: 14.1 swings a race down to 12.1, while blows landed went
+    // up from 10.3 to 12.1 and the player was knocked off 1.75 times a race,
+    // not 2.3. This seed gives 11.2, against the 12 it was set at
     for (const t of all) expect(t.swingsAtMe, t.road).toBeGreaterThanOrEqual(5);
-    expect(all.reduce((n, t) => n + t.swingsAtMe, 0) / all.length).toBeGreaterThanOrEqual(12);
+    expect(all.reduce((n, t) => n + t.swingsAtMe, 0) / all.length).toBeGreaterThanOrEqual(10);
   });
 
   it("rides alongside for as long as the recording's rival does, somewhere on every road", () => {

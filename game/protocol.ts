@@ -36,6 +36,10 @@ export type RiderState = [
   weapon: Weapon | "",
   nitro: number,
   boost: number,
+  /** thrown off: m above the road, m/s upwards, and the slope flown along */
+  air: number,
+  vy: number,
+  tilt: number,
 ];
 
 export type Entry = { id: number; name: string; human: boolean };
@@ -65,7 +69,7 @@ export type ToClient =
 export function encodeRider(r: Rider): RiderState {
   const a = r.attack ? `${r.attack.kind}:${r.attack.side}:${r.attack.t.toFixed(3)}` : "";
   const q = (n: number, d = 2): number => Math.round(n * 10 ** d) / 10 ** d;
-  return [r.id, q(r.z), q(r.x), q(r.speed), q(r.lean), q(r.build, 3), q(r.stamina, 1), q(r.damage, 1), r.phase, q(r.phaseT, 3), q(r.bikeZ), q(r.bikeX), a, r.place, r.weapon ?? "", r.nitro, q(r.boost)];
+  return [r.id, q(r.z), q(r.x), q(r.speed), q(r.lean), q(r.build, 3), q(r.stamina, 1), q(r.damage, 1), r.phase, q(r.phaseT, 3), q(r.bikeZ), q(r.bikeX), a, r.place, r.weapon ?? "", r.nitro, q(r.boost), q(r.air), q(r.vy), Number.isFinite(r.tilt) ? q(r.tilt, 4) : 0];
 }
 
 /** Write a wire state onto a rider, leaving what the wire does not carry. */
@@ -75,6 +79,9 @@ export function applyRider(r: Rider, s: RiderState): void {
   r.weapon = s[14] || null;
   r.nitro = s[15];
   r.boost = s[16];
+  r.air = s[17] ?? 0;
+  r.vy = s[18] ?? 0;
+  r.tilt = s[19] ?? 0;
   if (s[12]) {
     const [kind, side, t] = s[12].split(":");
     r.attack = { kind: kind as "punch" | "backhand" | "kick", side: Number(side) as -1 | 1, t: Number(t), target: -1, landed: false };

@@ -34,9 +34,8 @@ export function hopLift(age: number, size = 1): number {
   return age < 0 || age > HOP ? 0 : Math.sin((age / HOP) * Math.PI) * 0.6 * size;
 }
 
-/** s a struck rider shows the frame of being hit, and is lit white for the first of it */
+/** s a struck rider shows the frame of being hit */
 export const RECOIL = 0.28;
-export const FLASH = 0.07;
 
 export type Reaction = {
   /** riders whose bikes tilt: positive to their right */
@@ -49,7 +48,7 @@ export type Reaction = {
   launched: number | null;
   /** a bike that has ridden over something lying in the road: it hops, then rocks */
   hop: { id: number; size: number } | null;
-  /** a rider struck by a blow: knocked into the frame of being hit, lit, a spark where it landed */
+  /** a rider struck by a blow: knocked into the frame of being hit */
   struck: { id: number; side: 1 | -1; by: number } | null;
   /** a rider flung by a bike, carried on beside it through the air (C9) */
   flung: number | null;

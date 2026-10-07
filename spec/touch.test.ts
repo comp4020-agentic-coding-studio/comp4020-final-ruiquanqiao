@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { sfx } from "../client/audio.ts";
 import { HOP, hopLift, react, wobble } from "../client/feel.ts";
 import { CAR, LANES, NO_INPUT, type Race, type RaceEvent, type Rider, TUNE, beginAttack, startRace, step } from "../game/sim.ts";
-import { makeTrack, wallAt } from "../game/track.ts";
+import { bake, makeTrack, wallAt } from "../game/track.ts";
 
 // Every touch is felt (ledger K13). The recording shows a struck bike over on
 // the next frame and its striker's bike rocking for about four; the first
@@ -46,18 +46,30 @@ describe("each kind of touch is reported", () => {
     expect(bumps(r)[0]).toMatchObject({ rider: 1, other: 0, with: "rider" });
   });
 
-  it("run into from behind at 50 km/h faster or more, the rider in front is knocked off (K14)", () => {
+  it("run into from behind, however much faster, nobody comes off: momentum is kept, the two part to either side and the faster goes by (K14)", () => {
     const r = race();
     const [a, b] = [rider(r, 0), rider(r, 1)];
-    Object.assign(a, { z: 500, x: 0, speed: 50 });
-    Object.assign(b, { z: 501.8, x: 0, speed: 50 - TUNE.shuntKnock - 1 });
+    Object.assign(a, { z: 500, x: 0.1, speed: 50 });
+    Object.assign(b, { z: 501.9, x: 0, speed: 22 });
+    const mass = (x: Rider): number => x.bike.lbs + x.lbs;
+    const before = mass(a) * a.speed + mass(b) * b.speed;
     steps(r, 1);
-    expect(b.phase).toBe("thrown");
-    expect(r.events).toContainEqual(expect.objectContaining({ kind: "crash", rider: 1, cause: "rub" }));
-    // the rammer stays up, checked hard, and feels it at full strength
     expect(a.phase).toBe("riding");
-    expect(a.speed).toBeLessThan(45);
-    expect(bumps(r)[0]).toMatchObject({ rider: 0, other: 1, hard: 1 });
+    expect(b.phase).toBe("riding");
+    // momentum along the road, less one step of riding, is what it was
+    expect(Math.abs(mass(a) * a.speed + mass(b) * b.speed - before) / before).toBeLessThan(0.01);
+    // the one in front knocked on, the rammer checked, and no longer closing
+    expect(b.speed).toBeGreaterThan(35);
+    expect(a.speed).toBeLessThan(b.speed + 1);
+    // struck a little off its line, each goes its own way: the rammer on the
+    // side it was already on, the other the other way
+    expect(a.shove).toBeGreaterThan(1);
+    expect(b.shove).toBeLessThan(-1);
+    expect(bumps(r).map((e) => e.rider).sort()).toEqual([0, 1]);
+    // and held flat out, the rammer is past within three seconds
+    for (let i = 0; i < 180; i++) step(r, new Map([[0, { ...NO_INPUT, throttle: true }], [1, NO_INPUT]]));
+    expect(a.z).toBeGreaterThan(b.z);
+    expect(r.events.some((e) => e.kind === "crash")).toBe(false);
   });
 
   it("a car's flank brushed", () => {
@@ -173,8 +185,8 @@ describe("someone on foot ridden into (C9)", () => {
     expect(them.flung).toBe(true);
     expect(them.speed).toBeGreaterThanOrEqual(me.speed);
     expect(Math.abs(them.vx)).toBeGreaterThan(3);
-    // a second in the air later they have come down and fallen behind
-    steps(r, 70);
+    // a second and a half later they have come down and fallen behind
+    steps(r, 90);
     expect(them.z).toBeLessThan(me.z);
     expect(me.phase).toBe("riding");
     expect(me.speed).toBeLessThan(30);
@@ -198,5 +210,59 @@ describe("someone on foot ridden into (C9)", () => {
     Object.assign(them, { z: 501, x: 0, speed: 0, phase: "running", phaseT: 0, bikeZ: 530, bikeX: 0 });
     steps(r, 20);
     expect(r.events.filter((x) => x.kind === "runOver").length).toBe(1);
+  });
+});
+
+describe("thrown off, a rider flies over the road as it is (M2)", () => {
+  /**
+   * Run into the back of a slow car at 40 m/s at the top of a crest (hump
+   * positive), the bottom of a dip (negative) or on the flat, the road
+   * turning over in 100 m either side; how long in the air, how high above
+   * the road at most.
+   */
+  const throw_ = (hump: number, grade = 0): { air: number; top: number } => {
+    const road = bake("hump", [{ length: 1400, curve: 0, climb: grade * 1400 }, { length: 100, curve: 0, climb: hump }, { length: 100, curve: 0, climb: -hump }, { length: 1400, curve: 0, climb: grade * 1400 }], 3000, 1);
+    const r = startRace({ ...road, scenery: [] }, 1, [{ id: 0, name: "h", human: true }], 5);
+    r.riders = r.riders.filter((x) => !x.cop);
+    const me = rider(r, 0);
+    Object.assign(me, { z: 1494, x: LANES.with[0], speed: 40, build: 1 });
+    r.cars = [{ id: 1, kind: "sedan", z: 1499, x: LANES.with[0], lane: LANES.with[0], dir: 1, speed: 10, changeT: 99 }];
+    for (let i = 0; i < 20 && me.phase === "riding"; i++) steps(r, 1);
+    expect(me.phase).toBe("thrown");
+    let air = 0;
+    let top = 0;
+    while (me.phase === "thrown" && me.air > 0 && air < 5) {
+      steps(r, 1);
+      air += 1 / 60;
+      top = Math.max(top, me.air);
+    }
+    expect(me.air).toBe(0);
+    return { air, top };
+  };
+
+  it("thrown off over a crest a rider flies longer, and into a rise comes down sooner (M2)", () => {
+    const flat = throw_(0);
+    const crest = throw_(20);
+    const dip = throw_(-20);
+    // on the flat about the recording's 1.25 s (454.25-455.50), over a car.
+    // Measured: 1.35 s and 2.67 m up on the flat, 1.40 s and 2.89 m over the
+    // crest, 1.28 s and 2.47 m into the dip. Thrown over a car a rider keeps
+    // half the closing speed, so covers about 15 m in the air, and the road
+    // turns only so far under them in that
+    expect(flat.air).toBeGreaterThan(0.9);
+    expect(flat.air).toBeLessThan(1.6);
+    expect(crest.air).toBeGreaterThan(flat.air);
+    expect(crest.top).toBeGreaterThan(flat.top + 0.15);
+    expect(dip.air).toBeLessThan(flat.air);
+    expect(dip.top).toBeLessThan(flat.top - 0.15);
+    // an even slope, up or down, flies as the flat does: the rider leaves
+    // along it, and it stays the same distance under them
+    expect(throw_(0, 0.1).air).toBeCloseTo(flat.air, 1);
+    expect(throw_(0, -0.1).air).toBeCloseTo(flat.air, 1);
+  });
+
+  it("a slide is a short low tumble, and a car hit harder throws higher", () => {
+    expect(TUNE.popSlide).toBeLessThan(TUNE.popMin);
+    expect(TUNE.popPerSpeed * 40).toBeGreaterThan(TUNE.popMin);
   });
 });

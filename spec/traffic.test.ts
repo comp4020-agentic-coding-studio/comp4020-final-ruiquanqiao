@@ -30,15 +30,34 @@ describe("contact between riders", () => {
     expect(b.shove).toBeGreaterThan(0);
   });
 
-  it("a hard rub at speed puts the other rider down, and costs that bike nothing (K2, K6)", () => {
-    const r = race();
-    const [a, b] = [rider(r, 0), rider(r, 1)];
-    Object.assign(a, { z: 500, x: 0, speed: 40, vx: 8 });
-    Object.assign(b, { z: 500, x: 0.75, speed: 40, vx: 0 });
-    steps(r, 1);
-    expect(b.phase).toBe("thrown");
-    expect(b.damage).toBe(100);
-    expect(r.events.some((e) => e.kind === "crash" && e.rider === 1 && e.cause === "rub")).toBe(true);
+  it("a hard rub at speed costs the other rider stamina, and puts them down only once it is gone, at no cost to the bike (K2, K6)", () => {
+    const rubbed = (stamina: number): Rider => {
+      const r = race();
+      const [a, b] = [rider(r, 0), rider(r, 1)];
+      Object.assign(a, { z: 500, x: 0, speed: 40, vx: 8 });
+      Object.assign(b, { z: 500, x: 0.75, speed: 40, vx: 0, stamina });
+      steps(r, 1);
+      if (b.phase === "thrown") expect(r.events.some((e) => e.kind === "crash" && e.rider === 1 && e.cause === "rub")).toBe(true);
+      return b;
+    };
+    // fresh, it takes it and rides on, shoved over
+    const fresh = rubbed(100);
+    expect(fresh.phase).toBe("riding");
+    expect(fresh.stamina).toBeLessThan(100);
+    expect(fresh.stamina).toBeGreaterThan(80);
+    // worn down by a fight, the same rub is the end of it
+    const spent = rubbed(5);
+    expect(spent.phase).toBe("thrown");
+    expect(spent.damage).toBe(100);
+  });
+
+  it("getting back on the bike, a rider's stamina is full again (C8)", () => {
+    const r = race(1);
+    const me = rider(r, 0);
+    Object.assign(me, { z: 500, x: 0, speed: 0, stamina: 0, phase: "running", phaseT: 0, bikeZ: 502, bikeX: 0 });
+    steps(r, 60);
+    expect(me.phase).toBe("riding");
+    expect(me.stamina).toBe(100);
   });
 
   it("knocked off by another rider, the bike coasts on further than one its rider dropped (K5)", () => {
@@ -237,16 +256,29 @@ describe("weapons", () => {
     expect(Math.min(...armedCount)).toBeLessThan(12);
   });
 
-  it("punching while an opponent draws a weapon back takes it off them (C6)", () => {
+  it("punching at the moment an opponent has a weapon all the way back takes it off them (C6)", () => {
     const { r, me, foe } = armed("club");
     beginAttack(r, foe, "hand");
-    steps(r, 10, { ...NO_INPUT, throttle: true }); // a sixth of a second into the draw-back
+    // the last tenth of a second before the blow
+    steps(r, Math.ceil((TUNE.weaponWindup - TUNE.snatchWindow / 2) * 60), { ...NO_INPUT, throttle: true });
     press(r, 0, 2);
     expect(me.weapon).toBe("club");
     expect(foe.weapon).toBeNull();
     expect(foe.attack).toBeNull();
     expect(me.stamina).toBe(100);
     expect(r.events.some((e) => e.kind === "snatch" && e.by === 0 && e.from === 1)).toBe(true);
+  });
+
+  it("too early, while the weapon is still coming back, the punch is only a punch and the blow still lands (C6)", () => {
+    const { r, me, foe } = armed("club");
+    beginAttack(r, foe, "hand");
+    steps(r, 6, { ...NO_INPUT, throttle: true }); // a tenth of a second into the draw-back
+    press(r, 0, 2);
+    expect(me.weapon).toBeNull();
+    expect(foe.weapon).toBe("club");
+    steps(r, Math.ceil(TUNE.weaponWindup * 60), { ...NO_INPUT, throttle: true });
+    expect(me.stamina).toBeLessThan(100);
+    expect(TUNE.snatchWindow).toBeLessThan(TUNE.weaponWindup / 2);
   });
 
   it("too late, once the blow has landed, the punch is only a punch (C6)", () => {
@@ -267,7 +299,7 @@ describe("weapons", () => {
     Object.assign(cop, { z: 600, x: 1.5, speed: 30, chase: 0, post: -1 });
     expect(cop.weapon).toBe("club");
     beginAttack(r, cop, "hand");
-    steps(r, 6, { ...NO_INPUT, throttle: true });
+    steps(r, Math.ceil((TUNE.weaponWindup - TUNE.snatchWindow / 2) * 60), { ...NO_INPUT, throttle: true });
     press(r, 0, 2);
     expect(me.weapon).toBe("club");
     expect(cop.weapon).toBeNull();
@@ -285,8 +317,8 @@ describe("contact with a cop (K10)", () => {
     r.t = 10;
     steps(r, 1, { ...NO_INPUT, throttle: true });
     expect(me.phase).toBe("riding");
-    // now the cop rubs me off the bike
-    Object.assign(me, { z: 620, x: 0, speed: 30, vx: 0 });
+    // now the cop rubs me off the bike, worn down
+    Object.assign(me, { z: 620, x: 0, speed: 30, vx: 0, stamina: 5 });
     Object.assign(cop, { z: 620, x: -0.7, speed: 30, vx: 12 });
     steps(r, 2);
     expect(me.phase).toBe("busted");

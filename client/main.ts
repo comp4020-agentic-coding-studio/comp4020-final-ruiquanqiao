@@ -8,7 +8,7 @@ import { drawDash } from "./dash.ts";
 import { setMusic, sfx, startAudio, updateAudio } from "./audio.ts";
 import { react } from "./feel.ts";
 import { RaceScene } from "./scene.ts";
-import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, nearest, onFoot, separate, packInput, positionOf, ride, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
+import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Prediction, Timeline } from "./netview.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 
@@ -119,7 +119,6 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
   }
   for (const e of msg.events) {
     sound(c, e);
-    if (e.kind === "hit" && e.on === c.you) flash();
     if (e.kind === "crash" && e.rider === c.you) banner(e.cause === "knockdown" ? "Knocked off" : "Down!", 1200);
     if (e.kind === "wrecked" && e.rider === c.you) banner("Wrecked", 3000);
     // hitting a car flashes the screen white (K3)
@@ -437,7 +436,16 @@ function keepOff(c: Current, r: Rider, now: number): void {
     const touch = separate(r, o, 1);
     if (!touch || now - localBump < 0.25) continue;
     localBump = now;
-    const hard = touch === "rear" && o.z > r.z ? closing / TUNE.shuntKnock : Math.abs(r.vx) / TUNE.rubKnock;
+    // a shunt parts the two at once here too, as the server will (K14),
+    // rather than holding the predicted bike on the other's tail. Once a
+    // touch: applied every frame they overlapped, it threw the bike sideways
+    // at 14 m/s against a drawn bike whose speed it never changed
+    if (touch === "rear" && Math.abs(closing) > 1 && (o.z > r.z ? closing > 0 : closing < 0)) {
+      const s = o.z > r.z ? shuntOf(r, o).back : shuntOf(o, r).front;
+      r.speed = s.speed;
+      r.shove = s.shove;
+    }
+    const hard = touch === "rear" ? Math.abs(closing) / 14 : Math.abs(r.vx) / TUNE.rubKnock;
     const felt = react({ t: c.race.t, kind: "bump", rider: r.id, other: o.id, with: "rider", hard: Math.min(1, Math.max(0.3, hard)), from: o.x }, c.race.riders, c.you);
     roadScene.feel(felt);
     if (felt.sound) sfx(felt.sound.kind, felt.sound.gain);

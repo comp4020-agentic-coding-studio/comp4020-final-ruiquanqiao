@@ -109,6 +109,12 @@ function ram(start: Start, keys: (t: number) => Input, seconds = 3, draw: "now" 
       if (p) [them.z, them.x, them.phase] = [p[1], p[2], p[8]];
     }
     if (them.phase !== "riding" || me.phase !== "riding") continue;
+    // ...and kept off them again where they are now drawn, as main.ts does
+    // after moving them (the first version did not). Left out here, a bike
+    // riding a metre ahead of the other was kept off where that one had been
+    // a frame before (1.2 m further back, not touching) and drawn half a bike
+    // deep in it
+    if (draw === "now") separate(me, them, 1);
     // drawn overlap: how far one box is inside the other, as a share of the bike
     const oz = (BIKE.length - Math.abs(them.z - me.z)) / BIKE.length;
     const ox = (BIKE.width - Math.abs(them.x - me.x)) / BIKE.width;
@@ -129,10 +135,9 @@ describe("riding into another rider", () => {
     expect(r.through).toBeGreaterThan(0);
   });
 
-  it("from behind, 100 km/h faster, knocks them off: never drawn through them, and felt (K14)", () => {
+  it("from behind, 100 km/h faster, knocks them aside and goes by: never drawn through them, and felt (K14)", () => {
     const r = ram({ me: { z: 470, x: 0, speed: 70 }, them: { z: 500, x: 0, speed: 42 } }, throttle);
-    expect(r, JSON.stringify(r)).toMatchObject({ through: 0 });
-    expect(r.crashes).toBe(1);
+    expect(r, JSON.stringify(r)).toMatchObject({ through: 0, crashes: 0 });
     expect(r.bumps).toBeGreaterThan(0);
   });
 

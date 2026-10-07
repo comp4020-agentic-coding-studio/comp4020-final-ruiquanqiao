@@ -3,7 +3,7 @@
 // client runs the same code to predict its own rider, and spec/ runs it with
 // scripted keys. Ledger row IDs are given where a rule answers one.
 
-import { OPEN, ROAD_HALF, SHOULDER, type Track, curveAt, wallAt } from "./track.ts";
+import { OPEN, ROAD_HALF, SHOULDER, type Track, curveAt, heightAt, wallAt } from "./track.ts";
 
 export const DT = 1 / 60; // one fixed step, whatever the display does
 export const MPH = 0.44704; // m/s
@@ -83,17 +83,17 @@ export const TUNE = {
   duelGap: 1.15,
   duelBeat: 0.96,
   ramRate: 0.35,
-  // closing speed, m/s, at which running into the back of a bike knocks its
-  // rider off (K14): 50 km/h
-  shuntKnock: 14,
+  /** running into the back of a bike (K14): how bouncy the knock is along
+   * the road, and the most it can throw either bike sideways, m/s */
+  shuntBounce: 0.3,
+  shuntSplit: 5,
   /** cops (P2): how far before his post a human calls him out, and how far
    * behind them he comes in */
   copCall: 120,
   copBehind: 45,
   /** m, across and along: a rider on foot as something a bike can hit (C9) */
   walkerSize: 0.6,
-  /** s a rider flung by a bike stays carried on with it, and how hard they slow meanwhile (C9) */
-  flungAir: 0.9,
+  /** how hard a rider in the air slows, m/s² (C9, M2) */
   flungDecel: 12,
   kickCooldown: 0.6,
   punchStamina: 17,
@@ -101,7 +101,20 @@ export const TUNE = {
   kickShove: 7, // m/s sideways given to the target
   staminaRegen: 4, // per second, after
   staminaRest: 2.5, // seconds without a hit
-  thrownTime: 1.1, // s airborne and tumbling
+  thrownTime: 1.1, // s from coming off to getting up, at the least
+  /** a rider thrown off flies under gravity from the seat's height, with the
+   * road's own rise or fall carried into the flight (M2, K3) */
+  gravity: 9.8,
+  seat: 0.9,
+  /** m/s upwards a rider is thrown off at: a slide, someone flung by a bike, and
+   * per m/s of speed into a car or a tree (with a floor and a ceiling) */
+  popSlide: 2.5,
+  popFlung: 4,
+  popPerSpeed: 0.2,
+  popMin: 4,
+  popMax: 9,
+  /** s a rider lies where they landed before getting up */
+  lieTime: 0.3,
   runSpeed: 6.5, // m/s back to the bike
   // a knockdown by another rider costs the bike nothing (K6); running into
   // the back of traffic is "almost as damaging as a head-on collision" (K7)
@@ -110,8 +123,12 @@ export const TUNE = {
    * scrapes along it, m/s; and how much speed a scrape costs, per second */
   wallCrash: 6,
   wallScrape: 0.8,
-  /** sideways closing speed at which a rub puts the other rider down (K2) */
+  /** sideways closing speed of a hard rub (K2), and the stamina it costs the
+   * rider rubbed at that speed; softer costs less, harder up to half as much again */
   rubKnock: 6.5,
+  rubStamina: 12,
+  /** below this sideways closing speed a rub only shoves, m/s */
+  rubHurt: 2,
   /** sideways shove from a rub that does not (K1), m/s */
   rubShove: 4,
   /** closing speed along the road above which hitting a car is a crash */
@@ -124,8 +141,12 @@ export const TUNE = {
    * the club hits harder */
   reach: { club: { z: 2.0, x: 2.1 }, chain: { z: 2.2, x: 2.6 } },
   weaponStamina: { club: 26, chain: 22 },
-  /** the draw-back before a weapon lands: the moment it can be snatched (C6) */
+  /** the draw-back before a weapon lands, and the last part of it, with the
+   * weapon all the way back, when a punch takes it (C6) */
   weaponWindup: 0.36,
+  snatchWindow: 0.12,
+  /** how readily an unarmed AI rider grabs in that window, per second per aggression */
+  aiGrab: 3.2,
   weaponCooldown: 0.9,
   /** share of AI riders who start a race armed (C5) */
   armedShare: 0.25,
@@ -206,6 +227,13 @@ export type Rider = {
   post: number;
   /** thrown by a bike that ran them over: flung on with it, not tumbling to a stop (C9) */
   flung: boolean;
+  /** thrown off: m above the road under them, and m/s upwards; air 0 is down */
+  air: number;
+  vy: number;
+  /** phaseT at which a thrown rider came down */
+  downAt: number;
+  /** the road's slope where a thrown rider came off, the line they fly on along; NaN until it is read */
+  tilt: number;
   /** race time this rider's bike last rode over something lying in the road */
   overAt: number;
   prevHand: boolean;
@@ -324,6 +352,10 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       sinceHit: 99,
       bumpedAt: -99,
       flung: false,
+      air: 0,
+      vy: 0,
+      downAt: 0,
+      tilt: 0,
       overAt: -99,
       post: -1,
       prevHand: false,
@@ -461,16 +493,36 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   }
 
   if (r.phase === "thrown") {
-    // the rider tumbles on ahead
-    // 280 km/h down to 20 in under a second, as measured off the original;
-    // flung by a bike, carried on through the air with it before coming down
-    const decel = r.flung && r.phaseT < TUNE.flungAir ? TUNE.flungDecel : 10 + 3 * r.speed;
+    // in the air the rider carries on, slowed only a little; on the ground
+    // they tumble from 280 km/h to 20 in under a second, as measured off the
+    // original. The flight was first a fixed arc drawn over the road wherever
+    // the rider was, so it followed every crest and dip. Now it is flown from
+    // the seat: thrown up off the road, and on along the road as it sloped
+    // where they came off, slowing along that line. On an even slope that is
+    // the same flight as on the flat; off a crest the road falls away from
+    // under them and they sail on high, and into a rise they come down on it
+    // early. A first try carried the road's climb in as a fixed upward speed
+    // while the speed along the road ran down, and flew a rider shorter
+    // downhill than on the flat
+    const aloft = r.air > 0;
+    const decel = aloft ? TUNE.flungDecel : 10 + 3 * r.speed;
     r.speed = Math.max(0, r.speed - decel * dt);
+    const under = heightAt(track, r.z);
     r.z += r.speed * dt;
     r.x += r.vx * dt;
     r.vx *= Math.exp(-3 * dt);
     r.x = Math.min(wallAt(track, r.z, 1) - 0.6, Math.max(-wallAt(track, r.z, -1) + 0.6, r.x));
-    if (r.phaseT >= TUNE.thrownTime) setPhase(r, "running");
+    if (aloft) {
+      if (Number.isNaN(r.tilt)) r.tilt = slopeAt(track, r.z - r.speed * dt);
+      r.vy -= TUNE.gravity * dt;
+      r.air += (r.vy + r.speed * r.tilt) * dt - (heightAt(track, r.z) - under);
+      if (r.air <= 0 || r.phaseT > 4) {
+        r.air = 0;
+        r.vy = 0;
+        r.downAt = r.phaseT;
+      }
+    }
+    if (r.air <= 0 && r.phaseT >= TUNE.thrownTime && r.phaseT - r.downAt >= TUNE.lieTime) setPhase(r, "running");
     return;
   }
 
@@ -487,7 +539,10 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
       r.vx = 0;
       r.lean = 0;
       r.build = 0;
-      if (r.stamina <= 0) r.stamina = 50;
+      // back on the bike with stamina full: "按D跳下车再上去，把体力补满" (ZOL).
+      // Half was tried first, and a rider knocked off once went down again
+      // after four blows
+      r.stamina = 100;
       setPhase(r, "riding");
       return;
     }
@@ -579,6 +634,9 @@ const decelOf = (r: Rider): number => (r.bikeSpeed > 6 ? TUNE.coastDecel : TUNE.
 function setPhase(r: Rider, phase: Phase): void {
   // a crash of one's own, or getting up, ends any flight a bike started
   r.flung = false;
+  r.air = 0;
+  r.vy = 0;
+  r.downAt = 0;
   r.phase = phase;
   r.phaseT = 0;
 }
@@ -587,7 +645,7 @@ function setPhase(r: Rider, phase: Phase): void {
  * Off the bike (M2, M4). Knocked off by another rider, the bike coasts on
  * without you (K5); come off by your own doing, it slides a little and stops.
  */
-function crash(r: Rider, cause: CrashCause, race: Race | null): void {
+function crash(r: Rider, cause: CrashCause, race: Race | null, pop = TUNE.popSlide): void {
   r.damage = Math.max(0, r.damage - TUNE.crashDamage[cause]);
   r.bikeZ = r.z;
   r.bikeX = r.x;
@@ -608,7 +666,16 @@ function crash(r: Rider, cause: CrashCause, race: Race | null): void {
     return;
   }
   setPhase(r, "thrown");
+  r.air = TUNE.seat;
+  r.vy = pop;
+  r.tilt = Number.NaN;
 }
+
+/** The road's rise per metre along it at z. */
+const slopeAt = (track: Track, z: number): number => (heightAt(track, z + 1) - heightAt(track, z - 1)) / 2;
+
+/** m/s upwards a rider is thrown at, run into something solid at `closing` m/s. */
+const popAt = (closing: number): number => clamp(TUNE.popPerSpeed * Math.abs(closing), TUNE.popMin, TUNE.popMax);
 
 /**
  * Report a touch that put no one down, so it can be heard and seen (K13).
@@ -671,12 +738,25 @@ export function windingAt(race: Race, r: Rider): Rider | null {
 }
 
 /**
+ * Someone with a weapon all the way back at `r`, in the last instant before
+ * the blow: the only moment a punch takes it. "A small pause as they bring
+ * their arm back. You have to punch them at this exact moment" (FINNER). The
+ * whole draw-back was the window at first, so a player mashing the punch key
+ * in a fight took weapons by accident, and AI riders took about one swing in
+ * two.
+ */
+function grabbable(race: Race, r: Rider): Rider | null {
+  const o = windingAt(race, r);
+  return o && o.attack && o.attack.t >= windupOf(o, o.attack) - TUNE.snatchWindow ? o : null;
+}
+
+/**
  * The punch key, pressed empty-handed while an opponent draws a weapon back
  * to swing it at you, takes the weapon off them (C6). Returns whether it did.
  */
 function snatch(race: Race, r: Rider): boolean {
   if (r.phase !== "riding" || r.weapon || r.attack) return false;
-  const o = windingAt(race, r);
+  const o = grabbable(race, r);
   if (!o?.weapon) return false;
   r.weapon = o.weapon;
   o.weapon = null;
@@ -731,8 +811,9 @@ function scenery(race: Race, r: Rider): void {
     if (s.z > r.z + 2) break;
     const width = s.kind === "tree" ? 1.3 : s.kind === "rock" ? 1.2 : s.kind === "bush" ? 1.0 : 0.6;
     if (Math.abs(s.x - r.x) < width) {
+      const into = r.speed;
       r.speed *= 0.3;
-      crash(r, "tree", race);
+      crash(r, "tree", race, popAt(into));
       // the bike bounces off the trunk towards the road, so the rider does not
       // get back on it inside the tree
       r.bikeX = s.x - Math.sign(s.x) * (width + 0.8);
@@ -780,7 +861,7 @@ export function separate(a: Rider, b: Rider, share = 0.5): "side" | "rear" | nul
  * past the camera in 0.4 s, while the bike that hit them hops and rides on.
  */
 export function onFoot(o: Rider): boolean {
-  return o.phase === "running" || (o.phase === "thrown" && o.phaseT > TUNE.thrownTime * 0.75);
+  return o.phase === "running" || (o.phase === "thrown" && o.air <= 0);
 }
 
 function runOver(race: Race): void {
@@ -796,6 +877,9 @@ function runOver(race: Race): void {
       // behind the camera in 0.2 s at racing speed and easy to miss
       setPhase(o, "thrown");
       o.flung = true;
+      o.air = TUNE.seat * 0.6;
+      o.vy = TUNE.popFlung;
+      o.tilt = Number.NaN;
       o.speed = Math.min(r.speed * 1.1, r.speed + 6);
       o.vx = (o.x >= r.x ? 1 : -1) * 4;
       o.sinceHit = 0;
@@ -838,22 +922,52 @@ function contactPass(race: Race, riding: Rider[], transfer: boolean): void {
         continue;
       }
       const [back, front] = b.z >= a.z ? [a, b] : [b, a];
-      if (back.speed > front.speed) {
-        const diff = back.speed - front.speed;
-        // run into from behind hard enough, the bike in front goes down in a
-        // slide, as a hard rub puts it (K14); the rammer is checked to its speed
-        if (diff >= TUNE.shuntKnock && front.speed > 5) {
-          crash(front, "rub", race);
-          back.speed -= diff * 0.6;
-          bump(race, back, front.id, "rider", 1, front.x);
-          continue;
-        }
-        front.speed += Math.min(7 * MPH, diff * 0.5);
-        back.speed = front.speed;
-        if (diff > 1) bump(race, front, back.id, "rider", diff / 10, back.x);
-      }
+      if (back.speed > front.speed) shunt(race, back, front);
     }
   }
+}
+
+/**
+ * One bike run into the back of another (K14), as a collision of two bodies:
+ * momentum along the road is kept, a little of the knock bounces, and the
+ * push goes through the line between the two, so they part to either side and
+ * the faster one goes by. The first version knocked the rider in front off at
+ * 50 km/h faster, which nothing in the original shows; 35 of 108 riders put
+ * down in ten AI races went that way.
+ */
+function shunt(race: Race, back: Rider, front: Rider): void {
+  const diff = back.speed - front.speed;
+  const o = shuntOf(back, front);
+  [back.speed, front.speed, back.shove, front.shove] = [o.back.speed, o.front.speed, o.back.shove, o.front.shove];
+  if (diff > 1) {
+    bump(race, front, back.id, "rider", diff / 14, back.x);
+    bump(race, back, front.id, "rider", diff / 20, front.x);
+  }
+}
+
+/** What a shunt leaves each bike going at, along the road and sideways; pure, so a browser can feel its own at once. */
+export function shuntOf(back: Rider, front: Rider): { back: { speed: number; shove: number }; front: { speed: number; shove: number } } {
+  const m1 = back.bike.lbs + back.lbs;
+  const m2 = front.bike.lbs + front.lbs;
+  const diff = back.speed - front.speed;
+  const e = TUNE.shuntBounce;
+  const p = m1 * back.speed + m2 * front.speed;
+  const backSpeed = (p - m2 * e * diff) / (m1 + m2);
+  const frontSpeed = (p + m1 * e * diff) / (m1 + m2);
+  // the line between them, on a bike's own proportions (a box's corner, not a
+  // point's): straight behind it is nearly all along the road, a little off
+  // to one side and it turns sideways fast. Dead in line, the faster bike goes
+  // by on the side it is steering to, or its rider's left
+  const dx = front.x - back.x;
+  const side = Math.abs(dx) > 0.02 ? Math.sign(dx) : -(Math.sign(back.vx) || 1);
+  const nx = Math.max(Math.abs(dx), 0.15) / (BIKE.width / 2) ** 2;
+  const nz = Math.abs(front.z - back.z) / (BIKE.length / 2) ** 2;
+  const across = nx / Math.hypot(nx, nz);
+  const impulse = ((m1 * m2) / (m1 + m2)) * (1 + e) * diff * across;
+  return {
+    back: { speed: backSpeed, shove: clamp(back.shove - side * (impulse / m1), -TUNE.shuntSplit, TUNE.shuntSplit) },
+    front: { speed: frontSpeed, shove: clamp(front.shove + side * (impulse / m2), -TUNE.shuntSplit, TUNE.shuntSplit) },
+  };
 }
 
 function recover(r: Rider): void {
@@ -877,10 +991,18 @@ function rub(race: Race, a: Rider, b: Rider, closing: number): void {
   const bIn = -(b.vx + b.shove) * towards;
   const [mover, struck] = aIn >= bIn ? [a, b] : [b, a];
   const away = struck.x >= mover.x ? 1 : -1;
+  // a hard rub costs the rider rubbed stamina, as a blow does, and puts them
+  // down only once it is gone (K2). It first put them down outright at 6.5
+  // m/s across: of 108 riders put down by another in ten AI races, 68 went
+  // that way, often a blow or two into a fight
   const fast = Math.min(mover.speed, struck.speed) > 15;
-  if (fast && Math.abs(closing) >= TUNE.rubKnock) {
-    crash(struck, "rub", race);
-    return;
+  if (fast && Math.abs(closing) >= TUNE.rubHurt && race.t - struck.bumpedAt >= 0.25) {
+    struck.stamina = Math.max(0, struck.stamina - TUNE.rubStamina * Math.min(1.5, Math.abs(closing) / TUNE.rubKnock));
+    struck.sinceHit = 0;
+    if (struck.stamina <= 0) {
+      crash(struck, "rub", race);
+      return;
+    }
   }
   struck.shove = away * Math.max(Math.abs(struck.shove), TUNE.rubShove * Math.min(1, Math.abs(closing) / TUNE.rubKnock));
   mover.vx *= 0.5;
@@ -977,7 +1099,7 @@ function hitCars(race: Race, r: Rider): void {
     r.z = c.z - Math.sign(dz || 1) * ((CAR.length + BIKE.length) / 2);
     // a rider thrown off over a car carries less forward speed
     r.speed = Math.max(0, Math.min(r.speed, Math.abs(closing)) * 0.5);
-    crash(r, c.dir > 0 ? "rearEnd" : "headOn", race);
+    crash(r, c.dir > 0 ? "rearEnd" : "headOn", race, popAt(closing));
     // the struck car is knocked on a little, not stopped
     if (c.dir > 0) c.speed += 2;
     return;
@@ -1102,7 +1224,7 @@ export function aiInput(race: Race, r: Rider): Input {
     else input.foot = true;
   }
   // an unarmed rider sometimes grabs at a weapon drawn back at them (C6)
-  if (!r.weapon && !r.prevHand && windingAt(race, r) && random(race) < r.aggression * DT * 3) input.hand = true;
+  if (!r.weapon && !r.prevHand && grabbable(race, r) && random(race) < r.aggression * DT * TUNE.aiGrab) input.hand = true;
   if (r.phase === "running") {
     input.left = false;
     input.right = false;
@@ -1150,7 +1272,7 @@ function duelInput(race: Race, r: Rider, foe: Rider): Input {
     r.nextSwing = race.t + TUNE.duelBeat * (0.8 + random(race) * 0.4);
   }
   // grabbing a weapon drawn back at it still comes first (C6)
-  if (!r.weapon && !r.prevHand && windingAt(race, r) && random(race) < r.aggression * DT * 3) input.hand = true;
+  if (!r.weapon && !r.prevHand && grabbable(race, r) && random(race) < r.aggression * DT * TUNE.aiGrab) input.hand = true;
   return input;
 }
 

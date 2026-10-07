@@ -607,7 +607,6 @@ uniform vec2 texel;
 uniform float flip;
 uniform vec3 tints[6];
 uniform float shade;
-uniform float flash;
 varying vec2 vUv;
 int idAt(vec4 c) { return c.a < 0.08 ? -1 : int(floor(c.a * 255.0 / 40.0 + 0.5)) - 1; }
 vec4 near(vec2 uv, vec2 d) { return texture2D(map, clamp(uv + d * texel, tile.xy + texel * 0.5, tile.xy + tile.zw - texel * 0.5)); }
@@ -625,14 +624,14 @@ void main() {
   // hand-drawn sprites have
   if (id < 0) {
     if (max(max(l, r), max(u, d)) < 0) discard;
-    gl_FragColor = vec4(mix(vec3(0.06, 0.05, 0.07), vec3(1.0, 0.97, 0.85), flash), 1.0);
+    gl_FragColor = vec4(0.06, 0.05, 0.07, 1.0);
     return;
   }
   vec3 t = vec3(1.0);
   for (int i = 1; i < 6; i++) if (i == id) t = tints[i];
   // and a softer one where one part meets another of a different colour
   float seam = (l >= 0 && l != id) || (u >= 0 && u != id) ? 0.62 : 1.0;
-  gl_FragColor = vec4(mix(c.rgb * t * shade * seam, vec3(1.0, 0.97, 0.85), flash), 1.0);
+  gl_FragColor = vec4(c.rgb * t * shade * seam, 1.0);
 }`;
 
 export type Tile = { col: number; flip: boolean };
@@ -662,7 +661,7 @@ export function tileFor(view: number, last: Tile): Tile {
 /** A billboard showing one rider's frames in their own colours. */
 export class RiderSprite {
   readonly mesh: THREE.Mesh;
-  private u: { tile: { value: THREE.Vector4 }; texel: { value: THREE.Vector2 }; flip: { value: number }; shade: { value: number }; flash: { value: number } };
+  private u: { tile: { value: THREE.Vector4 }; texel: { value: THREE.Vector2 }; flip: { value: number }; shade: { value: number } };
 
   private atlas: Atlas;
   private tile: Tile = { col: 0, flip: false };
@@ -676,7 +675,7 @@ export class RiderSprite {
       return new THREE.Vector3(o.r, o.g, o.b);
     };
     const tints = [new THREE.Vector3(1, 1, 1), srgb(look.main), srgb(look.trim), srgb(look.helmet), srgb(look.paint), srgb(look.paintTrim)];
-    this.u = { tile: { value: new THREE.Vector4() }, texel: { value: new THREE.Vector2(1 / atlas.colour.image.width, 1 / atlas.colour.image.height) }, flip: { value: 0 }, shade: { value: 1 }, flash: { value: 0 } };
+    this.u = { tile: { value: new THREE.Vector4() }, texel: { value: new THREE.Vector2(1 / atlas.colour.image.width, 1 / atlas.colour.image.height) }, flip: { value: 0 }, shade: { value: 1 } };
     const mat = new THREE.ShaderMaterial({
       uniforms: { map: { value: atlas.colour }, tints: { value: tints }, ...this.u },
       vertexShader: VERT,
@@ -693,11 +692,6 @@ export class RiderSprite {
    * Show frame `name` (a right-handed name: "punchOut.R") seen from `view`
    * radians round from behind, positive from the rider's right.
    */
-  /** Light the sprite towards white, 0 to 1: the instant a blow lands on it. */
-  setFlash(f: number): void {
-    this.u.flash.value = f;
-  }
-
   show(name: string, view: number): void {
     const a = this.atlas;
     this.tile = tileFor(view, this.tile);
