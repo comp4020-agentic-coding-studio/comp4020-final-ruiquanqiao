@@ -190,3 +190,38 @@ describe("the kick", () => {
     expect(kickPays(open.race, open.kicker, open.victim)).toBe(false);
   });
 });
+
+// Cops (C7, P7). Riders slowing, and stopping if he stops, to take a
+// patrolling cop's club is part of the game. When riders took to fighting
+// over position and grudges (O5) the field was too busy with itself to get
+// to a cop: set on one 27.7 rider-s a race down to 9.5. A cop now comes first.
+describe("riders and the police", () => {
+  it("breaks off a fight with a rider for a patrolling cop ahead, and slows to his pace to take him on", () => {
+    const race = startRace(makeTrack(1, 2), 1, [
+      { id: 0, name: "person", human: true },
+      { id: 1, name: "picker", human: false },
+    ], 9);
+    const cop = race.riders.find((r) => r.cop)!;
+    race.riders = [...race.riders.filter((r) => !r.cop), cop];
+    race.cars = [];
+    race.t = 20;
+    const [person, picker] = [0, 1].map((id) => race.riders.find((r) => r.id === id)!);
+    for (const [r, x, z] of [[person, 1.4, 800], [picker, 0, 800]] as const) Object.assign(r, { x, z, bikeX: x, bikeZ: z, line: x, speed: 200 * KMH });
+    Object.assign(cop, { z: 960, bikeZ: 960, chase: -1 });
+    picker.aggression = 0.5;
+    picker.weapon = null;
+    picker.foe = person.id;
+    picker.foeUntil = race.t + 30;
+    let slowest = picker.speed;
+    let tookCop = false;
+    for (let i = 0; i < 12 / DT && !(tookCop && picker.speed < 100 * KMH); i++) {
+      step(race, new Map([[0, { ...NO_INPUT, throttle: true }]]));
+      if (picker.foe === cop.id) tookCop = true;
+      slowest = Math.min(slowest, picker.speed);
+    }
+    expect(tookCop).toBe(true);
+    // braked from 200 km/h to under 100, to ride alongside a cop patrolling
+    // at 70 (measured: 81 km/h at its slowest in this run)
+    expect(slowest).toBeLessThan(100 * KMH);
+  });
+});

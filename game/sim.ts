@@ -86,9 +86,11 @@ export const TUNE = {
   foeGrudge: 0.8,
   grudgeRange: 40,
   foeDropped: 5,
-  /** and with a patrolling cop up ahead, unarmed (after his club, C7) and armed (P7) */
-  foeCopUnarmed: 0.7,
-  foeCopArmed: 0.2,
+  /** and with a patrolling cop up ahead, unarmed (after his club, C7) and
+   * armed (P7). A cop comes first: one can be picked out of a fight with a
+   * rider, or in the breather after one */
+  foeCopUnarmed: 1.4,
+  foeCopArmed: 0.5,
   duelMin: 5,
   duelSpread: 8,
   duelGap: 1.15,
@@ -1234,22 +1236,35 @@ function pickFoe(race: Race, r: Rider): Rider | null {
     r.foeUntil = race.t + 2 + random(race) * 3;
     foe = undefined;
   }
+  // a patrolling cop ahead is worth leaving any other fight for, or the
+  // breather after one: the riders slow, and stop if he stops, to take his
+  // club (C7, P7). Once riders fought over position and grudges (O5), the
+  // field was too busy with itself to get to a cop: set on one 27.7 rider-s
+  // a race down to 9.5, and clubs taken off cops 0.50 a race down to 0.20
+  if (!foe?.cop && race.t >= 4 && r.speed >= 12) {
+    for (const o of race.riders) {
+      if (!o.cop || o.phase !== "riding" || o.chase >= 0) continue;
+      const dz = o.z - r.z;
+      if (dz < -25 || dz > 250) continue;
+      if (random(race) < r.aggression * (r.weapon ? TUNE.foeCopArmed : TUNE.foeCopUnarmed) * DT) {
+        r.foe = o.id;
+        r.foeUntil = race.t + TUNE.duelMin + random(race) * TUNE.duelSpread * (0.5 + r.aggression);
+        r.nextSwing = race.t + 0.3 + random(race) * 0.5;
+        return o;
+      }
+    }
+  }
   if (foe) return foe;
   // nobody starts a fight on the grid, before the field has strung out
   if (race.t < r.foeUntil || race.t < 4 || r.speed < 12) return null;
   for (const o of race.riders) {
     if (o === r || o.phase !== "riding") continue;
     const dz = o.z - r.z;
-    // a cop is picked from far enough back to brake down to his patrol speed
-    if (dz < -25 || dz > (o.cop ? 250 : 50)) continue;
-    // a patrolling cop is a fight they pick too, keener without a weapon of
-    // their own, since his club is the easiest one to take (C7, P7). Any
-    // other rider is fought for the place it is level with, or for blows it
-    // landed earlier; whether it is a person or not does not come into it
+    // cops were weighed above; any other rider is fought for the place it is
+    // level with, or for blows it landed earlier, whether a person or not
+    if (o.cop || dz < -25 || dz > 50) continue;
     const grudge = Math.min(3, r.grudge[o.id] ?? 0);
-    const keen = o.cop
-      ? r.aggression * (o.chase >= 0 ? 0 : r.weapon ? TUNE.foeCopArmed : TUNE.foeCopUnarmed)
-      : (Math.abs(dz) < TUNE.rivalRange ? r.aggression * TUNE.foeRival : 0) + (dz > -TUNE.foeDropped && dz < TUNE.grudgeRange ? grudge * TUNE.foeGrudge : 0);
+    const keen = (Math.abs(dz) < TUNE.rivalRange ? r.aggression * TUNE.foeRival : 0) + (dz > -TUNE.foeDropped && dz < TUNE.grudgeRange ? grudge * TUNE.foeGrudge : 0);
     if (random(race) < keen * DT) {
       r.foe = o.id;
       r.foeUntil = race.t + TUNE.duelMin + random(race) * TUNE.duelSpread * (0.5 + r.aggression);
