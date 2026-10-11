@@ -61,7 +61,7 @@ export type Standing = {
 export type ToClient =
   | { t: "hello"; you: { id: number; name: string }; qualified: { level: number; track: string }[] }
   | { t: "pool"; mode: Mode | null; count: number; startsIn: number | null; waitingForMore: boolean }
-  | { t: "start"; race: number; level: number; track: number; seed: number; entrants: Entry[]; you: number | null }
+  | { t: "start"; race: number; level: number; track: number; seed: number; entrants: Entry[]; you: number | null; /** seconds on the grid before the race goes (V16) */ countdown?: number }
   | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; cars: CarState[]; events: RaceEvent[] }
   | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[] }
   | { t: "live"; races: { race: number; level: number; riders: number; humans: number }[] };

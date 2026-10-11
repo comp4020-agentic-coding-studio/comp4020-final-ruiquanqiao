@@ -3,7 +3,7 @@
 // just calls tick() with the real one.
 
 import { type Entry, GRID, MAX_AI, type Mode, POOL_WAIT, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
-import { DT, type Input, type Race, NO_INPUT, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
+import { DT, type Input, type Race, NO_INPUT, TUNE, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 
 export type Conn = {
@@ -143,7 +143,7 @@ export class Lobby {
     const newest = [...this.races.values()].filter((l) => !l.ended).at(-1);
     if (!newest) return;
     newest.watchers.add(conn);
-    conn.send({ t: "start", race: newest.id, level: newest.level, track: newest.road, seed: newest.seed, entrants: newest.entrants, you: null });
+    conn.send({ t: "start", race: newest.id, level: newest.level, track: newest.road, seed: newest.seed, entrants: newest.entrants, you: null, countdown: TUNE.countdown });
   }
 
   private startFrom(mode: Mode, now: number): void {
@@ -187,7 +187,7 @@ export class Lobby {
     const track = makeTrack(level, road);
     const seed = Math.floor(this.random() * 2 ** 31);
     const id = this.store.startRace(mode, level, track.name);
-    const race = startRace(track, level, entrants, seed);
+    const race = startRace(track, level, entrants, seed, TUNE.countdown);
     const live: Live = {
       id,
       mode,
@@ -213,7 +213,7 @@ export class Lobby {
       c.local = i;
       c.seq = 0;
       live.conns.set(i, c);
-      c.send({ t: "start", race: id, level, track: road, seed, entrants, you: i });
+      c.send({ t: "start", race: id, level, track: road, seed, entrants, you: i, countdown: TUNE.countdown });
     });
     this.races.set(id, live);
     this.log({ ev: "race_start", race: id, mode, level, humans: members.length, riders: entrants.length });

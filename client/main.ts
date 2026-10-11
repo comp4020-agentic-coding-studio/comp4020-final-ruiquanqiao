@@ -46,6 +46,10 @@ type Current = {
   prediction: Prediction; // one's own rider
   steps: number;
   ended: boolean;
+  /** this tab's clock when the countdown runs out and the race goes (V16) */
+  go: number;
+  /** the last number of the countdown shown */
+  counted: number;
 };
 
 let current: Current | null = null;
@@ -58,15 +62,15 @@ const heard: unknown[] = [];
 
 function begin(msg: Extract<ToClient, { t: "start" }>): void {
   const track = makeTrack(msg.level, msg.track ?? 0);
-  const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed);
-  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false };
+  const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed, msg.countdown ?? 0);
+  const go = performance.now() / 1000 + (msg.countdown ?? 0);
+  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1 };
   if (msg.you !== null) {
     show("race");
     roadScene.setTrack(track);
     resize();
     banner(`${track.name} · level ${msg.level} · ${(track.length / 1000).toFixed(1)} km`, 2500);
     startAudio();
-    sfx("go");
     $("#touch").querySelectorAll("button").forEach((b) => b.classList.remove("down"));
   } else {
     $("#watch").hidden = false;
@@ -80,6 +84,9 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
   if (!c || c.id !== msg.race) return;
   const now = performance.now() / 1000;
   c.timeline.push(now, { time: msg.time, riders: msg.riders, cars: msg.cars });
+  // when the race goes, by this tab's clock: every snapshot arrives late, so
+  // the least delayed one says it best
+  c.go = Math.min(c.go, now - msg.time);
   // every touch is seen and heard (K13): tilts, a knocked car, a rider launched
   for (const e of msg.events) {
     heard.push(e);
@@ -390,6 +397,8 @@ const dashCtx = dash.getContext("2d")!;
 const watch = $<HTMLCanvasElement>("#watch-canvas");
 const roadScene = new RaceScene(road);
 const watchScene = new RaceScene(watch);
+// the riders' frames are drawn in the lobby, once the page is up, not on the grid
+setTimeout(() => roadScene.prepare(), 200);
 let dashCover = 0;
 
 function resize(): void {
@@ -491,7 +500,8 @@ function frame(): void {
       c.steps++;
       if (c.you !== null) {
         const r = c.race.riders.find((x) => x.id === c.you);
-        if (r) {
+        // on the grid nothing moves; keys held now are sent, and go with everyone's
+        if (r && now >= c.go) {
           ride(r, keys, c.race.track);
           const fix = c.prediction.ease();
           r.z += fix.z;
@@ -509,6 +519,7 @@ function frame(): void {
       }
     }
     if (c.you !== null) sendKeys(now);
+    if (c.you !== null) countdown(c, now);
     interpolate(c, now);
     // and again once the others have moved this frame: the screen refreshes
     // faster than the race steps, and between steps a bike moved up to where
@@ -537,6 +548,23 @@ function frame(): void {
 function flash(colour = "#ff2010"): void {
   $("#flash").style.background = colour;
   hitFlash = 1;
+}
+
+/** The count on the grid, big and white in the road ahead, and the beeps (V16). */
+function countdown(c: Current, now: number): void {
+  const left = Math.ceil(c.go - now);
+  if (left === c.counted) return;
+  c.counted = left;
+  const el = $("#count");
+  if (left > 0) {
+    el.textContent = String(left);
+    el.hidden = false;
+    sfx("countdown");
+  } else if (left === 0) {
+    el.textContent = "GO";
+    sfx("go");
+    window.setTimeout(() => (el.hidden = true), 700);
+  }
 }
 
 let bannerTimer = 0;

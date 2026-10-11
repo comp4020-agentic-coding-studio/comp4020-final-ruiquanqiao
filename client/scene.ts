@@ -646,6 +646,15 @@ export class RaceScene {
     this.cars.clear();
   }
 
+  /**
+   * Draw every rider's frames now, before any race. Drawn when the first road
+   * was shown, the page stood frozen for the whole three-second countdown on
+   * a slow machine (4-6 s in headless Chrome), and the count was never seen.
+   */
+  prepare(): void {
+    this.atlas ??= buildAtlas(this.renderer);
+  }
+
   private lineAcross(track: Track, z: number, chequered: boolean): THREE.Mesh {
     const [c, ctx] = canvas(16, 2);
     for (let x = 0; x < 16; x++) {

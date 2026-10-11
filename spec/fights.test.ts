@@ -11,40 +11,39 @@ import { tally } from "../scripts/fights.ts";
 // player in 90 s, and never more than a few seconds alongside.
 
 describe("the field picks fights with a player", () => {
-  const all = ROADS.map((_, road) => tally(road, 11, 90, 1, 1));
+  const seeds = [11, 3, 7, 19];
+  const runs = seeds.map((seed) => ROADS.map((_, road) => tally(road, seed, 90, 1, 1)));
+  const all = runs.flat();
 
   it("swings at a player who never swings back, on every road", () => {
-    // measured: 7-19 a road in 90 s, 12 on average, now that a cop rides
-    // alongside the player for much of a race and takes a flank a rider would
-    // otherwise duel from (7-28 and 20 before). The race is chaotic, so
-    // any change to the riding moves one road's count a lot: the floor is on
-    // every road, and the bar on the average. Since a rub costs stamina
-    // instead of knocking a rider off and a shunt never does, over four seeds
-    // and every road: 14.1 swings a race down to 12.1, while blows landed went
-    // up from 10.3 to 12.1 and the player was knocked off 1.75 times a race,
-    // not 2.3. This seed gives 11.2, against the 12 it was set at. With cops
-    // patrolling and no longer riding alongside the player: 14.9 a race
-    for (const t of all) expect(t.swingsAtMe, t.road).toBeGreaterThanOrEqual(5);
-    expect(all.reduce((n, t) => n + t.swingsAtMe, 0) / all.length).toBeGreaterThanOrEqual(10);
+    // measured on seed 11: 7-19 a road in 90 s, 12 on average, once a cop
+    // rode alongside the player and took a flank a rider would otherwise duel
+    // from (7-28 and 20 before). Since a rub costs stamina instead of
+    // knocking a rider off, over four seeds: 14.1 swings a race down to 12.1.
+    // With cops patrolling: 14.9. Since riders fight over position and
+    // grudges, blind to who is a person (O5): 12.3. And since the grid is
+    // drawn, not every person on the back row (O1): 10.8, 0-20 a race. A
+    // player who starts near the front and outrides the field can now meet
+    // nobody, which is fair, so the floor is per road across the four seeds
+    // and the bar is on the average
+    ROADS.forEach((_, road) => expect(Math.max(...runs.map((r) => r[road].swingsAtMe)), `road ${road}`).toBeGreaterThanOrEqual(5));
+    expect(all.reduce((n, t) => n + t.swingsAtMe, 0) / all.length).toBeGreaterThanOrEqual(8);
   });
 
   it("rides alongside for as long as the recording's rival does, somewhere on every road", () => {
-    // measured: the longest stretch alongside 5.9-11.4 s
-    for (const t of all) expect(t.longest, t.road).toBeGreaterThan(4);
+    // measured: the longest stretch alongside 4.9-10.6 s, the best of four seeds on each road
+    ROADS.forEach((_, road) => expect(Math.max(...runs.map((r) => r[road].longest)), `road ${road}`).toBeGreaterThan(4));
   });
 
-  it("knocks such a player off now and then, but does not hound them off every few seconds", () => {
+  it("does not hound a player who never swings back off the bike every few seconds", () => {
     // measured: 16 in 450 s on one seed, while rubs could put a rider down
-    // and stamina came back slowly. With rubs only shoving and stamina back
-    // in a second, that seed gives none, so four seeds are counted: 12 in
-    // 1800 s, once every two and a half minutes for a player who never
-    // swings back. Since riders fight over position and grudges rather than
-    // singling out the player (O5), such a player makes no enemies: 3 in
-    // 1800 s, swings at them 20-64 a race down to 7-23
-    const more = [3, 7, 19].flatMap((seed) => ROADS.map((_, road) => tally(road, seed, 90, 1, 1)));
-    const down = [...all, ...more].reduce((n, t) => n + t.meDown, 0);
-    expect(down).toBeGreaterThan(0);
-    expect(down).toBeLessThan(60);
+    // and stamina came back slowly; 12 in 1800 s over four seeds with rubs
+    // only shoving. Since riders fight over position and grudges (O5), such a
+    // player makes no enemies, and with the grid drawn (O1) is often clear of
+    // the pack: 1 in 1800 s. No floor: being left alone for keeping the peace
+    // is what the original's green riders do ("won't rumble unless you
+    // strike first", SCDM)
+    expect(all.reduce((n, t) => n + t.meDown, 0)).toBeLessThan(60);
   });
 });
 

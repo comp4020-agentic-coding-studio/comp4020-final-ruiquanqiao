@@ -41,6 +41,8 @@ export const TUNE = {
    * km/h in 2 s, and from cruise to 316-320 */
   nitroCharges: 10,
   nitroTime: 3.5,
+  /** seconds counted down on the grid before a race goes (V16) */
+  countdown: 3,
   nitroCap: 35 * KMH,
   nitroAccel: 24,
   /** build-up is earned only above this fraction of top speed */
@@ -327,11 +329,30 @@ function random(race: Race): number {
 
 export type Entrant = { id: number; name: string; human: boolean; lbs?: number };
 
-/** Grid rows of three, six metres apart; humans at the back (O1). */
-export function startRace(track: Track, level: number, entrants: Entrant[], seed: number): Race {
+/**
+ * Grid rows of three, six metres apart, in an order drawn from the seed (O1).
+ * The original puts its one player at the back of fourteen machines; here,
+ * with several people in a race, the back row was every person's, up to 24 m
+ * behind the front, and the field was gone before anyone saw it.
+ * `countdown` seconds pass before anyone moves (V16): the race clock starts
+ * below zero, so a held throttle launches on the same step as everyone's.
+ */
+export function startRace(track: Track, level: number, entrants: Entrant[], seed: number, countdown = 0): Race {
   const bike = BIKES[level - 1];
-  const ordered = [...entrants.filter((e) => !e.human), ...entrants.filter((e) => e.human)];
-  const race: Race = { track, t: 0, riders: [], cars: [], events: [], rng: seed >>> 0 || 1, finishers: 0 };
+  // shuffled on a stream of its own, so the race's draws are the seed's as before
+  let g = (seed ^ 0x9e3779b9) >>> 0 || 1;
+  const draw = (): number => {
+    g ^= g << 13;
+    g ^= g >>> 17;
+    g ^= g << 5;
+    return (g >>> 0) / 4294967296;
+  };
+  const ordered = [...entrants];
+  for (let i = ordered.length - 1; i > 0; i--) {
+    const j = Math.floor(draw() * (i + 1));
+    [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+  }
+  const race: Race = { track, t: -countdown, riders: [], cars: [], events: [], rng: seed >>> 0 || 1, finishers: 0 };
   ordered.forEach((e, i) => {
     const row = Math.floor(i / 3);
     const col = (i % 3) - 1;
@@ -1319,6 +1340,10 @@ function duelInput(race: Race, r: Rider, foe: Rider): Input {
 /** Advance the race one fixed step. `inputs` holds the humans' keys by id. */
 export function step(race: Race, inputs: Map<number, Input>): void {
   race.t += DT;
+  // the countdown: nothing on the road moves in any step that ends by zero
+  // (V16). 180 steps of 1/60 s from -3 add up to a hair over 0, and a test
+  // on below zero let the last of them move the field
+  if (race.t < DT / 2) return;
   for (const r of race.riders) {
     const input = r.human ? (inputs.get(r.id) ?? NO_INPUT) : aiInput(race, r);
     if (input.hand && !r.prevHand && !snatch(race, r)) beginAttack(race, r, "hand");
