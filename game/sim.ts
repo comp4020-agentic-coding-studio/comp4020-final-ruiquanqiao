@@ -72,12 +72,18 @@ export const TUNE = {
   // a blow is 6 frames drawn back and 5 out, at 25 fps, in the original
   windup: 0.22, // s from key to contact
   punchCooldown: 0.44,
-  // duels (C11): how readily a rider picks a fight per second, scaled by its
-  // aggression, with a human and with another AI rider; how long it keeps at
-  // it; how far off the foe's flank it rides; the beat it swings on (the
-  // recording's rival: every 0.96 s); and how often it rubs the foe over
-  foeHuman: 1.5,
-  foeAI: 0.04,
+  // duels (C11, O5): how readily a rider picks a fight per second, scaled by
+  // its aggression, with whoever is level with it for its place, and with
+  // whoever has hit it, per blow taken (three at most) - the same for a human
+  // or an AI rider; how far back it lets a foe drop before it rides on; how
+  // long it keeps at it; how far off the foe's flank it rides; the beat it
+  // swings on (the recording's rival: every 0.96 s); and how often it rubs
+  // the foe over
+  foeRival: 1.0,
+  rivalRange: 4,
+  foeGrudge: 0.8,
+  grudgeRange: 40,
+  foeDropped: 5,
   /** and with a patrolling cop up ahead, unarmed (after his club, C7) and armed (P7) */
   foeCopUnarmed: 0.7,
   foeCopArmed: 0.2,
@@ -260,6 +266,8 @@ export type Rider = {
   nextSwing: number;
   /** race time until which it is steering into the foe's bike to rub it over */
   ramUntil: number;
+  /** blows taken this race, by who landed them: a grudge (O5) */
+  grudge: Record<number, number>;
 };
 
 export type RaceEvent =
@@ -376,6 +384,7 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       foeUntil: 0,
       nextSwing: 0,
       ramUntil: 0,
+      grudge: {},
     });
   });
   for (const r of race.riders) {
@@ -433,6 +442,7 @@ function placeCops(race: Race, level: number, bike: Bike): void {
       skill: 1,
       aggression: 2.5,
       attack: null,
+      grudge: {},
     });
   });
 }
@@ -811,8 +821,10 @@ function hit(race: Race, by: Rider, on: Rider, move: AttackKind): void {
   on.build = Math.max(0, on.build - TUNE.buildHitLoss);
   if (move === "kick") on.shove = (on.x >= by.x ? 1 : -1) * TUNE.kickShove; // (C4)
   race.events.push({ t: race.t, kind: "hit", by: by.id, on: on.id, move });
-  // hit a cop and he is after you, whoever he was after before (P7)
+  // hit a cop and he is after you, whoever he was after before (P7); hit
+  // anyone else and they hold it against you for the rest of the race (O5)
   if (on.cop && !by.cop) on.chase = by.id;
+  else if (!on.cop) on.grudge[by.id] = (on.grudge[by.id] ?? 0) + 1;
   if (on.stamina <= 0) crash(on, "knockdown", race); // (C8)
 }
 
@@ -1158,12 +1170,19 @@ export function clearLine(race: Race, r: Rider, line: number): number | null {
  * (351.5-357.5), swinging about once a second. The first AI only swung at
  * whoever happened to be within 1.6 m and held its line to avoid everyone
  * else, so a player could ride a whole race untouched: 3-7 swings in 90 s
- * (scripts/fights.ts). Now each AI rider picks a foe near it - a human far
- * more readily than another AI - rides to its side and duels it.
+ * (scripts/fights.ts). Each AI rider then picked a foe near it, a human 37
+ * times as readily as another AI, and held level with it at any cost: it
+ * spent 14.7 times as long set on the player as on any AI rider, and rode
+ * like it cared more about the player losing than about winning. Now it
+ * fights as the original's riders do, "over position, and they take cheap
+ * shots if they hold a grudge" (FADE, PCM): with whoever is level with it,
+ * and with whoever has hit it, human or not alike (O5).
  */
 function pickFoe(race: Race, r: Rider): Rider | null {
   let foe = r.foe >= 0 ? race.riders.find((o) => o.id === r.foe) : undefined;
-  if (foe && (foe.phase !== "riding" || race.t > r.foeUntil || Math.abs(foe.z - r.z) > (foe.cop ? 260 : 60))) {
+  // a foe dropped behind is left there: it never waits for one (O5)
+  const dropped = foe && !foe.cop && foe.z < r.z - TUNE.foeDropped;
+  if (foe && (dropped || foe.phase !== "riding" || race.t > r.foeUntil || Math.abs(foe.z - r.z) > (foe.cop ? 260 : 60))) {
     // given up: a breather before the next
     r.foe = -1;
     r.foeUntil = race.t + 2 + random(race) * 3;
@@ -1177,10 +1196,14 @@ function pickFoe(race: Race, r: Rider): Rider | null {
     const dz = o.z - r.z;
     // a cop is picked from far enough back to brake down to his patrol speed
     if (dz < -25 || dz > (o.cop ? 250 : 50)) continue;
-    // humans are who the field is out for; AI riders mostly leave each other
-    // be; a patrolling cop is a fight they pick too, keener without a weapon
-    // of their own, since his club is the easiest one to take (C7, P7)
-    const keen = r.aggression * (o.cop ? (o.chase >= 0 ? 0 : r.weapon ? TUNE.foeCopArmed : TUNE.foeCopUnarmed) : o.human ? TUNE.foeHuman : TUNE.foeAI);
+    // a patrolling cop is a fight they pick too, keener without a weapon of
+    // their own, since his club is the easiest one to take (C7, P7). Any
+    // other rider is fought for the place it is level with, or for blows it
+    // landed earlier; whether it is a person or not does not come into it
+    const grudge = Math.min(3, r.grudge[o.id] ?? 0);
+    const keen = o.cop
+      ? r.aggression * (o.chase >= 0 ? 0 : r.weapon ? TUNE.foeCopArmed : TUNE.foeCopUnarmed)
+      : (Math.abs(dz) < TUNE.rivalRange ? r.aggression * TUNE.foeRival : 0) + (dz > -TUNE.foeDropped && dz < TUNE.grudgeRange ? grudge * TUNE.foeGrudge : 0);
     if (random(race) < keen * DT) {
       r.foe = o.id;
       r.foeUntil = race.t + TUNE.duelMin + random(race) * TUNE.duelSpread * (0.5 + r.aggression);
@@ -1262,17 +1285,20 @@ function duelInput(race: Race, r: Rider, foe: Rider): Input {
   if (steer > 0.25) input.right = true;
   else if (steer < -0.25) input.left = true;
   if (Math.abs(r.lean) > 0.85 && r.leanHeld > TUNE.leanLimit * 0.4) input.left = input.right = false;
-  // level with it: catch up, or ease off and brake when past it
   const closing = r.speed - foe.speed;
-  // and from far back, braked in time to arrive at its speed rather than
-  // shoot past: a patrolling cop is 200 km/h slower than the field
-  const ahead = -dz + Math.max(closing * 0.4, closing > 0 ? (closing * closing) / (2 * TUNE.brake) + 1 : 0);
-  if (ahead > 0.3) input.throttle = false;
-  if (ahead > 1.5) input.brake = true;
-  // riding a fight it rides flat out, whatever blows it has taken: with the
-  // build-up knocked back by every hit it could never catch a player who had
-  // not been touched, and the fight went to whoever was in front (R17)
-  r.build = 1;
+  if (foe.cop) {
+    // a cop is a fight picked for his club: braked down to his patrol speed,
+    // 200 km/h under the field's, in time to arrive level rather than shoot past
+    const ahead = -dz + Math.max(closing * 0.4, closing > 0 ? (closing * closing) / (2 * TUNE.brake) + 1 : 0);
+    if (ahead > 0.3) input.throttle = false;
+    if (ahead > 1.5) input.brake = true;
+  }
+  // a rider is fought on the way, at the pace it races at: it used to ease off
+  // and brake to stay level with a slower foe, and ride with its build-up held
+  // full whatever blows it took, which no player had - it threw its own race
+  // to spoil someone else's. Now it neither waits (a foe that drops back is
+  // left, pickFoe) nor rides any faster than it races
+  else if (r.speed > topSpeed(r) * r.skill) input.throttle = false;
   // too far behind to close on the throttle: a burst of nitro (R8)
   if (dz > 6 && closing < 4 && r.boost <= 0 && !r.prevNitro) input.nitro = true;
   // bends still have to be ridden
