@@ -27,6 +27,9 @@ export const LIVERIES: Livery[] = [
 
 /** A livery number from anywhere (a message, storage), as one that exists, or undefined. */
 export const liveryOf = (n: unknown): number | undefined => {
+  // Number(null) and Number("") are 0, a real livery: a first visit's empty
+  // storage read as a pick of the first one, and every newcomer wore it
+  if (n === null || n === undefined || n === "") return undefined;
   const i = Math.round(Number(n));
   return Number.isInteger(i) && i >= 0 && i < LIVERIES.length ? i : undefined;
 };

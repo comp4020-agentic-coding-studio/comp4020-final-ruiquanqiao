@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { liveryOf } from "../game/liveries.ts";
 import type { Standing, ToClient } from "../game/protocol.ts";
 import { type Conn, Lobby } from "../server/lobby.ts";
 
@@ -191,6 +192,16 @@ describe("each person's leathers", () => {
     const { l } = lobby();
     const a = conn(1);
     l.join(a, "ai", 1, 0, 0, 0, 99);
+    l.tick(6);
+    expect(started(a).at(-1)!.entrants.find((e) => e.human)!.look).toBeUndefined();
+  });
+
+  it("read nothing stored or sent as no pick, so a first visit is dealt one at random", () => {
+    for (const nothing of [null, undefined, ""]) expect(liveryOf(nothing)).toBeUndefined();
+    expect(liveryOf("0")).toBe(0);
+    const { l } = lobby();
+    const a = conn(1);
+    l.join(a, "ai", 1, 0, 0, 0, null);
     l.tick(6);
     expect(started(a).at(-1)!.entrants.find((e) => e.human)!.look).toBeUndefined();
   });

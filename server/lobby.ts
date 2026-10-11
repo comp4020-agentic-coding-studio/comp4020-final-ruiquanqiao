@@ -76,7 +76,7 @@ export class Lobby {
 
   // ---- the pools (N2, N3) ----
 
-  join(conn: Conn, mode: Mode, level: number, now: number, road = 0, field?: number, look?: number): void {
+  join(conn: Conn, mode: Mode, level: number, now: number, road = 0, field?: number, look?: unknown): void {
     if (conn.race && !conn.race.ended) return; // already racing
     this.leave(conn, now);
     conn.pool = mode;
