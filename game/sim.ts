@@ -169,8 +169,23 @@ export const TUNE = {
   /** how readily an unarmed AI rider grabs in that window, per second per aggression */
   aiGrab: 3.2,
   weaponCooldown: 0.9,
-  /** share of AI riders who start a race armed (C5) */
-  armedShare: 0.25,
+  /**
+   * What a level is (S6): how ready the field is to fight. An AI rider's
+   * aggression is multiplied by this, and so are how hard it holds a grudge,
+   * how soon after one fight it starts the next and how quick its beat is;
+   * above level 1 it takes cheap shots mid-fight (duelInput); more riders
+   * start with a weapon (C5) and the field races nearer the bike's top.
+   * Levels were told apart by road length; every race is now about two
+   * minutes (T2), so this is the difference. Aggression alone was tried
+   * first, then with the range a rival is looked for widened by the same
+   * factor: a field that busy with its own fights hit a player alongside it
+   * less at level 5 than at level 1 (0.17 blows a second against 0.25), and
+   * a rival picked 12 m up the road was never caught
+   */
+  temper: [1, 1.5, 2, 2.6, 3.2],
+  armedByLevel: [0.25, 0.35, 0.45, 0.55, 0.65],
+  /** the slowest share of top speed an AI rider races at, by level: a tougher field keeps up (S6) */
+  paceByLevel: [0.9, 0.92, 0.94, 0.96, 0.98],
   /** stopped or off the bike this close to a cop is Busted (P1), m */
   bustRange: 12,
 };
@@ -263,6 +278,8 @@ export type Rider = {
   line: number; // preferred x
   skill: number; // fraction of top speed it aims for
   aggression: number; // chance per second of starting something
+  /** the level's temper (TUNE.temper): how far and how hard it looks for a fight */
+  temper: number;
   /** the rider this one has picked a fight with (C11), or -1 */
   foe: number;
   /** race time the fight is given up at, or (with no foe) when another may be picked */
@@ -402,6 +419,7 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       line: col * 2.8,
       skill: 0,
       aggression: 0,
+      temper: 1,
       foe: -1,
       foeUntil: 0,
       nextSwing: 0,
@@ -411,11 +429,12 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
   });
   for (const r of race.riders) {
     if (r.human) continue;
-    r.skill = 0.9 + random(race) * 0.12;
-    r.aggression = 0.15 + random(race) * 0.5;
+    r.skill = TUNE.paceByLevel[level - 1] + random(race) * 0.12;
+    r.temper = TUNE.temper[level - 1];
+    r.aggression = (0.15 + random(race) * 0.5) * r.temper;
     r.line = (random(race) * 2 - 1) * (ROAD_HALF - 1.5);
     // "some rashers begin each race with a weapon (either a chain or a bat)"
-    if (random(race) < TUNE.armedShare) r.weapon = random(race) < 0.5 ? "chain" : "club";
+    if (random(race) < TUNE.armedByLevel[level - 1]) r.weapon = random(race) < 0.5 ? "chain" : "club";
   }
   placeCops(race, level, bike);
   placeTraffic(race, level);
@@ -1208,7 +1227,7 @@ function pickFoe(race: Race, r: Rider): Rider | null {
   if (foe && (dropped || foe.phase !== "riding" || race.t > r.foeUntil || Math.abs(foe.z - r.z) > (foe.cop ? 260 : 60))) {
     // given up: a breather before the next
     r.foe = -1;
-    r.foeUntil = race.t + 2 + random(race) * 3;
+    r.foeUntil = race.t + (2 + random(race) * 3) / r.temper;
     foe = undefined;
   }
   // a patrolling cop ahead is worth leaving any other fight for, or the
@@ -1239,7 +1258,7 @@ function pickFoe(race: Race, r: Rider): Rider | null {
     // level with, or for blows it landed earlier, whether a person or not
     if (o.cop || dz < -25 || dz > 50) continue;
     const grudge = Math.min(3, r.grudge[o.id] ?? 0);
-    const keen = (Math.abs(dz) < TUNE.rivalRange ? r.aggression * TUNE.foeRival : 0) + (dz > -TUNE.foeDropped && dz < TUNE.grudgeRange ? grudge * TUNE.foeGrudge : 0);
+    const keen = (Math.abs(dz) < TUNE.rivalRange ? r.aggression * TUNE.foeRival : 0) + (dz > -TUNE.foeDropped && dz < TUNE.grudgeRange ? grudge * TUNE.foeGrudge * r.temper : 0);
     if (random(race) < keen * DT) {
       r.foe = o.id;
       r.foeUntil = race.t + TUNE.duelMin + random(race) * TUNE.duelSpread * (0.5 + r.aggression);
@@ -1368,7 +1387,15 @@ function duelInput(race: Race, r: Rider, foe: Rider): Input {
   if (race.t >= r.nextSwing && Math.abs(dz) < 1.6 && Math.abs(foe.x - r.x) < 1.7 && !r.attack) {
     if (random(race) < (kickPays(race, r, foe) ? 0.85 : 0.1)) input.foot = true;
     else input.hand = true;
-    r.nextSwing = race.t + TUNE.duelBeat * (0.8 + random(race) * 0.4);
+    r.nextSwing = race.t + (TUNE.duelBeat / Math.sqrt(r.temper)) * (0.8 + random(race) * 0.4);
+  }
+  // above level 1 a fight does not keep it off anyone else (S6): whoever
+  // comes within reach while it is at it, a person or not, may take a cheap
+  // shot. Without this a field in a temper was busy with its own fights, and
+  // a player alongside it was hit less at level 5 than at level 1
+  else if (!r.attack && r.temper > 1) {
+    const near = nearest(race, r);
+    if (near && near !== foe && !near.cop && Math.abs(near.z - r.z) < 1.6 && Math.abs(near.x - r.x) < 1.6 && random(race) < r.aggression * (r.temper - 1) * DT * 4) input.hand = true;
   }
   // grabbing a weapon drawn back at it still comes first (C6)
   if (!r.weapon && !r.prevHand && grabbable(race, r) && random(race) < r.aggression * DT * TUNE.aiGrab) input.hand = true;

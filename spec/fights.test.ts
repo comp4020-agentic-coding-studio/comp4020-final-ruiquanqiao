@@ -225,3 +225,46 @@ describe("riders and the police", () => {
     expect(slowest).toBeLessThan(100 * KMH);
   });
 });
+
+// Levels (S6). A level was told apart by road length; every race is now about
+// two minutes (T2), and a level is how ready the field is to fight. Measured
+// over 5 roads and 3 seeds, a player who rides flat out and never swings,
+// blows landed a second spent alongside an AI rider: 0.25 at level 1, 0.28
+// at 3, 0.40 at 5; blows the AI riders swing at each other in 90 s: 147 at
+// level 1, 262 at 3, 227 at 5. With only aggression scaled (x3.2 at level 5),
+// the field was so busy with its own fights that a player alongside was hit
+// less at level 5 (0.17) than at level 1.
+
+/** Over 90 s on every road and two seeds: blows landed on a never-swinging player a second alongside, and blows among the AI. */
+function temperOf(level: number): { perAlongside: number; amongAI: number } {
+  let hits = 0;
+  let alongside = 0;
+  let amongAI = 0;
+  for (const seed of [11, 3]) {
+    ROADS.forEach((_, road) => {
+      const race = startRace(makeTrack(level, road), level, Array.from({ length: 15 }, (_, id) => ({ id, name: `r${id}`, human: id === 0 })), seed);
+      const me = race.riders.find((r) => r.id === 0)!;
+      me.skill = 1;
+      let seen = 0;
+      for (let i = 0; i < 90 / DT; i++) {
+        step(race, new Map([[0, { ...aiInput(race, me), hand: false, foot: false }]]));
+        if (race.riders.some((o) => !o.cop && o !== me && Math.abs(o.z - me.z) < 4 && Math.abs(o.x - me.x) < 4)) alongside += DT;
+        for (; seen < race.events.length; seen++) {
+          const e = race.events[seen];
+          if (e.kind !== "hit") continue;
+          if (e.on === 0) hits++;
+          else if (e.by !== 0 && race.riders.find((r) => r.id === e.on && !r.cop)) amongAI++;
+        }
+      }
+    });
+  }
+  return { perAlongside: hits / alongside, amongAI };
+}
+
+describe("a level is a field more ready to fight", () => {
+  it("hits harder at level 5 than at level 1, a person alongside and each other alike", () => {
+    const [low, high] = [temperOf(1), temperOf(5)];
+    expect(high.perAlongside).toBeGreaterThan(low.perAlongside * 1.25);
+    expect(high.amongAI).toBeGreaterThan(low.amongAI * 1.25);
+  });
+});
