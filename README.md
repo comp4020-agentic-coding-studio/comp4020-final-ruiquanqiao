@@ -19,8 +19,8 @@ steer hard at speed and gets faster the longer you ride clean.
 
 **Your bike answers your keys, not the network.** The server owns the race,
 but each browser runs the same simulation for its own rider, so steering and
-swings happen on the keypress. Everyone else is drawn a tenth of a second in
-the past, between two real positions, as Gabriel Gambetta describes. The
+swings happen on the keypress. Everyone else is interpolated a tenth of a
+second back and carried forward to now, as Gabriel Gambetta describes. The
 cost: the rider you punch is where the server says, not quite where you see
 them.
 
