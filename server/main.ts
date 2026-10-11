@@ -2,7 +2,7 @@
 // browser tab. Run directly by node (type stripping); no build step.
 
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { marked } from "marked";
@@ -32,6 +32,10 @@ const TYPES: Record<string, string> = {
   ".ttf": "font/ttf",
   ".txt": "text/plain; charset=utf-8",
   ".map": "application/json",
+  ".jpg": "image/jpeg",
+  ".glb": "model/gltf-binary",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
 };
 
 function readme(): string {
@@ -54,12 +58,39 @@ ${body}
 </html>`;
 }
 
-function serveFile(res: ServerResponse, file: string): void {
+/**
+ * A file, revalidated by ETag so an unchanged one is not sent twice, and in
+ * byte ranges when asked: Safari will not play an <audio> track from a
+ * server that cannot send part of it, and every road's music is one.
+ */
+function serveFile(res: ServerResponse, file: string, req?: IncomingMessage): void {
   if (!existsSync(file)) {
     res.writeHead(404, { "content-type": "text/plain" }).end("not found");
     return;
   }
-  res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream", "cache-control": "no-cache" });
+  const st = statSync(file);
+  const tag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+  const head = { "content-type": TYPES[extname(file)] ?? "application/octet-stream", "cache-control": "no-cache", etag: tag, "accept-ranges": "bytes" };
+  if (req?.headers["if-none-match"] === tag) {
+    res.writeHead(304, head).end();
+    return;
+  }
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req?.headers.range ?? "");
+  if (range && (range[1] || range[2])) {
+    const size = st.size;
+    let start = range[1] ? Number(range[1]) : size - Number(range[2]);
+    let end = range[1] && range[2] ? Number(range[2]) : size - 1;
+    start = Math.max(0, start);
+    end = Math.min(size - 1, end);
+    if (start > end) {
+      res.writeHead(416, { "content-range": `bytes */${size}` }).end();
+      return;
+    }
+    res.writeHead(206, { ...head, "content-range": `bytes ${start}-${end}/${size}`, "content-length": end - start + 1 });
+    res.end(readFileSync(file).subarray(start, end + 1));
+    return;
+  }
+  res.writeHead(200, head);
   res.end(readFileSync(file));
 }
 
@@ -94,7 +125,7 @@ const server = createServer((req, res) => {
   if (rel.startsWith("docs")) return serveFile(res, join(ROOT, rel));
   // hand-written files in client/public, the bundle in dist/
   const pub = join(ROOT, "client", "public", rel);
-  return serveFile(res, existsSync(pub) ? pub : join(ROOT, "dist", rel));
+  return serveFile(res, existsSync(pub) ? pub : join(ROOT, "dist", rel), req);
 });
 
 // ---- sockets ----

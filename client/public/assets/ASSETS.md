@@ -1,8 +1,9 @@
 # Asset inventory
 
 Every file in this directory, where it came from and where its licence is
-stated. All of it is CC0 (public domain): no attribution is required, and it
-is credited here anyway. Nothing here comes from *Road Rash*.
+stated. All of it is CC0 (public domain) except the race music, which is CC BY
+4.0 and credited below as that licence asks; the CC0 files need no credit and
+are credited anyway. Nothing here comes from *Road Rash*.
 
 The bike, the road markings, the mountain skyline and the pines are not files:
 they are drawn in code in `client/models.ts` and `client/scene.ts`.
@@ -37,3 +38,32 @@ is resized to 512 px.
 | File | What it is | Source | Licence |
 |---|---|---|---|
 | `sky/sky.jpg` | "Kloofendal 48d Partly Cloudy (pure sky)", tonemapped and resized to 2048x1024 | https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky | CC0, https://polyhaven.com/license |
+
+## Music
+
+One track per road, by Kevin MacLeod, re-encoded to 96 kbps MP3 and
+loudness-normalised to -16 LUFS so every road plays at the same level.
+
+| File | Road | Track | Source |
+|---|---|---|---|
+| `music/ridge.mp3` | Ridge Road | "Exhilarate" | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Exhilarate.mp3 |
+| `music/seawall.mp3` | Seawall Highway | "Riptide" | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Riptide.mp3 |
+| `music/orchard.mp3` | Orchard Valley | "Cool Rock" | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Cool%20Rock.mp3 |
+| `music/goldtown.mp3` | Gold Town | "Hotrock" | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Hotrock.mp3 |
+| `music/canyon.mp3` | Red Canyon | "Neolith" | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Neolith.mp3 |
+
+"Exhilarate", "Riptide", "Cool Rock", "Hotrock" and "Neolith" Kevin MacLeod
+(incompetech.com). Licensed under Creative Commons: By Attribution 4.0
+License, http://creativecommons.org/licenses/by/4.0/
+
+## Sound effects
+
+| Files | What it is | Source | Licence |
+|---|---|---|---|
+| `sfx/wood-light-0..4.wav` | `impactWood_light_000..004`: the crack of a club on a helmet | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) 1.0 | CC0 1.0, stated in the pack's License.txt |
+| `sfx/tin-medium-0..4.wav` | `impactTin_medium_000..004`: the helmet shell ringing under it | as above | as above |
+
+Each is trimmed of its leading silence, so the crack lands on the frame the
+blow does, cut to 0.3 s and saved as mono 16-bit WAV: an MP3 would start
+about 26 ms late. Every other sound in the game is synthesised in
+`client/audio.ts`.

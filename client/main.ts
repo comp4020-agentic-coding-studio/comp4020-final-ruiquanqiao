@@ -5,7 +5,7 @@
 
 import { type CarState, type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
-import { setMusic, sfx, startAudio, updateAudio } from "./audio.ts";
+import { setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { react } from "./feel.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
@@ -72,6 +72,9 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
     roadScene.setTrack(track);
     resize();
     banner(`${track.name} · level ${msg.level} · ${(track.length / 1000).toFixed(1)} km`, 2500);
+    // each road has its own track, from the top at every start; chosen before
+    // the audio starts, or the first road's track is fetched on every road
+    setRoad(msg.track ?? 0);
     startAudio();
     $("#touch").querySelectorAll("button").forEach((b) => b.classList.remove("down"));
   } else {
@@ -151,8 +154,12 @@ function sound(c: Current, e: Extract<ToClient, { t: "snap" }>["events"][number]
   };
   if (e.kind === "hit" && (e.by === c.you || e.on === c.you || near(e.on))) {
     const by = c.race.riders.find((x) => x.id === e.by);
-    if (e.on === c.you) sfx("hitTaken");
-    else sfx(e.move === "kick" ? "kick" : by?.weapon ?? "punch");
+    const weapon = e.move === "kick" ? "kick" : (by?.weapon ?? "punch");
+    // a club on one's own helmet cracks as loud as one landed on anyone else's
+    if (e.on === c.you) {
+      sfx("hitTaken");
+      if (weapon === "club") sfx("club");
+    } else sfx(weapon);
   }
   if (e.kind === "crash" && (e.rider === c.you || near(e.rider))) sfx(e.cause === "rearEnd" || e.cause === "headOn" ? "carCrash" : "crash");
   if (e.kind === "snatch" && (e.by === c.you || e.from === c.you)) sfx("snatch");
@@ -249,7 +256,9 @@ for (const b of document.querySelectorAll<HTMLButtonElement>(".queue button")) {
   b.addEventListener("click", () => {
     const level = Number(document.querySelector<HTMLInputElement>('input[name="level"]:checked')?.value ?? 1);
     const track = Number(document.querySelector<HTMLInputElement>('input[name="road"]:checked')?.value ?? 0);
-    // the click is the gesture a browser wants before it will play sound
+    // the click is the gesture a browser wants before it will play sound;
+    // the road asked for plays while the pool fills
+    setRoad(track);
     startAudio();
     send({ t: "queue", mode: b.dataset.mode as Mode, level, track, ai: Number(aiCount.value) });
   });
@@ -646,6 +655,8 @@ window.__rash = {
   press: (k: keyof Input, down: boolean) => setKey(k, down),
   scene: () => roadScene,
   heard: () => heard,
+  /** the music and the recorded hits: what is loaded and playing */
+  sound: () => soundState(),
   /** one's own bike as drawn this frame, between its last two steps */
   self: () => drawnSelf,
   /** everyone as drawn this frame, unrounded */

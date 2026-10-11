@@ -60,6 +60,11 @@ top-three finish qualifies you on that road at that level for good.
   notes on them are in [the research file](docs/road-rash-research.md). How it
   looks is measured off 137 screenshots of the PC and 3DO versions in
   [the visuals file](docs/road-rash-visuals.md).
+- Race music: "Exhilarate", "Riptide", "Cool Rock", "Hotrock" and "Neolith"
+  Kevin MacLeod (incompetech.com), licensed under Creative Commons: By
+  Attribution 4.0 License, http://creativecommons.org/licenses/by/4.0/. The
+  club's crack is from Kenney's Impact Sounds (CC0). Every asset is listed in
+  [the asset inventory](client/public/assets/ASSETS.md).
 - Gabriel Gambetta, [Fast-Paced Multiplayer](https://www.gabrielgambetta.com/client-server-game-architecture.html),
   for predicting your own rider and interpolating everyone else.
 - Robin Sloan, [An app can be a home-cooked meal](https://www.robinsloan.com/notes/home-cooked-app/)
