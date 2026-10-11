@@ -109,8 +109,19 @@ export const TUNE = {
   flungDecel: 12,
   kickCooldown: 0.6,
   punchStamina: 12,
-  kickStamina: 5,
-  kickShove: 7, // m/s sideways given to the target
+  /**
+   * A kick is not a blow (C4): it costs no stamina and throws the target's
+   * bike sideways, into whatever is beside it - a car, the rail, a cliff, a
+   * tree past the shoulder. In the recording a kicked rival's bike is over on
+   * the next frame and off the side of the picture 0.16 s later, at about
+   * 70 km/h (57.24-57.44); RR2: "kick does no damage but pushes the bike".
+   * It was a weak punch with a nudge, 5 stamina and 7 m/s fading at 4 a
+   * second, 1.75 m in all: a rider steered back from it before it showed.
+   * Now 15 m/s fading at 2 a second, 7.5 m if nothing stops it
+   */
+  kickStamina: 0,
+  kickShove: 15, // m/s sideways given to the target
+  kickFade: 2, // per second, against a rub's 4
   // stamina comes back fast once the blows stop (M1). It was 4 a second
   // after 2.5 s clear, then 12 after 2 s as read off the recording; but a
   // duellist swings about once a second for 5-15 s, so the rest never came
@@ -219,7 +230,9 @@ export type Rider = {
   x: number; // rider, metres from the centre line
   speed: number; // m/s along the road
   vx: number; // m/s sideways
-  shove: number; // m/s sideways from a kick, decaying
+  shove: number; // m/s sideways from a kick or a rub, decaying
+  /** how fast the shove dies away, per second: slower after a kick */
+  shoveFade: number;
   lean: number; // -1..1
   leanHeld: number; // s at full lean
   build: number; // 0..1 (R17)
@@ -368,6 +381,7 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       speed: 0,
       vx: 0,
       shove: 0,
+      shoveFade: 4,
       lean: 0,
       leanHeld: 0,
       build: 0,
@@ -642,7 +656,8 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   const rate = TUNE.steerSlow + (TUNE.steerFast - TUNE.steerSlow) * speedFrac;
   const target = r.speed < 0.5 ? 0 : steer * rate * (1 + TUNE.leanTurn * Math.abs(r.lean));
   r.vx += (target - r.vx) * Math.min(1, TUNE.steerResponse * dt);
-  r.shove *= Math.exp(-4 * dt);
+  r.shove *= Math.exp(-r.shoveFade * dt);
+  if (Math.abs(r.shove) < 1) r.shoveFade = 4;
   const outward = TUNE.centrifugal * r.speed * r.speed * curveAt(track, r.z);
   const lateral = r.vx + r.shove - outward;
   r.x += lateral * dt;
@@ -840,13 +855,23 @@ function hit(race: Race, by: Rider, on: Rider, move: AttackKind): void {
   on.stamina = Math.max(0, on.stamina - loss);
   on.sinceHit = 0;
   on.build = Math.max(0, on.build - TUNE.buildHitLoss);
-  if (move === "kick") on.shove = (on.x >= by.x ? 1 : -1) * TUNE.kickShove; // (C4)
+  if (move === "kick") kicked(on, by.x); // (C4)
   race.events.push({ t: race.t, kind: "hit", by: by.id, on: on.id, move });
   // hit a cop and he is after you, whoever he was after before (P7); hit
   // anyone else and they hold it against you for the rest of the race (O5)
   if (on.cop && !by.cop) on.chase = by.id;
   else if (!on.cop) on.grudge[by.id] = (on.grudge[by.id] ?? 0) + 1;
   if (on.stamina <= 0) crash(on, "knockdown", race); // (C8)
+}
+
+/**
+ * Throw a kicked rider's bike away from the kicker (C4). The client calls it
+ * on its own predicted bike when it hears it was kicked, so the throw is seen
+ * as it happens rather than corrected into place afterwards.
+ */
+export function kicked(on: Rider, fromX: number): void {
+  on.shove = (on.x >= fromX ? 1 : -1) * TUNE.kickShove;
+  on.shoveFade = TUNE.kickFade;
 }
 
 /** Trees and poles beyond the shoulder stop a bike dead (R12). */
@@ -1289,6 +1314,30 @@ export function aiInput(race: Race, r: Rider): Input {
 }
 
 /** Riding a duel: up beside the foe, held there, swinging on the beat, now and then rubbing it over. */
+/**
+ * Whether a kick would throw `foe` into something: a wall or the sea rail,
+ * a tree or pole past the shoulder, or a car, within a kick's throw of it on
+ * the side away from `r` in the next second of road. A person reads the
+ * road the same way before kicking; the rule is the same for anyone.
+ */
+export function kickPays(race: Race, r: Rider, foe: Rider): boolean {
+  const away = foe.x >= r.x ? 1 : -1;
+  const reach = TUNE.kickShove / TUNE.kickFade;
+  const ahead = Math.max(15, foe.speed);
+  for (let dz = 0; dz <= ahead; dz += 5) if (wallAt(race.track, foe.z + dz, away) - foe.x * away < reach) return true;
+  for (const s of race.track.scenery) {
+    if (s.z > foe.z + ahead) break; // the scenery is sorted along the road
+    if (s.z < foe.z || s.kind === "bush") continue;
+    const off = (s.x - foe.x) * away;
+    if (off > 0 && off < reach) return true;
+  }
+  for (const c of race.cars) {
+    const off = (c.x - foe.x) * away;
+    if (off > 0 && off < reach && c.z > foe.z - 3 && c.z < foe.z + ahead) return true;
+  }
+  return false;
+}
+
 function duelInput(race: Race, r: Rider, foe: Rider): Input {
   const input: Input = { ...NO_INPUT, throttle: true };
   const dz = foe.z - r.z;
@@ -1326,10 +1375,11 @@ function duelInput(race: Race, r: Rider, foe: Rider): Input {
   const need = TUNE.centrifugal * r.speed * r.speed * Math.abs(curve);
   if (need > 0.8 * TUNE.steerFast) input.throttle = false;
   if (need > 1.05 * TUNE.steerFast) input.brake = true;
-  // swing on the beat when it is in reach (C1): hand mostly, foot to shove
+  // swing on the beat when it is in reach (C1): a fist or the weapon, unless
+  // the foe has something on its far side to be kicked into (C4)
   if (race.t >= r.nextSwing && Math.abs(dz) < 1.6 && Math.abs(foe.x - r.x) < 1.7 && !r.attack) {
-    if (random(race) < 0.7) input.hand = true;
-    else input.foot = true;
+    if (random(race) < (kickPays(race, r, foe) ? 0.85 : 0.1)) input.foot = true;
+    else input.hand = true;
     r.nextSwing = race.t + TUNE.duelBeat * (0.8 + random(race) * 0.4);
   }
   // grabbing a weapon drawn back at it still comes first (C6)

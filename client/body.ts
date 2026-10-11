@@ -23,6 +23,12 @@ export type Prim = {
   squash?: { axis: THREE.Vector3; s: number };
   /** how far it blends into what came before, m */
   k: number;
+  /**
+   * a rounded block centred on `a` instead of a capsule: its axes, half its
+   * size along each, and how round its edges are. Gloves and boots are
+   * blocks; as capsules they ended in balls, a cartoon's hands and feet
+   */
+  box?: { u: THREE.Vector3; v: THREE.Vector3; w: THREE.Vector3; half: [number, number, number]; round: number };
 };
 
 const v = new THREE.Vector3();
@@ -55,6 +61,21 @@ function roundCone(p: THREE.Vector3, prim: Prim): number {
   return (Math.sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
 }
 
+/** Distance to a rounded block (iq's round box), in the block's own axes. */
+function roundBox(p: THREE.Vector3, prim: Prim): number {
+  const b = prim.box!;
+  const d = v.copy(p).sub(prim.a);
+  const qx = Math.abs(d.dot(b.u)) - (b.half[0] - b.round);
+  const qy = Math.abs(d.dot(b.v)) - (b.half[1] - b.round);
+  const qz = Math.abs(d.dot(b.w)) - (b.half[2] - b.round);
+  const ox = Math.max(qx, 0);
+  const oy = Math.max(qy, 0);
+  const oz = Math.max(qz, 0);
+  return Math.sqrt(ox * ox + oy * oy + oz * oz) + Math.min(Math.max(qx, qy, qz), 0) - b.round;
+}
+
+const dist = (p: THREE.Vector3, q: Prim): number => (q.box ? roundBox(p, q) : roundCone(p, q));
+
 const smin = (a: number, b: number, k: number): number => {
   const h = Math.max(k - Math.abs(a - b), 0) / k;
   return Math.min(a, b) - h * h * k * 0.25;
@@ -65,7 +86,7 @@ function partAt(prims: Prim[], p: THREE.Vector3): number {
   let best = prims[0];
   let bd = Infinity;
   for (const q of prims) {
-    const d = roundCone(p, q);
+    const d = dist(p, q);
     if (d < bd) [bd, best] = [d, q];
   }
   if (!best.out || best.stripe === undefined) return best.part;
@@ -86,6 +107,20 @@ export function meshBody(prims: Prim[], colour: (part: number) => THREE.Color, i
   const lo = new THREE.Vector3(Infinity, Infinity, Infinity);
   const hi = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
   const boxes = prims.map((q) => {
+    if (q.box) {
+      // the block's reach along each world axis, and the blend's
+      const { u, v: vv, w: ww, half } = q.box;
+      const e = new THREE.Vector3(
+        Math.abs(u.x) * half[0] + Math.abs(vv.x) * half[1] + Math.abs(ww.x) * half[2],
+        Math.abs(u.y) * half[0] + Math.abs(vv.y) * half[1] + Math.abs(ww.y) * half[2],
+        Math.abs(u.z) * half[0] + Math.abs(vv.z) * half[1] + Math.abs(ww.z) * half[2],
+      ).addScalar(q.k + 2 * h);
+      const bl = q.a.clone().sub(e);
+      const bh = q.a.clone().add(e);
+      lo.min(bl);
+      hi.max(bh);
+      return [bl, bh] as const;
+    }
     const r = Math.max(q.r1, q.r2) * (q.squash ? Math.max(1, q.squash.s) : 1) + q.k + 2 * h;
     const bl = new THREE.Vector3().copy(q.a).min(q.b).subScalar(r);
     const bh = new THREE.Vector3().copy(q.a).max(q.b).addScalar(r);
@@ -113,7 +148,7 @@ export function meshBody(prims: Prim[], colour: (part: number) => THREE.Color, i
         for (let i = i0; i <= i1; i++) {
           p.set(lo.x + i * h, lo.y + j * h, lo.z + k * h);
           const o = at(i, j, k);
-          f[o] = smin(f[o], roundCone(p, q), q.k);
+          f[o] = smin(f[o], dist(p, q), q.k);
         }
   });
 

@@ -22,8 +22,17 @@ import { buildBike } from "./models.ts";
 
 // ---- poses ----
 
-/** Which part a pixel belongs to: 0 keeps its own colour; the rest are tinted. */
-const PART = { fixed: 0, main: 1, trim: 2, helmet: 3, paint: 4, paintTrim: 5 } as const;
+/**
+ * Which part a pixel belongs to. The atlas keeps only how bright each pixel
+ * is, and its part; the colour is the part's tint, given when it is drawn.
+ * 0 (tyres, metal, gloves, boots, visor) is grey and keeps its brightness;
+ * the leathers and paint take the rider's colours; the lamp and the club's
+ * wood have fixed tints of their own.
+ */
+const PART = { fixed: 0, main: 1, trim: 2, helmet: 3, paint: 4, paintTrim: 5, lamp: 6, wood: 7 } as const;
+const PARTS = 8;
+/** how a part number is written in the id pass, and read back: n * ID_STEP in red */
+const ID_STEP = 28;
 
 type V = [number, number, number];
 
@@ -196,6 +205,65 @@ function reflect(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return r;
 }
 
+// Each blow as a movement, not two pictures. It was drawn as two frames,
+// drawn back and out, and cut from one to the other the instant it landed,
+// so a punch jumped from beside the helmet to arm's length. Frame by frame,
+// the recording's swing travels (247.2-248.0): the arm goes up and holds,
+// then sweeps out through several frames in between, holds at full stretch,
+// and comes back. Here every blow runs through rest, raised, drawn back,
+// two points on the sweep, out, and back down, the in-between poses
+// interpolated from the measured ones on either side.
+
+/** A blow's three measured poses: at rest, drawn back, and out. */
+const BLOWS: Record<string, [string, string, string]> = {
+  punch: ["ride", "punchCock", "punchOut"],
+  club: ["rideClub", "clubUp", "clubOut"],
+  chain: ["rideChain", "chainUp", "chainOut"],
+  backhand: ["ride", "punchCock", "backhand"],
+  backhandClub: ["rideClub", "clubUp", "backhandClub"],
+  backhandChain: ["rideChain", "chainUp", "backhandChain"],
+  kick: ["ride", "kickCock", "kick"],
+};
+
+/** The pose `f` of the way from `a` to `b`: every point moved along the straight line between. */
+function between(a: Pose, b: Pose, f: number): Pose {
+  const lerp = (p?: V, q?: V): V | undefined => (p && q ? [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f, p[2] + (q[2] - p[2]) * f] : (f < 0.5 ? p : q));
+  const w = b.weapon ?? a.weapon;
+  const dir = a.weapon && b.weapon ? new THREE.Vector3(...lerp(a.weapon.dir, b.weapon.dir)!).normalize().toArray() as V : w?.dir;
+  return {
+    ...a,
+    pelvis: lerp(a.pelvis, b.pelvis)!,
+    pitch: a.pitch + (b.pitch - a.pitch) * f,
+    roll: a.roll + (b.roll - a.roll) * f,
+    handR: lerp(a.handR, b.handR)!,
+    handL: lerp(a.handL, b.handL)!,
+    footR: lerp(a.footR, b.footR)!,
+    footL: lerp(a.footL, b.footL)!,
+    elbowR: lerp(a.elbowR, b.elbowR),
+    elbowL: lerp(a.elbowL, b.elbowL),
+    kneeR: lerp(a.kneeR, b.kneeR),
+    kneeL: lerp(a.kneeL, b.kneeL),
+    weapon: w && dir ? { kind: w.kind, dir } : undefined,
+  };
+}
+
+// Where on the way out the two sweep frames sit. Evenly, a third and two
+// thirds, the fist moved 0.97, 0.67 and then 0.09 helmet widths from frame to
+// frame: the measured out pose reaches past arm's length, so the arm is
+// straight long before it gets there. Set earlier for the arm, the fist
+// covers even ground each frame; a kick is chambered nearly out already.
+const SWEEP: Record<string, [number, number]> = { kick: [1 / 3, 2 / 3] };
+const ARM_SWEEP: [number, number] = [0.22, 0.48];
+
+for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
+  const [A, B, C] = [RIGHT[rest], RIGHT[back], RIGHT[out]];
+  const [f1, f2] = SWEEP[blow] ?? ARM_SWEEP;
+  RIGHT[`${blow}~raise`] = between(A, B, 0.5);
+  RIGHT[`${blow}~sweep1`] = between(B, C, f1);
+  RIGHT[`${blow}~sweep2`] = between(B, C, f2);
+  RIGHT[`${blow}~return`] = between(C, A, 0.5);
+}
+
 /** Every frame in the atlas, by name: "punchOut.R", "kick.L", "run2", ... */
 const FRAMES: [string, Pose][] = [
   ...Object.entries(RIGHT).flatMap(([n, p]): [string, Pose][] => [
@@ -210,27 +278,36 @@ export type FrameName = string;
 /** Directions each frame is drawn from: 0 is from straight behind, 180 from in front, positive from the rider's right. */
 const YAWS = [0, 20, 40, 65, 90, 120, 150, 180];
 /**
- * How big a tile is drawn, px: the largest whose atlas fits the GPU, up to
- * 224 (160 on a touch screen, to spare a phone's memory). At 96 and then 128
- * a rider close to the camera showed texels five or six screen pixels across,
- * coarser than the original's own sprites; at 224 a texel near the camera is
- * about three. Tiles run left to right, row after row, so the atlas stays
- * square-ish and inside 4096 px, the most many GPUs can hold.
+ * How big a tile is drawn, px, and how the tiles are laid out: the largest
+ * size up to 224 (160 on a touch screen, to spare a phone's memory) whose
+ * pages fit, each at most 4096 px a side, the most many GPUs can hold, in
+ * as few pages as it takes. At 96 and then 128 a rider close to the camera
+ * showed texels five or six screen pixels across, coarser than the
+ * original's own sprites; at 224 a texel near the camera is about three.
+ * Tiles run left to right, row after row, page after page.
  */
-export function tileSize(maxTexture: number, touch: boolean, tiles = FRAMES.length * YAWS.length): { tile: number; perRow: number; rows: number } {
+export function tileSize(maxTexture: number, touch: boolean, tiles = FRAMES.length * YAWS.length): { tile: number; perRow: number; rows: number; pages: number } {
   const max = Math.min(4096, maxTexture);
+  const fit = (tile: number) => {
+    const perRow = Math.floor(max / tile);
+    const all = Math.ceil(tiles / perRow);
+    const perPage = Math.floor(max / tile);
+    const pages = Math.ceil(all / perPage);
+    // every page as tall as it needs to be, and all of them alike
+    return { tile, perRow, rows: Math.ceil(all / pages), pages };
+  };
   for (const tile of [224, 192, 160, 128, 96, 64]) {
     if (touch && tile > 160) continue;
-    const perRow = Math.floor(max / tile);
-    const rows = Math.ceil(tiles / perRow);
-    if (rows * tile <= max) return { tile, perRow, rows };
+    const t = fit(tile);
+    if (t.pages <= 3) return t;
   }
-  return { tile: 48, perRow: Math.floor(max / 48), rows: Math.ceil(tiles / Math.floor(max / 48)) };
+  return fit(48);
 }
-/** Where frame `i` seen from yaw column `col` sits in the atlas, in tiles. */
-const tileAt = (i: number, col: number, perRow: number): { x: number; y: number } => {
+/** Where frame `i` seen from yaw column `col` sits, in tiles and pages. */
+const tileAt = (i: number, col: number, perRow: number, rows: number): { x: number; y: number; page: number } => {
   const n = i * YAWS.length + col;
-  return { x: n % perRow, y: Math.floor(n / perRow) };
+  const row = Math.floor(n / perRow);
+  return { x: n % perRow, y: row % rows, page: Math.floor(row / rows) };
 };
 /** metres the tile spans, square; the ground is at ANCHOR of its height */
 export const SPAN = 2.8;
@@ -268,9 +345,10 @@ class Puppet {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
       const col = (m.material as THREE.MeshStandardMaterial).color?.getHexString();
-      const part = col === "ff00ff" ? PART.paint : col === "00ffff" ? PART.paintTrim : PART.fixed;
+      const part = col === "ff00ff" ? PART.paint : col === "00ffff" ? PART.paintTrim : col === "ff2010" ? PART.lamp : PART.fixed;
       m.userData.part = part;
-      if (part) m.material = this.mat("#ffffff", 0.35, 0.1);
+      if (part === PART.lamp) m.material = new THREE.MeshStandardMaterial({ color: "#ffffff", emissive: "#ffffff", emissiveIntensity: 0.6 });
+      else if (part) m.material = this.mat("#ffffff", 0.35, 0.1);
     });
     this.root.add(this.bike, this.body);
     const ball = new THREE.SphereGeometry(1, 18, 12);
@@ -288,16 +366,15 @@ class Puppet {
     // everything else is one surface (client/body.ts), coloured per vertex
     this.flesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0 }));
     this.body.add(this.flesh);
-    const wood = this.mat("#8a5a30", 0.8, 0);
+    const wood = this.mat("#ffffff", 0.8, 0);
     const steel = this.mat("#9a9aa2", 0.35, 0.8);
     const club = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.022, 0.75, 10).translate(0, 0.33, 0), wood);
     const chainPts = Array.from({ length: 12 }, (_, i) => new THREE.Vector3(Math.sin(i * 0.5) * 0.04, i * 0.07, 0));
     const chain = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(chainPts), 40, 0.018, 6), steel);
     this.weapons = { club, chain };
-    for (const w of [club, chain]) {
-      w.userData.part = PART.fixed;
-      this.body.add(w);
-    }
+    club.userData.part = PART.wood;
+    chain.userData.part = PART.fixed;
+    this.body.add(club, chain);
   }
 
   private mat(colour: string, roughness: number, metalness: number): THREE.Material {
@@ -344,6 +421,15 @@ class Puppet {
     const cone = (a: THREE.Vector3, b: THREE.Vector3, r1: number, r2: number, part: number, k: number, extra: Partial<Prim> = {}): void => {
       prims.push({ a: a.clone(), b: b.clone(), r1, r2, part, k, ...extra });
     };
+    /** A rounded black block at `c`, its length along `along`, its height as near `up` as it can be: gloves and boots. */
+    const block = (c: THREE.Vector3, along: THREE.Vector3, up: THREE.Vector3, half: [number, number, number], round: number, k: number): void => {
+      const w = along.clone().normalize();
+      let u = new THREE.Vector3().crossVectors(up, w);
+      if (u.lengthSq() < 1e-6) u = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 0, 1), w);
+      u.normalize();
+      const vv = new THREE.Vector3().crossVectors(w, u);
+      prims.push({ a: c.clone(), b: c.clone(), r1: 0, r2: 0, part: PART.fixed, k, box: { u, v: vv, w, half, round } });
+    };
     // the trunk: hips to collar, broader across the shoulders than at the
     // waist and wider than it is deep, the back rounded by the protector.
     // Two-tone as the recording's riders are (punch.jpg, 247.4): the second
@@ -382,8 +468,11 @@ class Puppet {
       // gauntlet is a fist, blended only a little so the cuff stays a cuff
       cone(shoulder, elbow, 0.095, 0.074, PART.main, 0.07);
       cone(elbow, wrist, 0.074, 0.056, PART.main, 0.04);
+      // a gauntlet: a flared cuff, then a squared fist, wider across the
+      // knuckles than it is thick. A capsule here ended the arm in a ball
       const fist = handAt.clone().sub(elbow).normalize();
-      cone(wrist.clone().addScaledVector(fist, 0.02), handAt.clone().addScaledVector(fist, 0.02), 0.058, 0.07, PART.fixed, 0.015);
+      cone(wrist, handAt.clone().addScaledVector(fist, -0.02), 0.06, 0.063, PART.fixed, 0.012);
+      block(handAt.clone().addScaledVector(fist, 0.03), fist, new THREE.Vector3(0, 1, 0), [0.048, 0.038, 0.056], 0.018, 0.012);
       const hip = pelvis.clone().addScaledVector(across, sign * 0.11);
       const foot = v(s === "R" ? p.footR : p.footL);
       const kneePole = v((s === "R" ? p.kneeR : p.kneeL) ?? [sign * -0.4, 0.9, 0.4]);
@@ -392,10 +481,12 @@ class Puppet {
       cone(hip, knee, 0.12, 0.085, PART.main, 0.06);
       const ankle = knee.clone().lerp(footAt, 0.78);
       cone(knee, ankle, 0.085, 0.064, PART.main, 0.04);
-      // the boot, from the top of the shin down to a toe ahead of the foot
-      const toe = footAt.clone().add(new THREE.Vector3(0, -0.04, 0.14));
-      cone(ankle, footAt, 0.062, 0.058, PART.fixed, 0.015);
-      cone(footAt, toe, 0.058, 0.045, PART.fixed, 0.03);
+      // the boot: a shaft up the shin, and a foot that is longer than it is
+      // tall, toe ahead of the heel, its sole square to the shin
+      cone(ankle, footAt, 0.064, 0.06, PART.fixed, 0.015);
+      const shin = knee.clone().sub(footAt).normalize();
+      const ahead = new THREE.Vector3(0, 0, 1).addScaledVector(shin, -shin.z).normalize();
+      block(footAt.clone().addScaledVector(ahead, 0.06).addScaledVector(shin, -0.025), ahead, shin, [0.048, 0.05, 0.125], 0.024, 0.02);
       this.joints[`elbow${s}`] = elbow;
       this.joints[`glove${s}`] = handAt;
       this.joints[`knee${s}`] = knee;
@@ -463,8 +554,8 @@ class Puppet {
 
 const idMats: THREE.MeshBasicMaterial[] = [];
 function idMaterial(id: number): THREE.MeshBasicMaterial {
-  // part n is written as n*40 in red, read back exactly with no filtering
-  return (idMats[id] ??= new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB((id * 40) / 255, 0, 0, THREE.SRGBColorSpace) }));
+  // part n is written as n*ID_STEP in red, read back exactly with no filtering
+  return (idMats[id] ??= new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB((id * ID_STEP) / 255, 0, 0, THREE.SRGBColorSpace) }));
 }
 
 const idFlesh = new THREE.MeshBasicMaterial({ vertexColors: true });
@@ -521,59 +612,80 @@ export function measure(frame: string): Measure {
 
 // ---- the atlas ----
 
-/** The frames, drawn: colour in RGB, and in alpha which part each pixel is (0 where there is nothing). */
-export type Atlas = { colour: THREE.DataTexture; frames: Map<string, number>; anchor: number; perRow: number; rows: number };
+/**
+ * The frames, drawn: in each texel, red is how bright it is and green which
+ * part it is (0 where there is nothing). Four bytes a texel, colour and part,
+ * held 296 tiles in one 4096 px page; the in-between frames of every blow
+ * took that to 760, and at two bytes they fit in the memory one page took.
+ */
+export type Atlas = { texture: THREE.DataArrayTexture; frames: Map<string, number>; anchor: number; perRow: number; rows: number; pages: number };
 
 /**
- * Render every frame from every direction, once. About 250 tiles; a frame of
- * the race costs nothing for it afterwards.
+ * Renders every frame from every direction, once, a few at a time so the page
+ * stays responsive while it works (`step`), or all at once (`finish`). A
+ * frame of the race costs nothing for it afterwards.
  */
-export function buildAtlas(renderer: THREE.WebGLRenderer): Atlas {
-  const puppet = new Puppet();
-  const scene = new THREE.Scene();
-  scene.add(puppet.root);
-  scene.add(new THREE.HemisphereLight("#ffffff", "#404050", 0.9));
-  const sun = new THREE.DirectionalLight("#ffffff", 3.0);
-  scene.add(sun, sun.target);
-  const half = SPAN / 2;
-  const cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, 40);
-  const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
-  const { tile: TILE, perRow, rows } = tileSize(renderer.capabilities.maxTextureSize, touch);
-  const rt = new THREE.WebGLRenderTarget(TILE, TILE);
-  rt.texture.colorSpace = THREE.SRGBColorSpace;
-  const W = perRow * TILE;
-  const H = rows * TILE;
-  // one texture: the part numbers ride in the colour's alpha, which halves
-  // the memory a second atlas of them took
-  const colour = new Uint8Array(W * H * 4);
-  const buf = new Uint8Array(TILE * TILE * 4);
-  const frames = new Map<string, number>();
-  const centre = new THREE.Vector3(0, 0.95, 0);
+export class AtlasBuilder {
+  private next = 0;
+  private atlas: Atlas | null = null;
+  private puppet = new Puppet();
+  private scene = new THREE.Scene();
+  private sun = new THREE.DirectionalLight("#ffffff", 3.0);
+  private cam: THREE.OrthographicCamera;
+  private rt: THREE.WebGLRenderTarget;
+  private data: Uint8Array;
+  private buf: Uint8Array;
+  private frames = new Map<string, number>();
+  private layout: ReturnType<typeof tileSize>;
+  private W: number;
+  private H: number;
+  private readonly centre = new THREE.Vector3(0, 0.95, 0);
+  private renderer: THREE.WebGLRenderer;
 
-  const before = { tone: renderer.toneMapping, target: renderer.getRenderTarget(), clear: renderer.getClearColor(new THREE.Color()), alpha: renderer.getClearAlpha() };
-  renderer.toneMapping = THREE.NoToneMapping;
-  renderer.setClearColor(0x000000, 0);
+  constructor(renderer: THREE.WebGLRenderer) {
+    this.renderer = renderer;
+    this.scene.add(this.puppet.root, new THREE.HemisphereLight("#ffffff", "#404050", 0.9), this.sun, this.sun.target);
+    const half = SPAN / 2;
+    this.cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, 40);
+    const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+    this.layout = tileSize(renderer.capabilities.maxTextureSize, touch);
+    const { tile, perRow, rows, pages } = this.layout;
+    this.rt = new THREE.WebGLRenderTarget(tile, tile);
+    this.rt.texture.colorSpace = THREE.SRGBColorSpace;
+    this.W = perRow * tile;
+    this.H = rows * tile;
+    this.data = new Uint8Array(this.W * this.H * pages * 2);
+    this.buf = new Uint8Array(tile * tile * 4);
+  }
 
-  const copy = (row: number, col: number): void => {
-    renderer.readRenderTargetPixels(rt, 0, 0, TILE, TILE, buf);
-    for (let y = 0; y < TILE; y++) colour.set(buf.subarray(y * TILE * 4, (y + 1) * TILE * 4), ((row * TILE + y) * W + col * TILE) * 4);
-  };
-  /** Write the part numbers just rendered into the alpha of the tile's colour. */
-  const copyIds = (row: number, col: number): void => {
-    renderer.readRenderTargetPixels(rt, 0, 0, TILE, TILE, buf);
-    for (let y = 0; y < TILE; y++) {
-      const dst = ((row * TILE + y) * W + col * TILE) * 4;
-      for (let x = 0; x < TILE; x++) {
-        const o = dst + x * 4 + 3;
-        // part n (written as n*40 in red) becomes 40 + n*40; nothing stays 0
-        if (colour[o] >= 128) colour[o] = 40 + Math.round(buf[(y * TILE + x) * 4] / 40) * 40;
-        else colour[o] = 0;
-      }
-    }
-  };
+  /** Draw frames for up to `ms`; true once every frame is drawn. */
+  step(ms: number): boolean {
+    if (this.atlas) return true;
+    const r = this.renderer;
+    const before = { tone: r.toneMapping, target: r.getRenderTarget(), clear: r.getClearColor(new THREE.Color()), alpha: r.getClearAlpha() };
+    r.toneMapping = THREE.NoToneMapping;
+    r.setClearColor(0x000000, 0);
+    const until = performance.now() + ms;
+    while (this.next < FRAMES.length && performance.now() < until) this.draw(this.next++);
+    r.setRenderTarget(before.target);
+    r.toneMapping = before.tone;
+    r.setClearColor(before.clear, before.alpha);
+    if (this.next < FRAMES.length) return false;
+    this.done();
+    return true;
+  }
 
-  FRAMES.forEach(([name, pose], row) => {
-    frames.set(name, row);
+  /** Every frame drawn, however long it takes. */
+  finish(): Atlas {
+    while (!this.step(1000));
+    return this.atlas!;
+  }
+
+  private draw(row: number): void {
+    const [name, pose] = FRAMES[row];
+    const { tile, perRow, rows } = this.layout;
+    const { renderer, puppet, scene, cam, sun, rt, buf, centre } = this;
+    this.frames.set(name, row);
     puppet.set(pose, name === "bikeDown");
     YAWS.forEach((deg, col) => {
       const yaw = (deg * Math.PI) / 180;
@@ -587,34 +699,55 @@ export function buildAtlas(renderer: THREE.WebGLRenderer): Atlas {
       // just over the camera the back of a rider came out one flat colour
       sun.position.copy(cam.position).add(new THREE.Vector3(0, 9, 0)).addScaledVector(new THREE.Vector3(-dir.z, 0, dir.x), 9);
       sun.target.position.copy(centre);
+      const at = tileAt(row, col, perRow, rows);
+      const base = at.page * this.W * this.H;
+      const texel = (y: number, x: number): number => (base + (at.y * tile + y) * this.W + at.x * tile + x) * 2;
       renderer.setRenderTarget(rt);
       renderer.clear();
       renderer.render(scene, cam);
-      const at = tileAt(row, col, perRow);
-      copy(at.y, at.x);
+      renderer.readRenderTargetPixels(rt, 0, 0, tile, tile, buf);
+      // brightness; and whether anything is there, held until the part is known
+      for (let y = 0; y < tile; y++)
+        for (let x = 0; x < tile; x++) {
+          const i = (y * tile + x) * 4;
+          const o = texel(y, x);
+          this.data[o] = Math.round(0.2126 * buf[i] + 0.7152 * buf[i + 1] + 0.0722 * buf[i + 2]);
+          this.data[o + 1] = buf[i + 3] >= 128 ? 255 : 0;
+        }
       puppet.ids(true);
       renderer.clear();
       renderer.render(scene, cam);
-      copyIds(at.y, at.x);
       puppet.ids(false);
+      renderer.readRenderTargetPixels(rt, 0, 0, tile, tile, buf);
+      for (let y = 0; y < tile; y++)
+        for (let x = 0; x < tile; x++) {
+          const o = texel(y, x) + 1;
+          // part n becomes ID_STEP + n*ID_STEP; nothing stays 0
+          if (this.data[o]) this.data[o] = ID_STEP + Math.round(buf[(y * tile + x) * 4] / ID_STEP) * ID_STEP;
+        }
     });
-  });
-  renderer.setRenderTarget(before.target);
-  renderer.toneMapping = before.tone;
-  renderer.setClearColor(before.clear, before.alpha);
-  rt.dispose();
+  }
 
-  const tex = (data: Uint8Array): THREE.DataTexture => {
-    const t = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+  private done(): void {
+    this.rt.dispose();
+    const { perRow, rows, pages } = this.layout;
+    const t = new THREE.DataArrayTexture(this.data, this.W, this.H, pages);
+    t.format = THREE.RGFormat;
+    t.type = THREE.UnsignedByteType;
     // big square texels near the camera, as the original's sprites (V4)
     t.magFilter = THREE.NearestFilter;
     t.minFilter = THREE.NearestFilter;
+    t.unpackAlignment = 1;
     t.needsUpdate = true;
-    return t;
-  };
-  // where the ground (y = 0) falls in a tile, as a fraction of its height up
-  const anchor = 0.5 - (centre.y * Math.cos(ELEVATION)) / SPAN;
-  return { colour: tex(colour), frames, anchor, perRow, rows };
+    // where the ground (y = 0) falls in a tile, as a fraction of its height up
+    const anchor = 0.5 - (this.centre.y * Math.cos(ELEVATION)) / SPAN;
+    this.atlas = { texture: t, frames: this.frames, anchor, perRow, rows, pages };
+  }
+}
+
+/** Render every frame from every direction, all at once. */
+export function buildAtlas(renderer: THREE.WebGLRenderer): Atlas {
+  return new AtlasBuilder(renderer).finish();
 }
 
 // ---- drawing a frame ----
@@ -629,20 +762,23 @@ void main() {
 }`;
 
 const FRAG = `
-uniform sampler2D map;
+precision highp sampler2DArray;
+uniform sampler2DArray map;
+uniform float page;
 uniform vec4 tile;
 uniform vec2 texel;
 uniform float flip;
-uniform vec3 tints[6];
+uniform vec3 tints[${PARTS}];
 uniform float shade;
 varying vec2 vUv;
-int idAt(vec4 c) { return c.a < 0.08 ? -1 : int(floor(c.a * 255.0 / 40.0 + 0.5)) - 1; }
-vec4 near(vec2 uv, vec2 d) { return texture2D(map, clamp(uv + d * texel, tile.xy + texel * 0.5, tile.xy + tile.zw - texel * 0.5)); }
+int idAt(vec4 c) { return c.g < 0.05 ? -1 : int(floor(c.g * 255.0 / ${ID_STEP}.0 + 0.5)) - 1; }
+vec4 at(vec2 uv) { return texture(map, vec3(uv, page)); }
+vec4 near(vec2 uv, vec2 d) { return at(clamp(uv + d * texel, tile.xy + texel * 0.5, tile.xy + tile.zw - texel * 0.5)); }
 void main() {
   vec2 uv = vUv;
   if (flip > 0.5) uv.x = 1.0 - uv.x;
   uv = tile.xy + uv * tile.zw;
-  vec4 c = texture2D(map, uv);
+  vec4 c = at(uv);
   int id = idAt(c);
   int l = idAt(near(uv, vec2(-1.0, 0.0)));
   int r = idAt(near(uv, vec2(1.0, 0.0)));
@@ -656,10 +792,10 @@ void main() {
     return;
   }
   vec3 t = vec3(1.0);
-  for (int i = 1; i < 6; i++) if (i == id) t = tints[i];
+  for (int i = 1; i < ${PARTS}; i++) if (i == id) t = tints[i];
   // and a softer one where one part meets another of a different colour
   float seam = (l >= 0 && l != id) || (u >= 0 && u != id) ? 0.62 : 1.0;
-  gl_FragColor = vec4(c.rgb * t * shade * seam, 1.0);
+  gl_FragColor = vec4(vec3(c.r) * t * shade * seam, 1.0);
 }`;
 
 export type Tile = { col: number; flip: boolean };
@@ -689,7 +825,7 @@ export function tileFor(view: number, last: Tile): Tile {
 /** A billboard showing one rider's frames in their own colours. */
 export class RiderSprite {
   readonly mesh: THREE.Mesh;
-  private u: { tile: { value: THREE.Vector4 }; texel: { value: THREE.Vector2 }; flip: { value: number }; shade: { value: number } };
+  private u: { tile: { value: THREE.Vector4 }; page: { value: number }; texel: { value: THREE.Vector2 }; flip: { value: number }; shade: { value: number } };
 
   private atlas: Atlas;
   private tile: Tile = { col: 0, flip: false };
@@ -702,10 +838,12 @@ export class RiderSprite {
       col.getRGB(o, THREE.SRGBColorSpace);
       return new THREE.Vector3(o.r, o.g, o.b);
     };
-    const tints = [new THREE.Vector3(1, 1, 1), srgb(look.main), srgb(look.trim), srgb(look.helmet), srgb(look.paint), srgb(look.paintTrim)];
-    this.u = { tile: { value: new THREE.Vector4() }, texel: { value: new THREE.Vector2(1 / atlas.colour.image.width, 1 / atlas.colour.image.height) }, flip: { value: 0 }, shade: { value: 1 } };
+    // the lamp glows red and the club is wood, whoever holds it
+    const tints = [new THREE.Vector3(1, 1, 1), srgb(look.main), srgb(look.trim), srgb(look.helmet), srgb(look.paint), srgb(look.paintTrim), srgb("#ff3018"), srgb("#a8723e")];
+    const img = atlas.texture.image as { width: number; height: number };
+    this.u = { tile: { value: new THREE.Vector4() }, page: { value: 0 }, texel: { value: new THREE.Vector2(1 / img.width, 1 / img.height) }, flip: { value: 0 }, shade: { value: 1 } };
     const mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: atlas.colour }, tints: { value: tints }, ...this.u },
+      uniforms: { map: { value: atlas.texture }, tints: { value: tints }, ...this.u },
       vertexShader: VERT,
       fragmentShader: FRAG,
     });
@@ -726,34 +864,39 @@ export class RiderSprite {
     const { col, flip } = this.tile;
     // seen from the left: the right-hand view, mirrored, of the other side's move
     const frame = !flip ? name : name.endsWith(".R") ? name.slice(0, -2) + ".L" : name.endsWith(".L") ? name.slice(0, -2) + ".R" : name;
-    const at = tileAt(a.frames.get(frame) ?? 0, col, a.perRow);
+    const at = tileAt(a.frames.get(frame) ?? 0, col, a.perRow, a.rows);
     const cols = a.perRow;
     const rows = a.rows;
-    // DataTexture rows run bottom-up, the same as readRenderTargetPixels
+    // texture rows run bottom-up, the same as readRenderTargetPixels
     this.u.tile.value.set(at.x / cols, at.y / rows, 1 / cols, 1 / rows);
+    this.u.page.value = at.page;
     this.u.flip.value = flip ? 1 : 0;
   }
 }
 
 /**
- * The frame a rider on the bike shows: drawn back for the first part of a
- * blow, out at full stretch from the moment it lands (V15, C3, C4), as the
- * recording steps 6 frames back and 5 out.
+ * The frame a rider on the bike shows. A blow is a movement: up from rest
+ * (raise), drawn back and held, swept out through two frames in between,
+ * out at full stretch from the moment it lands until it is put away, and
+ * back down. The recording steps about 6 frames back and 5 out (V15, C3, C4),
+ * and sweeps between them rather than cutting.
  */
 export function frameFor(r: Rider): string {
   const a = r.attack;
   if (!a) return r.weapon === "club" ? "rideClub.R" : r.weapon === "chain" ? "rideChain.R" : "ride.R";
   const side = a.side > 0 ? "R" : "L";
-  const windup = windupOf(r, a);
-  const out = a.t >= windup;
-  if (a.kind === "kick") return `${out ? "kick" : "kickCock"}.${side}`;
-  if (a.kind === "backhand") {
-    // a weapon is drawn up and swept back with the arm, never left behind
-    const held = r.weapon === "club" ? "Club" : r.weapon === "chain" ? "Chain" : "";
-    if (a.t >= windup * 0.4) return `backhand${held}.${side}`;
-    return held ? `${r.weapon}Up.${side}` : `punchCock.${side}`;
-  }
-  if (r.weapon === "club") return `${out ? "clubOut" : "clubUp"}.${side}`;
-  if (r.weapon === "chain") return `${out ? "chainOut" : "chainUp"}.${side}`;
-  return `${out ? "punchOut" : "punchCock"}.${side}`;
+  const held = r.weapon === "club" ? "Club" : r.weapon === "chain" ? "Chain" : "";
+  // a weapon is drawn up and swept with the arm, backhand or not, never left behind
+  const blow = a.kind === "kick" ? "kick" : a.kind === "backhand" ? `backhand${held}` : held ? r.weapon! : "punch";
+  const [, back, out] = BLOWS[blow];
+  const w = windupOf(r, a);
+  const t = a.t;
+  const name =
+    t < 0.3 * w ? `${blow}~raise`
+    : t < 0.55 * w ? back
+    : t < 0.78 * w ? `${blow}~sweep1`
+    : t < w ? `${blow}~sweep2`
+    : t < w + 0.12 ? out
+    : `${blow}~return`;
+  return `${name}.${side}`;
 }

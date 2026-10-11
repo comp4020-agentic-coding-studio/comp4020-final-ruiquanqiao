@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DT, KMH, NO_INPUT, type Race, type Rider, TUNE, aiInput, beginAttack, startRace, step } from "../game/sim.ts";
+import { DT, KMH, NO_INPUT, type Race, type Rider, TUNE, aiInput, beginAttack, kickPays, startRace, step } from "../game/sim.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 import { tally } from "../scripts/fights.ts";
 
@@ -134,5 +134,59 @@ describe("riders fight fair", () => {
     expect(picker.foe).toBe(-1);
     // at most the bend's own easing, never the brake (TUNE.brake takes 10 m/s off in a fraction of a second)
     expect(slowest).toBeGreaterThan(190 * KMH);
+  });
+});
+
+// The kick (C4). It was a weak punch with a nudge: 5 stamina and a shove of
+// 1.75 m in all, steered out of before it showed. In the original it throws
+// the bike: the kicked rival is over on the next frame and off the side of
+// the picture 0.16 s later (57.24-57.44), and RR2 says it "does no damage but
+// pushes the bike". Its worth is what the bike is thrown into.
+
+/** Two people abreast at 200 km/h on road `road` at `z`, nothing else about. */
+function abreast(road: number, z: number, xKicker: number, xVictim: number): { race: Race; victim: Rider; kicker: Rider } {
+  const race = startRace(makeTrack(1, road), 1, [
+    { id: 0, name: "victim", human: true },
+    { id: 1, name: "kicker", human: true },
+  ], 3);
+  race.riders = race.riders.filter((r) => !r.cop);
+  race.cars = [];
+  race.t = 20;
+  const [victim, kicker] = [0, 1].map((id) => race.riders.find((r) => r.id === id)!);
+  for (const [r, x] of [[victim, xVictim], [kicker, xKicker]] as const) Object.assign(r, { x, z, bikeX: x, bikeZ: z, line: x, speed: 200 * KMH, vx: 0 });
+  return { race, victim, kicker };
+}
+const ride = (race: Race, secs: number): void => {
+  for (let i = 0; i < secs / DT; i++) step(race, new Map([[0, { ...NO_INPUT, throttle: true }], [1, { ...NO_INPUT, throttle: true }]]));
+};
+
+describe("the kick", () => {
+  it("costs no stamina and throws the bike metres across the road", () => {
+    const calm = abreast(2, 1500, -1.6, 0);
+    ride(calm.race, 1.2);
+    const { race, victim, kicker } = abreast(2, 1500, -1.6, 0);
+    beginAttack(race, kicker, "foot");
+    ride(race, 1.2);
+    expect(victim.stamina).toBe(100);
+    // measured: 6.8 m further across than the same ride unkicked (1.75 m
+    // in all before), most of it in the first half second
+    expect(victim.x - calm.victim.x).toBeGreaterThan(6);
+  });
+
+  it("throws a rider in the outer lane into the sea rail, and they go down", () => {
+    // Seawall Highway at 300 m: the rail is 9.9 m out, 4.65 m past the lane
+    const { race, victim, kicker } = abreast(1, 300, 3.6, 5.25);
+    beginAttack(race, kicker, "foot");
+    ride(race, 1.2);
+    expect(race.events.some((e) => e.kind === "crash" && e.rider === victim.id && e.cause === "wall")).toBe(true);
+  });
+
+  it("is chosen when there is something to throw the foe into, by anyone's reading of the road", () => {
+    const wall = abreast(1, 300, 3.6, 5.25);
+    expect(kickPays(wall.race, wall.kicker, wall.victim)).toBe(true);
+    // from the other side, the throw is away from the rail
+    expect(kickPays(wall.race, wall.victim, wall.kicker)).toBe(false);
+    const open = abreast(2, 1500, -1.6, 0);
+    expect(kickPays(open.race, open.kicker, open.victim)).toBe(false);
   });
 });

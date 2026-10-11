@@ -8,7 +8,7 @@ import { drawDash } from "./dash.ts";
 import { setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { react } from "./feel.ts";
 import { RaceScene } from "./scene.ts";
-import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
+import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Prediction, Timeline } from "./netview.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 
@@ -131,6 +131,12 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
   }
   for (const e of msg.events) {
     sound(c, e);
+    // kicked: the predicted bike is thrown as the server threw it, not dragged
+    // there by corrections afterwards (C4)
+    if (e.kind === "hit" && e.move === "kick" && e.on === c.you && r.phase === "riding") {
+      const by = c.race.riders.find((x) => x.id === e.by);
+      if (by) kicked(r, by.x);
+    }
     if (e.kind === "crash" && e.rider === c.you) banner(e.cause === "knockdown" ? "Knocked off" : "Down!", 1200);
     if (e.kind === "wrecked" && e.rider === c.you) banner("Wrecked", 3000);
     // hitting a car flashes the screen white (K3)
@@ -406,7 +412,7 @@ const road = $<HTMLCanvasElement>("#road");
 const dash = $<HTMLCanvasElement>("#dash");
 const dashCtx = dash.getContext("2d")!;
 const watch = $<HTMLCanvasElement>("#watch-canvas");
-const roadScene = new RaceScene(road);
+const roadScene = new RaceScene(road, true);
 const watchScene = new RaceScene(watch);
 // the riders' frames are drawn in the lobby, once the page is up, not on the grid
 setTimeout(() => roadScene.prepare(), 200);

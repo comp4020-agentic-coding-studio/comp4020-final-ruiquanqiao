@@ -10,16 +10,31 @@ import { makeTrack } from "../game/track.ts";
 const rider = (): Rider => startRace(makeTrack(1), 1, [{ id: 0, name: "me", human: true }], 1).riders[0];
 
 describe("rider frames", () => {
-  it("draws a punch back until it lands, then shows it out at full stretch, on the side it is thrown", () => {
+  it("throws a punch as one movement, out at full stretch the moment it lands, on the side it is thrown", () => {
+    // it was two pictures, drawn back and out, cut between the instant it
+    // landed; the recording's arm sweeps out through frames in between
     const r = rider();
     r.attack = { kind: "punch", side: 1, t: 0, target: -1, landed: false };
-    expect(frameFor(r)).toBe("punchCock.R");
-    r.attack.t = TUNE.windup - 0.01;
-    expect(frameFor(r)).toBe("punchCock.R");
+    const seen: string[] = [];
+    for (let t = 0; t < TUNE.windup + 0.2; t += 1 / 120) {
+      r.attack.t = t;
+      if (seen.at(-1) !== frameFor(r)) seen.push(frameFor(r));
+    }
+    expect(seen).toEqual(["punch~raise.R", "punchCock.R", "punch~sweep1.R", "punch~sweep2.R", "punchOut.R", "punch~return.R"]);
     r.attack.t = TUNE.windup;
     expect(frameFor(r)).toBe("punchOut.R");
     r.attack.side = -1;
     expect(frameFor(r)).toBe("punchOut.L");
+  });
+
+  it("puts every in-between pose between its neighbours, so no step of a blow jumps further than the measured ones", () => {
+    // the fist, from straight behind, in helmet widths: drawn back to out
+    // was one jump of 1.77. Through the sweep at a third and two thirds the
+    // steps were 0.97, 0.67, 0.09; spaced by where the fist goes, 0.64, 0.75, 0.41
+    const path = ["punchCock.R", "punch~sweep1.R", "punch~sweep2.R", "punchOut.R"].map((f) => measure(f).hand);
+    const steps = path.slice(1).map((p, i) => Math.hypot(p[0] - path[i][0], p[1] - path[i][1]));
+    const whole = Math.hypot(path[3][0] - path[0][0], path[3][1] - path[0][1]);
+    for (const step of steps) expect(step).toBeLessThan(whole * 0.5);
   });
 
   it("raises a club over the head before it comes down, and rides holding whatever it carries", () => {
@@ -39,7 +54,7 @@ describe("rider frames", () => {
         const r = rider();
         r.weapon = weapon;
         const s = side > 0 ? "R" : "L";
-        r.attack = { kind: "backhand", side, t: 0, target: -1, landed: false };
+        r.attack = { kind: "backhand", side, t: TUNE.weaponWindup * 0.4, target: -1, landed: false };
         expect(frameFor(r)).toBe(`${weapon}Up.${s}`);
         r.attack.t = TUNE.weaponWindup;
         expect(frameFor(r)).toBe(`backhand${weapon === "club" ? "Club" : "Chain"}.${s}`);
@@ -135,14 +150,18 @@ describe("which drawn direction a bike is shown from", () => {
 });
 
 describe("how finely the frames are drawn", () => {
-  it("draws every tile at 224 px on a desktop GPU, and keeps the atlas inside 4096 px", () => {
+  it("draws every tile at 224 px on a desktop GPU, in pages inside 4096 px and no more memory than one RGBA page", () => {
     // at 96 and then 128 px a rider near the camera showed texels 5-6 screen
     // pixels across, coarser than the original's own sprites
     const desk = tileSize(16384, false);
     expect(desk.tile).toBe(224);
     expect(desk.perRow * desk.tile).toBeLessThanOrEqual(4096);
     expect(desk.rows * desk.tile).toBeLessThanOrEqual(4096);
-    // a phone gets less, and a small GPU still gets an atlas it can hold
+    expect(desk.pages * desk.rows * desk.perRow).toBeGreaterThanOrEqual(desk.pages > 0 ? 760 : 0);
+    // two bytes a texel; the one RGBA page before the in-between frames was 4032 x 4032 x 4
+    const bytes = desk.pages * desk.rows * desk.tile * desk.perRow * desk.tile * 2;
+    expect(bytes).toBeLessThanOrEqual(4032 * 4032 * 4 * 1.35);
+    // a phone gets less, and a small GPU still gets pages it can hold
     expect(tileSize(4096, true).tile).toBeLessThanOrEqual(160);
     const small = tileSize(2048, false);
     expect(small.rows * small.tile).toBeLessThanOrEqual(2048);

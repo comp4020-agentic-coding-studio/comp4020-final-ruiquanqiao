@@ -13,7 +13,7 @@ import { centreline, frameAt } from "../game/world.ts";
 import { Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
 import { buildCar } from "./models.ts";
 import { RECOIL, type Reaction, hopLift, wobble } from "./feel.ts";
-import { type Atlas, type Look, RiderSprite, buildAtlas, frameFor } from "./sprites.ts";
+import { type Atlas, AtlasBuilder, type Look, RiderSprite, frameFor } from "./sprites.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
 
@@ -363,6 +363,15 @@ const LEATHERS: [string, string, string][] = [
   ["#9c5428", "#f0f0f0", "#202020"],
 ];
 
+/**
+ * One's own rider, in Gulf colours: powder blue leathers, orange over the
+ * shoulders and back, a white helmet, the bike blue with orange panels. It
+ * was dealt the first pair above like anyone else, magenta and yellow-green,
+ * and did not stand out from the field it rides in. None of the fifteen
+ * above is near it, so one's own bike is the one to find at a glance.
+ */
+const HERO: Look = { main: "#74b9e0", trim: "#f2711c", helmet: "#f4f4f4", paint: "#74b9e0", paintTrim: "#f2711c" };
+
 /** A rider on the road: the sprite, the bike's own sprite for when they part
  * company (M2), and a shadow under each. */
 type Actor = { rider: RiderSprite; bike: RiderSprite; shadow: THREE.Mesh; bikeShadow: THREE.Mesh };
@@ -414,7 +423,13 @@ export class RaceScene {
   private flung = new Set<number>();
   private struck = new Map<number, { at: number; side: 1 | -1; by: number }>();
 
-  constructor(canvasEl: HTMLCanvasElement) {
+  /** whether the rider drawn as `me` is the player's own, in HERO's colours: not when watching someone else's race */
+  private hero: boolean;
+  /** the rider the camera rides behind */
+  private me = -1;
+
+  constructor(canvasEl: HTMLCanvasElement, hero = false) {
+    this.hero = hero;
     this.renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -640,8 +655,8 @@ export class RaceScene {
 
     for (const a of this.riders.values()) this.scene.remove(a.rider.mesh, a.bike.mesh, a.shadow, a.bikeShadow);
     this.riders.clear();
-    // every rider's frames, drawn once, the first time a road is shown
-    this.atlas ??= buildAtlas(this.renderer);
+    // every rider's frames, drawn once: finished now if the lobby did not get there
+    this.atlas ??= (this.builder ??= new AtlasBuilder(this.renderer)).finish();
     for (const c of this.cars.values()) this.scene.remove(c);
     this.cars.clear();
   }
@@ -652,8 +667,18 @@ export class RaceScene {
    * a slow machine (4-6 s in headless Chrome), and the count was never seen.
    */
   prepare(): void {
-    this.atlas ??= buildAtlas(this.renderer);
+    if (this.atlas || this.builder) return;
+    const b = (this.builder = new AtlasBuilder(this.renderer));
+    // a few frames at a time, giving the page back between them, so the lobby
+    // never stands frozen while 95 poses are meshed and drawn
+    const more = (): void => {
+      if (this.atlas) return;
+      if (b.step(12)) this.atlas = b.finish();
+      else setTimeout(more, 0);
+    };
+    more();
   }
+  private builder: AtlasBuilder | null = null;
 
   private lineAcross(track: Track, z: number, chequered: boolean): THREE.Mesh {
     const [c, ctx] = canvas(16, 2);
@@ -707,6 +732,7 @@ export class RaceScene {
   draw(riders: readonly Rider[], me: number, dashTop = 0.23, cars: readonly Car[] = []): void {
     const track = this.track;
     if (!track) return;
+    this.me = me;
     this.placeCars(track, cars);
     const mine = riders.find((r) => r.id === me) ?? riders[0];
     for (const [id, a] of this.riders) {
@@ -771,7 +797,7 @@ export class RaceScene {
     if (a) return a;
     // a cop: navy uniform, white helmet, a white bike with black panels
     const [main, trim, helmet] = r.cop ? ["#1c2640", "#1c2640", "#f4f4f4"] : LEATHERS[r.id % LEATHERS.length];
-    const look: Look = r.cop ? { main, trim, helmet, paint: "#f2f2f2", paintTrim: "#141418" } : { main, trim, helmet, paint: main, paintTrim: trim };
+    const look: Look = r.cop ? { main, trim, helmet, paint: "#f2f2f2", paintTrim: "#141418" } : this.hero && r.id === this.me ? HERO : { main, trim, helmet, paint: main, paintTrim: trim };
     const shadow = (): THREE.Mesh => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), shadowMaterial());
       m.renderOrder = 1;
