@@ -365,8 +365,6 @@ const KEYMAP: Record<string, keyof Input> = {
   KeyD: "right",
   KeyJ: "hand",
   KeyK: "foot",
-  KeyL: "nitro",
-  Space: "nitro",
   ArrowUp: "throttle",
   ArrowDown: "brake",
   ArrowLeft: "left",
@@ -552,7 +550,6 @@ function frame(): void {
           const fix = c.prediction.ease();
           r.z += fix.z;
           r.x += fix.x;
-          if (r.boost > TUNE.nitroTime - DT * 1.5) flash("#fff0b0");
           // the predicted bike stops at other bikes too, instead of passing
           // through them until the server's correction arrives
           keepOff(c, r, now);
@@ -594,7 +591,7 @@ function frame(): void {
       }
       hud(c);
       const r = c.race.riders.find((x) => x.id === c.you);
-      if (r) updateAudio({ speed: r.speed, top: topSpeed(r), throttle: keys.throttle || r.boost > 0, riding: r.phase === "riding" });
+      if (r) updateAudio({ speed: r.speed, top: topSpeed(r), throttle: keys.throttle, riding: r.phase === "riding" });
     } else if (!$("#watch").hidden) {
       // watching: ride along behind whoever is leading
       const lead = c.race.riders.filter((r) => !r.cop).sort((p, q) => q.z - p.z)[0];
@@ -653,9 +650,6 @@ function hud(c: Current): void {
     rpm: 0.15 + 0.8 * Math.min(1, (r.speed / cap(r)) * (0.8 + 0.2 * r.build)),
     position,
     km: Math.max(0, r.z) / 1000, // an odometer, never a progress bar (T3); km, as the dial is
-    nitro: r.nitro,
-    nitroMax: TUNE.nitroCharges,
-    boosting: r.boost > 0,
     damage: r.damage / 100,
     stamina: r.stamina / 100,
     opponent: o ? { name: o.name, stamina: o.stamina / 100, gap: o.z - r.z } : null,
@@ -681,7 +675,7 @@ window.__rash = {
     const c = current;
     const r = c?.race.riders.find((x) => x.id === c.you);
     return c && r
-      ? { race: c.id, you: c.you, t: c.race.t, kmh: r.speed / KMH, mph: r.speed / MPH, nitro: r.nitro, boost: r.boost, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, stamina: r.stamina, damage: r.damage, weapon: r.weapon, threat: windingAt(c.race, r)?.id ?? null }
+      ? { race: c.id, you: c.you, t: c.race.t, kmh: r.speed / KMH, mph: r.speed / MPH, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, stamina: r.stamina, damage: r.damage, weapon: r.weapon, threat: windingAt(c.race, r)?.id ?? null }
       : { screen: app.dataset.screen, queued };
   },
   press: (k: keyof Input, down: boolean) => setKey(k, down),

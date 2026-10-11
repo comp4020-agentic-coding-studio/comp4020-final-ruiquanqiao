@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { NO_INPUT, type Input, TUNE, startRace, step } from "../game/sim.ts";
 import { centreline, frameAt } from "../game/world.ts";
-import { SEGMENT, bake, makeTrack } from "../game/track.ts";
+import { LEVEL_LENGTH, ROADS, SEGMENT, bake, curveAt, makeTrack } from "../game/track.ts";
 
 // The 3D scene is built on these numbers, so they are checked in metres here
 // rather than by looking at a picture.
@@ -46,5 +47,52 @@ describe("the road in the world", () => {
     expect(Math.hypot(side.px - c.px, side.pz - c.pz)).toBeCloseTo(6, 6);
     expect(centreline(track).x.length).toBe(track.segments + 1);
     void SEGMENT;
+  });
+});
+
+// The length of a race (T2). Every road was 3.7-5 km of bends repeated out to
+// the level's length: twice round at level 1, four times at level 5, and the
+// level 5 race was six minutes. Now each road is written out for its longest
+// race, and every race is about two minutes.
+describe("the roads", () => {
+  it("never comes round the same bends twice in a race, at any level", () => {
+    for (const road of ROADS) {
+      const written = road.sections.reduce((n, s) => n + s.length, 0);
+      expect(written, road.name).toBeGreaterThanOrEqual(Math.max(...LEVEL_LENGTH));
+    }
+  });
+
+  it("never comes back within 300 m of itself", () => {
+    // measured: 356-373 m at the closest, every road at level 5, between
+    // points 400 m apart along it, so a bend is all that ever comes close
+    ROADS.forEach((road, i) => {
+      const c = centreline(makeTrack(5, i));
+      for (let a = 0; a < c.x.length; a += 10) {
+        for (let b = a + 100; b < c.x.length; b += 10) expect(Math.hypot(c.x[a] - c.x[b], c.z[a] - c.z[b]), road.name).toBeGreaterThan(300);
+      }
+    });
+  });
+
+  it("is ridden clean, flat out, inside two minutes on every road at every level", () => {
+    // measured: 114-115 s on all 25, alone on the road, keeping right
+    for (let level = 1; level <= 5; level++) {
+      ROADS.forEach((_, i) => {
+        const track = makeTrack(level, i);
+        const race = startRace(track, level, [{ id: 0, name: "me", human: true }], 7);
+        race.cars = [];
+        race.riders = race.riders.filter((r) => !r.cop);
+        const me = race.riders[0];
+        while (me.phase !== "finished" && race.t < 300) {
+          const input: Input = { ...NO_INPUT, throttle: true };
+          const want = 3.5 - me.x + TUNE.centrifugal * me.speed * me.speed * curveAt(track, me.z + me.speed * 0.8) * 0.35;
+          input.right = want > 0.3;
+          input.left = want < -0.3;
+          step(race, new Map([[0, input]]));
+        }
+        expect(me.phase, `level ${level} road ${i}`).toBe("finished");
+        expect(race.t).toBeGreaterThan(100);
+        expect(race.t).toBeLessThan(120);
+      });
+    }
   });
 });

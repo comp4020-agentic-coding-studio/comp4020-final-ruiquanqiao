@@ -29,7 +29,6 @@ const keysOf = (spec: string): Input => {
     if (k === "D") i.right = true;
     if (k === "J") i.hand = true;
     if (k === "K") i.foot = true;
-    if (k === "N") i.nitro = true;
   }
   return i;
 };
@@ -68,7 +67,7 @@ for (const s of steps) {
   const n = Math.round(Number(secs) / DT);
   for (let i = 0; i < n; i++) {
     // a held attack key is one press, the way a player taps it
-    const held = i === 0 ? input : { ...input, hand: false, foot: false, nitro: false };
+    const held = i === 0 ? input : { ...input, hand: false, foot: false };
     step(race, new Map([[0, held]]));
     if (race.t + 1e-9 >= nextPrint) {
       print(keys);

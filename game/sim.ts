@@ -36,15 +36,8 @@ export const TUNE = {
   /** full-throttle pull well below the cap, m/s²: 0 to 250 km/h in about
    * 5.5 s on the original's dial */
   accel: 15.5,
-  /** nitro (R8): charges a race, seconds a burst lasts, the speed it adds to
-   * the cap and how hard it pulls. A burst took the original from 44 to 226
-   * km/h in 2 s, and from cruise to 316-320 */
-  nitroCharges: 10,
-  nitroTime: 3.5,
   /** seconds counted down on the grid before a race goes (V16) */
   countdown: 3,
-  nitroCap: 35 * KMH,
-  nitroAccel: 24,
   /** build-up is earned only above this fraction of top speed */
   buildFloor: 0.7,
   /** build lost to a hit */
@@ -191,13 +184,12 @@ export type Input = {
   right: boolean;
   hand: boolean;
   foot: boolean;
-  nitro: boolean;
 };
 
-export const NO_INPUT: Input = { throttle: false, brake: false, left: false, right: false, hand: false, foot: false, nitro: false };
+export const NO_INPUT: Input = { throttle: false, brake: false, left: false, right: false, hand: false, foot: false };
 
 export const packInput = (i: Input): number =>
-  (+i.throttle) | (+i.brake << 1) | (+i.left << 2) | (+i.right << 3) | (+i.hand << 4) | (+i.foot << 5) | (+i.nitro << 6);
+  (+i.throttle) | (+i.brake << 1) | (+i.left << 2) | (+i.right << 3) | (+i.hand << 4) | (+i.foot << 5);
 
 export const unpackInput = (n: number): Input => ({
   throttle: !!(n & 1),
@@ -206,7 +198,6 @@ export const unpackInput = (n: number): Input => ({
   right: !!(n & 8),
   hand: !!(n & 16),
   foot: !!(n & 32),
-  nitro: !!(n & 64),
 });
 
 export type Phase = "riding" | "thrown" | "running" | "finished" | "wrecked" | "busted";
@@ -266,9 +257,6 @@ export type Rider = {
   overAt: number;
   prevHand: boolean;
   prevFoot: boolean;
-  prevNitro: boolean;
-  nitro: number; // charges left (R8)
-  boost: number; // seconds of the current burst left
   finishT: number; // race time at the line, or -1
   place: number; // 1-based, or 0 while racing
   // AI only
@@ -326,9 +314,9 @@ export type Race = {
 
 export const topSpeed = (r: Rider): number => r.bike.topKmh * KMH * (1 + (180 - r.lbs) / 3000);
 
-/** the speed a rider can reach right now: build-up raises the cap (R17), a
- * nitro burst lifts it past the bike's top (R8) */
-export const cap = (r: Rider): number => topSpeed(r) * (TUNE.baseCap + (1 - TUNE.baseCap) * r.build) + (r.boost > 0 ? TUNE.nitroCap : 0);
+/** the speed a rider can reach right now: build-up raises the cap (R17), and
+ * nothing lifts it past the bike's top (R8) */
+export const cap = (r: Rider): number => topSpeed(r) * (TUNE.baseCap + (1 - TUNE.baseCap) * r.build);
 
 // the level 3 bike pulls TUNE.accel; a better power-to-weight a little more
 const accelOf = (r: Rider): number => TUNE.accel * Math.min(1.12, Math.max(0.88, (r.bike.hp / (r.bike.lbs + r.lbs)) / (100 / 690)));
@@ -409,9 +397,6 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
       overAt: -99,
       prevHand: false,
       prevFoot: false,
-      prevNitro: false,
-      nitro: TUNE.nitroCharges,
-      boost: 0,
       finishT: -1,
       place: 0,
       line: col * 2.8,
@@ -611,13 +596,7 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
     return;
   }
 
-  // riding. Nitro (R8): one burst per press, while charges last
-  if (input.nitro && !r.prevNitro && r.nitro > 0 && r.boost <= 0 && r.speed > 3) {
-    r.nitro--;
-    r.boost = TUNE.nitroTime;
-  }
-  r.prevNitro = input.nitro;
-  r.boost = Math.max(0, r.boost - dt);
+  // riding
   const top = topSpeed(r);
   const limit = cap(r);
   const offRoad = Math.abs(r.x) > ROAD_HALF;
@@ -625,14 +604,12 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   const ground = Math.abs(r.x) > SHOULDER ? TUNE.offRoadSpeed : offRoad ? TUNE.shoulderSpeed : Infinity;
   if (input.brake) {
     r.speed -= TUNE.brake * dt;
-    r.boost = 0;
-  } else if (input.throttle || r.boost > 0) {
+  } else if (input.throttle) {
     // off the asphalt the throttle pulls only up to what the ground allows
     const f = Math.min(1, r.speed / Math.min(limit, ground));
     // a full pull until close to the cap, then a short taper: the original's
     // needle sweeps up steadily and settles, it does not crawl the last part
-    const a = r.boost > 0 ? TUNE.nitroAccel : accelOf(r);
-    r.speed += a * (1 - f ** 6) * dt;
+    r.speed += accelOf(r) * (1 - f ** 6) * dt;
     if (r.speed > limit) r.speed = Math.max(limit, r.speed - 3 * dt);
   } else r.speed -= (TUNE.coast + 0.0004 * r.speed * r.speed) * dt;
   if (r.speed > ground) r.speed = Math.max(ground, r.speed - TUNE.offRoadDrag * dt);
@@ -712,7 +689,6 @@ function crash(r: Rider, cause: CrashCause, race: Race | null, pop = TUNE.popSli
   const byRider = cause === "knockdown" || cause === "rub";
   // a riderless bike coasts on (K5), but not a quarter of a mile at 300 km/h
   r.bikeSpeed = byRider ? Math.min(r.speed * 0.9, 25) : Math.min(r.speed * 0.2, 6);
-  r.boost = 0;
   r.vx = r.vx * 0.5 + Math.sign(r.x || 1) * 1.5;
   r.lean = 0;
   r.leanHeld = 0;
@@ -1093,7 +1069,6 @@ function copInput(race: Race, r: Rider): Input {
       // coming up from behind, flat out with nitro to close, and on to
       // whichever flank he is already on once he is close
       input.throttle = behind > 1 || r.speed < target.speed + 1;
-      if (behind > 12 && r.boost <= 0 && !r.prevNitro) input.nitro = true;
       const side = r.x >= target.x ? 1 : -1;
       r.line = behind < 10 && target.phase === "riding" ? target.x + side * 1.4 : r.line;
     } else {
@@ -1384,8 +1359,6 @@ function duelInput(race: Race, r: Rider, foe: Rider): Input {
   // to spoil someone else's. Now it neither waits (a foe that drops back is
   // left, pickFoe) nor rides any faster than it races
   else if (r.speed > topSpeed(r) * r.skill) input.throttle = false;
-  // too far behind to close on the throttle: a burst of nitro (R8)
-  if (dz > 6 && closing < 4 && r.boost <= 0 && !r.prevNitro) input.nitro = true;
   // bends still have to be ridden
   const need = TUNE.centrifugal * r.speed * r.speed * Math.abs(curve);
   if (need > 0.8 * TUNE.steerFast) input.throttle = false;

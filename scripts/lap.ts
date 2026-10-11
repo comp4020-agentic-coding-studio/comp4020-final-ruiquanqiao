@@ -3,7 +3,7 @@
 // against the level's AI field. Prints the finishing time, the places, and
 // every crash, so pacing and the AI can be judged as numbers.
 //
-//   node scripts/lap.ts [--level 1] [--seed 7] [--margin 0.3]
+//   node scripts/lap.ts [--level 1] [--road 0] [--seed 7] [--margin 0.3]
 
 import { DT, MPH, NO_INPUT, type Input, TUNE, clearLine, standings, startRace, step, humansDone } from "../game/sim.ts";
 import { MILE, curveAt, makeTrack } from "../game/track.ts";
@@ -17,7 +17,8 @@ const level = Number(flag("level", "1"));
 const seed = Number(flag("seed", "7"));
 const margin = Number(flag("margin", "0.3")); // how far off the line before the rider steers, m
 
-const track = makeTrack(level);
+const road = Number(flag("road", "0"));
+const track = makeTrack(level, road);
 const entrants = [{ id: 0, name: "me", human: true }];
 for (let i = 1; i < 15; i++) entrants.push({ id: i, name: `ai${i}`, human: false });
 const race = startRace(track, level, entrants, seed);

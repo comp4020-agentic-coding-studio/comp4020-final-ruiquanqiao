@@ -14,9 +14,6 @@ export type Readout = {
   rpm: number; // 0..1 of the dial
   position: number;
   km: number;
-  nitro: number; // charges left (R8)
-  nitroMax: number;
-  boosting: boolean;
   damage: number; // 0..1 left
   stamina: number; // 0..1
   opponent: { name: string; stamina: number; gap: number } | null; // gap in metres, + ahead
@@ -55,22 +52,6 @@ export function drawDash(ctx: CanvasRenderingContext2D, w: number, h: number, d:
   ctx.stroke();
   ctx.restore();
 
-  // the nitro lamps above the damage bar, one per charge, as in the Chinese
-  // PC release's dash; the one burning glows white
-  const lampY = Y(0.778);
-  const lampW = (W * 0.13) / d.nitroMax;
-  ctx.fillStyle = "#000";
-  roundRect(ctx, X(0.435) - 3, lampY - lampW * 0.55 - 3, W * 0.13 + 6, lampW * 1.1 + 6, 4);
-  ctx.fill();
-  for (let i = 0; i < d.nitroMax; i++) {
-    const lit = i < d.nitro;
-    const burning = d.boosting && i === d.nitro;
-    ctx.beginPath();
-    ctx.arc(X(0.435) + lampW * (i + 0.5), lampY, lampW * 0.36, 0, Math.PI * 2);
-    ctx.fillStyle = burning ? "#fff6c0" : lit ? "#e01818" : "#3a3030";
-    ctx.fill();
-  }
-
   // the damage bar above the position box: red, then yellow, then green
   const barX = X(0.445);
   const barW = W * 0.11;
@@ -86,8 +67,7 @@ export function drawDash(ctx: CanvasRenderingContext2D, w: number, h: number, d:
     ctx.fillRect(barX + (i * barW) / segs + 0.5, barY, barW / segs - 1, barH);
   }
 
-  // km/h, as the Chinese PC release's dial reads; scaled past its 320 so a
-  // nitro burst at level 5 still has room to show
+  // km/h, as the Chinese PC release's dial reads
   dial(ctx, X(0.39), Y(0.94), W * 0.074, d.kmh / 360, [0, 90, 180, 270, 360], "km/h");
   dial(ctx, X(0.615), Y(0.94), W * 0.06, d.rpm, [0, 3, 6, 9, 12], "RPM x 1000");
 

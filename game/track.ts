@@ -180,9 +180,9 @@ export const wallAt = (track: Track, z: number, side: -1 | 1): number => (side <
 // Five fictional roads (ledger T1), each with a character of its own and
 // passing through more than one kind of country. Bends are sized for the
 // 280-290 km/h the original cruises at: the tightest is 220 m, which at
-// cruise needs the bars held over and leans the bike (R3). Each loop of
-// sections turns back to roughly its starting heading, so a road repeated
-// out to level 5 length wanders but never crosses itself
+// cruise needs the bars held over and leans the bike (R3). Every road is
+// written out bend by bend for the longest race on it, so no stretch of it
+// comes round twice (T2), and it wanders but never crosses itself
 // (spec/world.test.ts).
 const sec = (length: number, curve: number, climb: number, biome: Biome): Section => ({ length, curve, climb, biome });
 
@@ -202,6 +202,20 @@ export const ROADS: { name: string; sections: Section[] }[] = [
       sec(700, -1 / 600, -12, "valley"),
       sec(350, 1 / 280, 12, "alpine"),
       sec(350, -1 / 280, -12, "alpine"),
+      // over the top: high pine, a long switchback and down to the river again
+      sec(400, 0, 10, "alpine"),
+      sec(500, 1 / 300, 15, "alpine"),
+      sec(300, -1 / 500, 0, "alpine"),
+      sec(450, -1 / 260, -15, "alpine"),
+      sec(400, 0, 25, "alpine"),
+      sec(350, 1 / 350, -10, "alpine"),
+      sec(600, 0, -20, "valley"),
+      sec(500, -1 / 450, 5, "valley"),
+      sec(400, 1 / 220, 10, "alpine"), // the tightest on the road
+      sec(300, 0, -5, "alpine"),
+      sec(500, -1 / 300, -10, "alpine"),
+      sec(400, 1 / 700, 0, "valley"),
+      sec(500, 0, 0, "valley"),
     ],
   },
   {
@@ -219,6 +233,19 @@ export const ROADS: { name: string; sections: Section[] }[] = [
       sec(500, -1 / 250, 0, "coast"), // a headland taken hard against the rail
       sec(400, 0, 0, "coast"),
       sec(300, 1 / 1000, 0, "coast"),
+      // round the bay to a second town on the quay, inland and back to the sea
+      sec(500, -1 / 400, 0, "coast"),
+      sec(400, 1 / 300, 0, "coast"),
+      sec(500, 0, 0, "town"),
+      sec(300, -1 / 450, 0, "town"),
+      sec(400, 1 / 700, 0, "town"),
+      sec(600, 1 / 320, 6, "valley"),
+      sec(500, -1 / 500, -6, "valley"),
+      sec(400, -1 / 280, 0, "coast"),
+      sec(500, 1 / 380, 0, "coast"),
+      sec(300, 0, 0, "coast"),
+      sec(600, -1 / 600, 0, "coast"),
+      sec(500, 1 / 260, 0, "coast"),
     ],
   },
   {
@@ -235,6 +262,20 @@ export const ROADS: { name: string; sections: Section[] }[] = [
       sec(300, 0, -15, "valley"),
       sec(500, 1 / 450, 0, "valley"),
       sec(400, -1 / 900, 0, "valley"),
+      // more orchard, a market town, and a wooded hill before the plain
+      sec(400, 1 / 400, 8, "valley"),
+      sec(300, 0, -8, "valley"),
+      sec(500, -1 / 300, 0, "valley"),
+      sec(400, 0, 12, "valley"),
+      sec(300, 0, -12, "valley"),
+      sec(500, 1 / 550, 0, "town"),
+      sec(300, -1 / 700, 0, "town"),
+      sec(500, 1 / 320, 5, "valley"),
+      sec(400, -1 / 420, -5, "valley"),
+      sec(600, 0, 0, "valley"),
+      sec(500, -1 / 350, 10, "alpine"),
+      sec(400, 1 / 380, -10, "valley"),
+      sec(500, 0, 0, "valley"),
     ],
   },
   {
@@ -250,6 +291,20 @@ export const ROADS: { name: string; sections: Section[] }[] = [
       sec(600, -1 / 500, 0, "town"),
       sec(400, 1 / 450, 5, "valley"),
       sec(300, 0, -5, "valley"),
+      // a second gulch, a mining camp, and the flats beyond
+      sec(500, 1 / 380, 6, "canyon"),
+      sec(300, 0, 0, "canyon"),
+      sec(400, -1 / 240, -6, "canyon"),
+      sec(500, 0, 0, "town"),
+      sec(400, 1 / 500, 0, "town"),
+      sec(600, -1 / 420, 10, "valley"),
+      sec(300, 0, -10, "valley"),
+      sec(500, 1 / 300, 0, "canyon"),
+      sec(400, -1 / 360, 8, "canyon"),
+      sec(400, 0, -8, "canyon"),
+      sec(600, 0, 0, "town"),
+      sec(400, 1 / 650, 0, "town"),
+      sec(500, -1 / 550, 0, "valley"),
     ],
   },
   {
@@ -265,14 +320,34 @@ export const ROADS: { name: string; sections: Section[] }[] = [
       sec(500, -1 / 280, -10, "canyon"),
       sec(400, 1 / 320, -5, "canyon"),
       sec(300, 0, 0, "canyon"),
+      // up a side gorge to the pines again, and down the narrows
+      sec(500, -1 / 320, 12, "canyon"),
+      sec(400, 1 / 240, 8, "canyon"),
+      sec(300, 0, 0, "canyon"),
+      sec(600, -1 / 450, 20, "alpine"),
+      sec(400, 1 / 300, -5, "alpine"),
+      sec(500, 0, -15, "alpine"),
+      sec(400, 1 / 280, -10, "canyon"),
+      sec(500, -1 / 380, 0, "canyon"),
+      sec(300, 0, 6, "canyon"),
+      sec(500, 1 / 420, -6, "canyon"),
+      sec(400, -1 / 260, 0, "canyon"),
+      sec(500, 0, -10, "canyon"),
+      sec(400, 1 / 600, 0, "canyon"),
+      sec(500, -1 / 500, 0, "canyon"),
     ],
   },
 ];
 
-export const LEVEL_LENGTH_MILES = [5.3, 7.9, 11.0, 12.9, 16.8] as const;
+/**
+ * Metres a race runs at each level (T2): about two minutes flat out on the
+ * level's bike, so a faster bike goes a little further. The original's 5.3 to
+ * 16.8 miles made a level 5 race six minutes of the same road twice over.
+ */
+export const LEVEL_LENGTH = [8500, 8800, 9100, 9400, 9700] as const;
 
 /** A road at a level's length (T2); higher levels run further down the same road (S7). */
 export const makeTrack = (level: number, road = 0): Track => {
   const r = ROADS[Math.min(ROADS.length - 1, Math.max(0, road))];
-  return bake(r.name, r.sections, LEVEL_LENGTH_MILES[Math.min(5, Math.max(1, level)) - 1] * MILE, 20261006 + road, road);
+  return bake(r.name, r.sections, LEVEL_LENGTH[Math.min(5, Math.max(1, level)) - 1], 20261006 + road, road);
 };

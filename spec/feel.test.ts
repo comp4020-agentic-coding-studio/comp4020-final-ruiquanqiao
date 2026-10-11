@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DT, type Input, KMH, NO_INPUT, type Race, TUNE, startRace, step } from "../game/sim.ts";
-import { SHOULDER, bake, makeTrack } from "../game/track.ts";
+import { BIKES, DT, type Input, KMH, NO_INPUT, type Race, cap, startRace, step, topSpeed } from "../game/sim.ts";
+import { ROADS, SHOULDER, bake, makeTrack } from "../game/track.ts";
 
 // The handling, written down as numbers once ridden, so a later change that
 // loses it goes red (CLAUDE.md, "Feel is tuned by riding"). The targets are
@@ -21,8 +21,6 @@ function hold(race: Race, keys: Partial<Input>, seconds: number): Race["riders"]
   const input = { ...NO_INPUT, ...keys };
   for (let i = 0; i < Math.round(seconds / DT); i++) {
     step(race, new Map([[0, input]]));
-    // a nitro press is one press
-    input.nitro = false;
   }
   return race.riders.find((r) => r.id === 0)!;
 }
@@ -48,15 +46,36 @@ describe("speed, against the original's dial", () => {
     expect(me.speed / KMH).toBeLessThan(300);
   });
 
-  it("goes past 300 on nitro, and past 340 on the level 5 bike", () => {
-    const race = rider(3);
-    hold(race, { throttle: true }, 25);
-    const me = hold(race, { throttle: true, nitro: true }, 3);
-    expect(me.speed / KMH).toBeGreaterThan(300);
-    expect(me.nitro).toBe(TUNE.nitroCharges - 1);
-    const fast = rider(5);
-    hold(fast, { throttle: true }, 25);
-    expect(hold(fast, { throttle: true, nitro: true }, 3.5).speed / KMH).toBeGreaterThan(340);
+  it("never goes past the bike's top speed on the throttle alone", () => {
+    // there is no nitro (R8): a rider who had just been passed used to come
+    // back past on a burst 35 km/h over the bike's top, which nobody could see
+    for (let level = 1; level <= 5; level++) {
+      const race = rider(level);
+      let fastest = 0;
+      for (let i = 0; i < 40 / DT; i++) {
+        step(race, new Map([[0, { ...NO_INPUT, throttle: true }]]));
+        fastest = Math.max(fastest, race.riders[0].speed);
+      }
+      expect(fastest).toBeLessThanOrEqual(topSpeed(race.riders[0]) + 1e-9);
+      expect(fastest / KMH).toBeGreaterThan(BIKES[level - 1].topKmh - 1);
+    }
+  });
+
+  it("puts everyone in a race on an equally good bike, people and AI alike", () => {
+    for (let level = 1; level <= 5; level++) {
+      ROADS.forEach((_, road) => {
+        const field = Array.from({ length: 15 }, (_, id) => ({ id, name: `r${id}`, human: id < 4 }));
+        const race = startRace(makeTrack(level, road), level, field, 7 + road);
+        const racers = race.riders.filter((r) => !r.cop);
+        expect(racers).toHaveLength(15);
+        for (const r of racers) {
+          expect(r.bike).toBe(racers[0].bike);
+          expect(r.lbs).toBe(racers[0].lbs);
+          expect(topSpeed(r)).toBe(topSpeed(racers[0]));
+          expect(cap(r)).toBe(cap(racers[0]));
+        }
+      });
+    }
   });
 
   it("is ridden at about 190 km/h on the dirt shoulder", () => {
