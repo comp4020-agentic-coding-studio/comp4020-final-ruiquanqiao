@@ -17,6 +17,7 @@
 
 import * as THREE from "three";
 import { type Rider, windupOf } from "../game/sim.ts";
+import { type Prim, meshBody } from "./body.ts";
 import { buildBike } from "./models.ts";
 
 // ---- poses ----
@@ -91,6 +92,10 @@ const RIGHT: Record<string, Pose> = {
   punchOut: ride({ pitch: 0.4, roll: -0.1, handR: [-1.2, 1.42, 0.05], elbowR: [-0.5, 1.8, -0.2] }),
   // the backhand sweeps out and behind
   backhand: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2] }),
+  // and with a weapon in the hand, swept out and back the same way: without
+  // these a backhand drew a bare fist while it hit with the club's weight
+  backhandClub: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "club", dir: [-0.6, -0.35, -0.7] } }),
+  backhandChain: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "chain", dir: [-0.75, -0.1, -0.65] } }),
   // the kick chambered: knee out, foot drawn back by the tail (6 frames)
   kickCock: ride({ pitch: 0.42, roll: -0.12, footR: [-0.95, 0.72, -0.45], kneeR: [-0.9, 1.3, 0.3] }),
   // then the leg straight out sideways just over the tail: the hips slide
@@ -156,8 +161,10 @@ const OFF: Record<string, Pose> = {
 /** The same pose done with the other side of the body. */
 function mirror(p: Pose): Pose {
   const m = (v?: V): V | undefined => (v ? [-v[0], v[1], v[2]] : undefined);
-  return {
+  const out: Pose = {
     ...p,
+    // the hips slide across the seat towards a kick on either side
+    pelvis: m(p.pelvis)!,
     roll: -p.roll,
     handR: m(p.handL)!,
     handL: m(p.handR)!,
@@ -169,6 +176,24 @@ function mirror(p: Pose): Pose {
     kneeL: m(p.kneeR),
     weapon: p.weapon && { ...p.weapon, dir: m(p.weapon.dir)!, left: true } as Pose["weapon"],
   };
+  mirrorOf.set(out, p);
+  return out;
+}
+/** each left-hand pose's right-hand original: its body is the same surface turned over */
+const mirrorOf = new WeakMap<Pose, Pose>();
+
+/** A body surface reflected across the bike's centre line. */
+function reflect(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const r = g.clone();
+  for (const name of ["position", "normal"]) {
+    const a = r.attributes[name];
+    for (let i = 0; i < a.count; i++) a.setX(i, -a.getX(i));
+  }
+  // a reflection turns every face inside out: wind them back
+  const idx = r.index!.array;
+  for (let i = 0; i < idx.length; i += 3) [idx[i + 1], idx[i + 2]] = [idx[i + 2], idx[i + 1]];
+  r.userData.shaded = r.attributes.color;
+  return r;
 }
 
 /** Every frame in the atlas, by name: "punchOut.R", "kick.L", "run2", ... */
@@ -228,8 +253,15 @@ class Puppet {
   private mats = new Map<string, THREE.Material>();
   private parts: Record<string, Part> = {};
   private weapons: Record<"club" | "chain", THREE.Object3D>;
+  private flesh: THREE.Mesh;
+  /** joints, for measuring a pose against the recording */
+  private joints: Record<string, THREE.Vector3> = {};
+  private mesh: boolean;
+  private last: { pose: Pose; geometry: THREE.BufferGeometry } | null = null;
 
-  constructor() {
+  /** `mesh` false skips building the surface, for measuring alone */
+  constructor(mesh = true) {
+    this.mesh = mesh;
     this.bike = buildBike("#ff00ff", "#00ffff");
     // paint and trim were built in marker colours: turn them white and tag them
     this.bike.traverse((o) => {
@@ -241,26 +273,7 @@ class Puppet {
       if (part) m.material = this.mat("#ffffff", 0.35, 0.1);
     });
     this.root.add(this.bike, this.body);
-    const cyl = new THREE.CylinderGeometry(1, 1, 1, 14);
     const ball = new THREE.SphereGeometry(1, 18, 12);
-    // limbs turned on a lathe, from the near joint (y -0.5) to the far one,
-    // so an arm has a shoulder, a biceps and a wrist and a leg a thigh, a
-    // calf and an ankle. Straight cylinders read as sticks the moment an arm
-    // or a leg went out straight for a blow
-    const lathe = (profile: [number, number][], stripe = false): THREE.BufferGeometry =>
-      stripe
-        ? // a panel down the outside only: a sixth of the way round, centred on +x, standing just proud
-          new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r * 1.05, y)), 6, Math.PI / 2 - Math.PI / 6, Math.PI / 3)
-        : new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 20);
-    const UPPER: [number, number][] = [[0.001, -0.56], [0.95, -0.5], [1.18, -0.3], [1.22, -0.1], [1.0, 0.25], [0.8, 0.5], [0.001, 0.56]];
-    const FORE: [number, number][] = [[0.001, -0.55], [0.9, -0.5], [1.12, -0.3], [1.0, -0.05], [0.72, 0.35], [0.6, 0.5], [0.001, 0.55]];
-    const THIGH: [number, number][] = [[0.001, -0.55], [1.12, -0.5], [1.18, -0.25], [1.0, 0.15], [0.78, 0.5], [0.001, 0.55]];
-    const SHIN: [number, number][] = [[0.001, -0.55], [0.82, -0.5], [1.08, -0.25], [0.95, 0.05], [0.65, 0.4], [0.6, 0.5], [0.001, 0.55]];
-    const [upper, fore, thigh, shin] = [UPPER, FORE, THIGH, SHIN].map((p) => lathe(p));
-    const [upperS, foreS, thighS, shinS] = [UPPER, FORE, THIGH, SHIN].map((p) => lathe(p, true));
-    // the trunk in one piece, hips to collar, wider across than it is deep:
-    // a stack of three balls read as a balloon animal, not a rider in leathers
-    const torso = lathe([[0.001, -0.02], [0.78, 0], [0.86, 0.12], [0.8, 0.26], [0.72, 0.4], [0.86, 0.6], [1.0, 0.78], [0.94, 0.92], [0.5, 1.0], [0.001, 1.02]]);
     // leather is shiny: highlights pick out the shapes the tint alone flattened
     const add = (name: string, geo: THREE.BufferGeometry, part: number, colour = "#ffffff", rough = 0.38): void => {
       const m = new THREE.Mesh(geo, this.mat(part ? "#ffffff" : colour, rough, 0)) as unknown as Part;
@@ -268,29 +281,13 @@ class Puppet {
       this.parts[name] = m;
       this.body.add(m);
     };
-    // leathers: the suit in the main colour, shoulders, elbows and knees in the trim
-    add("torso", torso, PART.main);
-    add("hump", ball, PART.trim);
-    add("neck", cyl, PART.fixed, "#1a1a1a");
+    // the helmet is a hard shell, not leather: it stays a piece of its own
     add("helmet", ball, PART.helmet, "#ffffff", 0.25);
     add("stripe", ball, PART.trim, "#ffffff", 0.25);
     add("visor", ball, PART.fixed, "#101318", 0.1);
-    for (const s of ["R", "L"]) {
-      add(`shoulder${s}`, ball, PART.trim);
-      add(`upper${s}`, upper, PART.main);
-      add(`upperS${s}`, upperS, PART.trim);
-      add(`elbow${s}`, ball, PART.trim);
-      add(`fore${s}`, fore, PART.main);
-      add(`foreS${s}`, foreS, PART.trim);
-      add(`glove${s}`, ball, PART.fixed, "#151515");
-      add(`hip${s}`, ball, PART.main);
-      add(`thigh${s}`, thigh, PART.main);
-      add(`thighS${s}`, thighS, PART.trim);
-      add(`knee${s}`, ball, PART.trim);
-      add(`shin${s}`, shin, PART.main);
-      add(`shinS${s}`, shinS, PART.trim);
-      add(`boot${s}`, new THREE.BoxGeometry(1, 1, 1), PART.fixed, "#121212");
-    }
+    // everything else is one surface (client/body.ts), coloured per vertex
+    this.flesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0 }));
+    this.body.add(this.flesh);
     const wood = this.mat("#8a5a30", 0.8, 0);
     const steel = this.mat("#9a9aa2", 0.35, 0.8);
     const club = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.022, 0.75, 10).translate(0, 0.33, 0), wood);
@@ -343,14 +340,23 @@ class Puppet {
         k.scale.set(r, d.length(), r);
       }
     };
-    // the trunk along the spine, hips at the pelvis, its width across the shoulders
-    P.torso.position.copy(pelvis);
-    orient(P.torso, spine, across);
-    P.torso.scale.set(0.205, 0.59, 0.145);
-    // the back protector hump, behind the shoulders
-    blob(P.hump, chest.clone().addScaledVector(spine, -0.08).addScaledVector(fwd, -0.11), [0.13, 0.15, 0.06]);
+    const prims: Prim[] = [];
+    const cone = (a: THREE.Vector3, b: THREE.Vector3, r1: number, r2: number, part: number, k: number, extra: Partial<Prim> = {}): void => {
+      prims.push({ a: a.clone(), b: b.clone(), r1, r2, part, k, ...extra });
+    };
+    // the trunk: hips to collar, broader across the shoulders than at the
+    // waist and wider than it is deep, the back rounded by the protector.
+    // Two-tone as the recording's riders are (punch.jpg, 247.4): the second
+    // colour over the shoulders and back, the first on the seat, the sleeves
+    // and the legs
+    const collar = chest.clone().addScaledVector(spine, 0.06);
+    const flat = { axis: fwd.clone(), s: 0.7 };
+    const waist = pelvis.clone().addScaledVector(spine, 0.2);
+    cone(pelvis.clone().addScaledVector(spine, 0.04), waist, 0.15, 0.16, PART.main, 0.01, { squash: flat });
+    cone(waist, collar, 0.165, 0.215, PART.trim, 0.06, { squash: flat });
+    cone(chest.clone().addScaledVector(spine, -0.1).addScaledVector(fwd, -0.06), chest.clone().addScaledVector(fwd, -0.07), 0.11, 0.13, PART.trim, 0.08);
     const neckTop = chest.clone().addScaledVector(spine, 0.13);
-    bone(P.neck, chest, neckTop, 0.06);
+    cone(chest, neckTop, 0.065, 0.055, PART.fixed, 0.04);
     const head = neckTop.clone().addScaledVector(spine, 0.1).addScaledVector(fwd, 0.04);
     // the helmet faces where the bike goes even when the back is bent
     const look = new THREE.Vector3(0, 0, 1);
@@ -361,6 +367,7 @@ class Puppet {
     P.stripe.scale.set(0.03, 0.16, 0.172);
     P.visor.position.copy(head).addScaledVector(look, 0.075).add(new THREE.Vector3(0, 0.01, 0));
     P.visor.scale.set(0.115, 0.055, 0.1);
+    this.joints.helmet = head.clone();
     for (const [s, sign] of [
       ["R", 1],
       ["L", -1],
@@ -369,28 +376,30 @@ class Puppet {
       const hand = v(s === "R" ? p.handR : p.handL);
       const elbowPole = v((s === "R" ? p.elbowR : p.elbowL) ?? [sign * -0.6, 1, -0.1]);
       const elbow = ik(shoulder, hand, ARM, ARM, elbowPole);
-      // the panel down each limb faces away from the body
-      const out = across.clone().multiplyScalar(sign);
-      blob(P[`shoulder${s}`], shoulder, [0.078, 0.078, 0.078]);
-      bone(P[`upper${s}`], shoulder, elbow, 0.072, out, P[`upperS${s}`]);
-      blob(P[`elbow${s}`], elbow, [0.06, 0.06, 0.06]);
       const handAt = elbow.clone().add(hand.clone().sub(elbow).normalize().multiplyScalar(ARM));
-      bone(P[`fore${s}`], elbow, handAt, 0.064, out, P[`foreS${s}`]);
-      // a gauntlet: a fist, wider across the knuckles than it is thick
-      blob(P[`glove${s}`], handAt, [0.08, 0.075, 0.09], handAt.clone().sub(elbow));
+      const wrist = elbow.clone().lerp(handAt, 0.82);
+      // the sleeve grows out of the shoulder and bends at the elbow; the
+      // gauntlet is a fist, blended only a little so the cuff stays a cuff
+      cone(shoulder, elbow, 0.095, 0.074, PART.main, 0.07);
+      cone(elbow, wrist, 0.074, 0.056, PART.main, 0.04);
+      const fist = handAt.clone().sub(elbow).normalize();
+      cone(wrist.clone().addScaledVector(fist, 0.02), handAt.clone().addScaledVector(fist, 0.02), 0.058, 0.07, PART.fixed, 0.015);
       const hip = pelvis.clone().addScaledVector(across, sign * 0.11);
       const foot = v(s === "R" ? p.footR : p.footL);
       const kneePole = v((s === "R" ? p.kneeR : p.kneeL) ?? [sign * -0.4, 0.9, 0.4]);
       const knee = ik(hip, foot, LEG, LEG, kneePole);
-      blob(P[`hip${s}`], hip, [0.09, 0.09, 0.09]);
-      bone(P[`thigh${s}`], hip, knee, 0.092, out, P[`thighS${s}`]);
-      blob(P[`knee${s}`], knee, [0.076, 0.076, 0.076]);
       const footAt = knee.clone().add(foot.clone().sub(knee).normalize().multiplyScalar(LEG));
-      bone(P[`shin${s}`], knee, footAt, 0.07, out, P[`shinS${s}`]);
-      const boot = P[`boot${s}`];
-      boot.position.copy(footAt).add(new THREE.Vector3(0, -0.02, 0.05));
-      boot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), knee.clone().sub(footAt).normalize());
-      boot.scale.set(0.1, 0.16, 0.22);
+      cone(hip, knee, 0.12, 0.085, PART.main, 0.06);
+      const ankle = knee.clone().lerp(footAt, 0.78);
+      cone(knee, ankle, 0.085, 0.064, PART.main, 0.04);
+      // the boot, from the top of the shin down to a toe ahead of the foot
+      const toe = footAt.clone().add(new THREE.Vector3(0, -0.04, 0.14));
+      cone(ankle, footAt, 0.062, 0.058, PART.fixed, 0.015);
+      cone(footAt, toe, 0.058, 0.045, PART.fixed, 0.03);
+      this.joints[`elbow${s}`] = elbow;
+      this.joints[`glove${s}`] = handAt;
+      this.joints[`knee${s}`] = knee;
+      this.joints[`boot${s}`] = footAt.clone().add(new THREE.Vector3(0, -0.02, 0.05));
       if (s === "R") {
         for (const [k, w] of Object.entries(this.weapons)) {
           w.visible = p.weapon?.kind === k;
@@ -403,6 +412,13 @@ class Puppet {
         const w = this.weapons[p.weapon!.kind];
         w.position.copy(handAt);
       }
+    }
+    if (this.mesh) {
+      // the atlas draws each left-hand pose straight after its right-hand one
+      const done = this.last && mirrorOf.get(p) === this.last.pose ? reflect(this.last.geometry) : meshBody(prims, fleshColour, (part) => idMaterial(part).color);
+      this.flesh.geometry.dispose();
+      this.flesh.geometry = done;
+      this.last = { pose: p, geometry: done };
     }
     // on or off the bike
     this.bike.visible = p.bike;
@@ -420,7 +436,7 @@ class Puppet {
 
   /** Where a part sits, in bike space. */
   at(name: string): THREE.Vector3 {
-    return this.parts[name].position.clone();
+    return (this.joints[name] ?? this.parts[name].position).clone();
   }
 
   /** Swap every material for flat part numbers, or back. */
@@ -428,6 +444,14 @@ class Puppet {
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
+      if (m === this.flesh) {
+        // the one surface carries its part numbers per vertex
+        const g = m.geometry;
+        if (g.attributes.idColour) g.setAttribute("color", on ? g.attributes.idColour : g.userData.shaded);
+        m.userData.real ??= m.material;
+        m.material = on ? idFlesh : m.userData.real;
+        return;
+      }
       if (on) {
         m.userData.real ??= m.material;
         const id = (m.userData.part ?? 0) as number;
@@ -442,6 +466,10 @@ function idMaterial(id: number): THREE.MeshBasicMaterial {
   // part n is written as n*40 in red, read back exactly with no filtering
   return (idMats[id] ??= new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB((id * 40) / 255, 0, 0, THREE.SRGBColorSpace) }));
 }
+
+const idFlesh = new THREE.MeshBasicMaterial({ vertexColors: true });
+/** the leathers' own colour per part, before the tint: white where tinted, near black for gloves, boots and neck */
+const fleshColour = (part: number): THREE.Color => (part ? new THREE.Color(1, 1, 1) : new THREE.Color().setRGB(0.09, 0.09, 0.09, THREE.SRGBColorSpace));
 
 /** Two-bone IK: the middle joint, given both ends' lengths and where it should point. */
 function ik(a: THREE.Vector3, target: THREE.Vector3, l1: number, l2: number, pole: THREE.Vector3): THREE.Vector3 {
@@ -473,7 +501,7 @@ export type Measure = Record<"elbow" | "hand" | "knee" | "foot" | "tailLamp", [n
 export function measure(frame: string): Measure {
   const pose = FRAMES.find(([n]) => n === frame)?.[1];
   if (!pose) throw new Error(`no frame ${frame}`);
-  const puppet = new Puppet();
+  const puppet = new Puppet(false);
   puppet.set(pose);
   const width = 0.29;
   const head = puppet.at("helmet");
@@ -719,7 +747,12 @@ export function frameFor(r: Rider): string {
   const windup = windupOf(r, a);
   const out = a.t >= windup;
   if (a.kind === "kick") return `${out ? "kick" : "kickCock"}.${side}`;
-  if (a.kind === "backhand") return a.t >= windup * 0.4 ? `backhand.${side}` : `punchCock.${side}`;
+  if (a.kind === "backhand") {
+    // a weapon is drawn up and swept back with the arm, never left behind
+    const held = r.weapon === "club" ? "Club" : r.weapon === "chain" ? "Chain" : "";
+    if (a.t >= windup * 0.4) return `backhand${held}.${side}`;
+    return held ? `${r.weapon}Up.${side}` : `punchCock.${side}`;
+  }
   if (r.weapon === "club") return `${out ? "clubOut" : "clubUp"}.${side}`;
   if (r.weapon === "chain") return `${out ? "chainOut" : "chainUp"}.${side}`;
   return `${out ? "punchOut" : "punchCock"}.${side}`;

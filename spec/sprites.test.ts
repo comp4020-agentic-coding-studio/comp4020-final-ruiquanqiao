@@ -32,6 +32,20 @@ describe("rider frames", () => {
     expect(frameFor(r)).toBe("clubOut.R");
   });
 
+  it("swings the weapon it holds in a backhand too, on either side", () => {
+    // a backhand with a club used to show a bare fist while it hit with the club
+    for (const weapon of ["club", "chain"] as const)
+      for (const side of [1, -1] as const) {
+        const r = rider();
+        r.weapon = weapon;
+        const s = side > 0 ? "R" : "L";
+        r.attack = { kind: "backhand", side, t: 0, target: -1, landed: false };
+        expect(frameFor(r)).toBe(`${weapon}Up.${s}`);
+        r.attack.t = TUNE.weaponWindup;
+        expect(frameFor(r)).toBe(`backhand${weapon === "club" ? "Club" : "Chain"}.${s}`);
+      }
+  });
+
   it("chambers a kick, leg bent and out, until it lands, then kicks it straight", () => {
     // the recording: leg cocked 57.00-57.20 (6 frames), out 57.24-57.40 (5)
     const r = rider();
