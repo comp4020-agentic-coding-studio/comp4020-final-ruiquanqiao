@@ -12,7 +12,7 @@ export const MAX_AI = 29;
 export const SNAPSHOT_HZ = 20;
 
 export type ToServer =
-  | { t: "queue"; mode: Mode; level: number; track?: number; ai?: number }
+  | { t: "queue"; mode: Mode; level: number; track?: number; ai?: number; /** the leathers asked for, an index in LIVERIES */ look?: number }
   | { t: "leave" }
   | { t: "in"; seq: number; keys: number }
   | { t: "name"; name: string };
@@ -42,7 +42,7 @@ export type RiderState = [
   tilt: number,
 ];
 
-export type Entry = { id: number; name: string; human: boolean };
+export type Entry = { id: number; name: string; human: boolean; /** a person's leathers, an index in LIVERIES, the same in everyone's view */ look?: number };
 
 /** A car on the wire: where it is, and how fast, for drawing between snaps. */
 export type CarState = [id: number, z: number, x: number];

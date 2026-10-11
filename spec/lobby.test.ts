@@ -169,3 +169,29 @@ describe("choosing how many AI riders (N2)", () => {
     expect([...l.races.values()][0].entrants).toHaveLength(1);
   });
 });
+
+// Leathers. One's own rider used to be drawn in a fixed set of colours in
+// one's own view only, while everyone else saw whatever pair the rider's
+// number dealt. Each person now picks a livery, and it travels in the entry
+// list every rider in the race is sent.
+describe("each person's leathers", () => {
+  it("are the ones they picked, in the entry list everyone in the race is sent", () => {
+    const { l } = lobby();
+    const a = conn(1);
+    const b = conn(2);
+    l.join(a, "human", 1, 0, 0, undefined, 3);
+    l.join(b, "human", 1, 1, 0, undefined, 7);
+    l.tick(20);
+    const lists = [a, b].map((c) => started(c).at(-1)!.entrants.map((e) => [e.name, e.look]));
+    expect(lists[0]).toEqual(lists[1]);
+    expect(lists[0]).toEqual([["r1", 3], ["r2", 7]]);
+  });
+
+  it("are dropped, not trusted, when the number is not a livery", () => {
+    const { l } = lobby();
+    const a = conn(1);
+    l.join(a, "ai", 1, 0, 0, 0, 99);
+    l.tick(6);
+    expect(started(a).at(-1)!.entrants.find((e) => e.human)!.look).toBeUndefined();
+  });
+});

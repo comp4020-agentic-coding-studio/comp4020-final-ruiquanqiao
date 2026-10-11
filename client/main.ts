@@ -5,6 +5,7 @@
 
 import { type CarState, type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
+import { LIVERIES, liveryOf } from "../game/liveries.ts";
 import { setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { react } from "./feel.ts";
 import { RaceScene } from "./scene.ts";
@@ -70,6 +71,7 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   if (msg.you !== null) {
     show("race");
     roadScene.setTrack(track);
+    roadScene.setLooks(msg.entrants);
     resize();
     banner(`${track.name} · level ${msg.level} · ${(track.length / 1000).toFixed(1)} km`, 2500);
     // each road has its own track, from the top at every start; chosen before
@@ -80,6 +82,7 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   } else {
     $("#watch").hidden = false;
     watchScene.setTrack(track);
+    watchScene.setLooks(msg.entrants);
     watchScene.resize(watch.clientWidth || 480, watch.clientHeight || 270);
   }
 }
@@ -247,6 +250,28 @@ function board(): void {
 }
 
 // how many AI riders to race (N2), remembered by this browser
+// the leathers: one swatch per livery; the pick is kept by this browser, and
+// a first visit is dealt one at random so two newcomers are told apart
+const looks = $("#looks");
+const myLook = liveryOf(localStorage.getItem("look")) ?? Math.floor(Math.random() * LIVERIES.length);
+localStorage.setItem("look", String(myLook));
+LIVERIES.forEach((l, i) => {
+  const label = document.createElement("label");
+  label.title = l.name;
+  const input = document.createElement("input");
+  input.type = "radio";
+  input.name = "look";
+  input.value = String(i);
+  input.checked = i === myLook;
+  input.setAttribute("aria-label", l.name);
+  input.addEventListener("change", () => localStorage.setItem("look", String(i)));
+  const swatch = document.createElement("span");
+  swatch.className = "swatch";
+  swatch.style.background = `radial-gradient(circle at 50% 24%, ${l.helmet} 0 17%, transparent 18%), linear-gradient(${l.trim} 0 42%, ${l.main} 42%)`;
+  label.append(input, swatch);
+  looks.append(label);
+});
+
 const aiCount = $<HTMLInputElement>("#ai-count");
 const showAi = (): void => {
   $("#ai-count-out").textContent = aiCount.value;
@@ -266,7 +291,8 @@ for (const b of document.querySelectorAll<HTMLButtonElement>(".queue button")) {
     // the road asked for plays while the pool fills
     setRoad(track);
     startAudio();
-    send({ t: "queue", mode: b.dataset.mode as Mode, level, track, ai: Number(aiCount.value) });
+    const look = liveryOf(document.querySelector<HTMLInputElement>('input[name="look"]:checked')?.value);
+    send({ t: "queue", mode: b.dataset.mode as Mode, level, track, ai: Number(aiCount.value), look });
   });
 }
 $("#leave").addEventListener("click", () => {
@@ -412,7 +438,7 @@ const road = $<HTMLCanvasElement>("#road");
 const dash = $<HTMLCanvasElement>("#dash");
 const dashCtx = dash.getContext("2d")!;
 const watch = $<HTMLCanvasElement>("#watch-canvas");
-const roadScene = new RaceScene(road, true);
+const roadScene = new RaceScene(road);
 const watchScene = new RaceScene(watch);
 // the riders' frames are drawn in the lobby, once the page is up, not on the grid
 setTimeout(() => roadScene.prepare(), 200);
