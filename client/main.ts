@@ -50,6 +50,8 @@ type Current = {
   go: number;
   /** the last number of the countdown shown */
   counted: number;
+  /** one's own bike before the latest step, to draw between the two */
+  drawFrom: { z: number; x: number } | null;
 };
 
 let current: Current | null = null;
@@ -64,7 +66,7 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   const track = makeTrack(msg.level, msg.track ?? 0);
   const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed, msg.countdown ?? 0);
   const go = performance.now() / 1000 + (msg.countdown ?? 0);
-  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1 };
+  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null };
   if (msg.you !== null) {
     show("race");
     roadScene.setTrack(track);
@@ -483,6 +485,8 @@ function interpolate(c: Current, now: number): void {
   }
 }
 
+/** where one's own bike was last drawn, for the debugging handle */
+let drawnSelf = { z: 0, x: 0 };
 let last = performance.now() / 1000;
 let acc = 0;
 let hitFlash = 0;
@@ -502,6 +506,7 @@ function frame(): void {
         const r = c.race.riders.find((x) => x.id === c.you);
         // on the grid nothing moves; keys held now are sent, and go with everyone's
         if (r && now >= c.go) {
+          c.drawFrom = { z: r.z, x: r.x };
           ride(r, keys, c.race.track);
           const fix = c.prediction.ease();
           r.z += fix.z;
@@ -528,7 +533,24 @@ function frame(): void {
     const own = c.you === null ? null : c.race.riders.find((x) => x.id === c.you);
     if (own) keepOff(c, own, now);
     if (c.you !== null) {
+      // one's own bike drawn between its last two steps, as far along as the
+      // clock is towards the next. Drawn where the last step left it, it moved
+      // only on frames that ran a step: at 120 fps it stood still one frame
+      // and jumped 1.25 m the next, and the camera with it, so every bike
+      // round it seemed to lurch back and forth (.cache/jitter.mjs: 57 cm a
+      // frame off a straight line, the others 2 cm on the road)
+      const held = own && c.drawFrom && Math.abs(own.z - c.drawFrom.z) < 5 ? { z: own.z, x: own.x } : null;
+      if (own && held) {
+        const f = acc / DT;
+        own.z = c.drawFrom!.z + (held.z - c.drawFrom!.z) * f;
+        own.x = c.drawFrom!.x + (held.x - c.drawFrom!.x) * f;
+      }
       roadScene.draw(c.race.riders, c.you, dashCover / Math.max(1, dash.height), c.race.cars);
+      if (own) drawnSelf = { z: own.z, x: own.x };
+      if (own && held) {
+        own.z = held.z;
+        own.x = held.x;
+      }
       hud(c);
       const r = c.race.riders.find((x) => x.id === c.you);
       if (r) updateAudio({ speed: r.speed, top: topSpeed(r), throttle: keys.throttle || r.boost > 0, riding: r.phase === "riding" });
@@ -624,6 +646,8 @@ window.__rash = {
   press: (k: keyof Input, down: boolean) => setKey(k, down),
   scene: () => roadScene,
   heard: () => heard,
+  /** one's own bike as drawn this frame, between its last two steps */
+  self: () => drawnSelf,
   /** everyone as drawn this frame, unrounded */
   drawn: () => current?.race.riders.map((r) => ({ id: r.id, z: r.z, x: r.x, phase: r.phase, cop: r.cop })),
   riders: () => current?.race.riders.map((r) => ({ id: r.id, cop: r.cop, z: Math.round(r.z), x: r.x.toFixed(1), phase: r.phase, weapon: r.weapon, attack: r.attack && `${r.attack.kind}${r.attack.t.toFixed(2)}${r.attack.landed ? "L" : ""}` })),
