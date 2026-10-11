@@ -15,8 +15,8 @@ export type AudioFrame = { speed: number /* m/s */; top: number /* m/s, bike's t
 export const MUSIC = ["ridge", "seawall", "orchard", "goldtown", "canyon"].map((n) => `/assets/music/${n}.mp3`);
 const MUSIC_LEVEL = 0.3; // under the engine and the hits
 /** Short recorded hits: five takes of each, so a run of blows never repeats one */
-const SAMPLES = { wood: 5, tin: 5 } as const;
-const sampleUrl = (kind: keyof typeof SAMPLES, i: number): string => `/assets/sfx/${kind === "wood" ? "wood-light" : "tin-medium"}-${i}.wav`;
+const SAMPLES = { wood: 5 } as const;
+const sampleUrl = (_kind: keyof typeof SAMPLES, i: number): string => `/assets/sfx/wood-light-${i}.wav`;
 const NOISE_LEN = 3; // s of shared white noise
 // The original's engine buzzes at 75-110 Hz and rises only ~1.3x with speed;
 // this one is given a wider sweep so the revs read on small speakers.
@@ -320,10 +320,12 @@ export function updateAudio(f: AudioFrame): void {
   e.am.frequency.setTargetAtTime(f0 / 2, t, lag);
   e.tone.frequency.setTargetAtTime(300 + 2600 * revs + (f.throttle ? 700 : 0), t, 0.08);
   e.out.gain.setTargetAtTime(f.riding ? 0.16 + 0.14 * revs + (f.throttle ? 0.12 : 0) : 0.04, t, 0.08);
-  // wind goes with how fast you are going, not how hard the bike is working
+  // wind goes with how fast you are going, not how hard the bike is working.
+  // At 0.22 and a band opening to 2.75 kHz it was a hiss as loud as the
+  // engine over everything at speed; now a low rush under it
   const w = Math.min(1, f.speed / 75);
-  e.wind.gain.setTargetAtTime(0.22 * w * w, t, 0.15);
-  e.windTone.frequency.setTargetAtTime(350 + 2400 * w, t, 0.15);
+  e.wind.gain.setTargetAtTime(0.055 * w * w, t, 0.15);
+  e.windTone.frequency.setTargetAtTime(300 + 900 * w, t, 0.15);
 }
 
 export type Sfx = "punch" | "kick" | "club" | "chain" | "hitTaken" | "crash" | "carCrash" | "snatch" | "busted" | "countdown" | "go" | "finish" | "bump" | "carBump" | "scrape" | "runOver" | "rideOver";
@@ -345,9 +347,9 @@ export function sfx(kind: Sfx, gain = 1): void {
       blip(g, "triangle", 70, 45, t, 0.2, 0.4);
       hiss(g, "lowpass", 800, 300, 0.7, t, 0.09, 0.5);
       break;
-    case "club": // a club on a helmet: a hard wooden crack, the shell ringing hollow under it
+    case "club": // a club on a helmet: a hard wooden crack. A hollow ring of a
+      // struck shell (impactTin) was laid under it at first, and sounded tinny
       sample(g, "wood", t, 1.1);
-      sample(g, "tin", t, 0.45);
       blip(g, "sine", 160, 70, t, 0.1, 0.5);
       break;
     case "chain": // a thud and three rattles of inharmonic links

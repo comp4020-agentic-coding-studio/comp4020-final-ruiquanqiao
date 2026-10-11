@@ -61,7 +61,6 @@ License, http://creativecommons.org/licenses/by/4.0/
 | Files | What it is | Source | Licence |
 |---|---|---|---|
 | `sfx/wood-light-0..4.wav` | `impactWood_light_000..004`: the crack of a club on a helmet | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) 1.0 | CC0 1.0, stated in the pack's License.txt |
-| `sfx/tin-medium-0..4.wav` | `impactTin_medium_000..004`: the helmet shell ringing under it | as above | as above |
 
 Each is trimmed of its leading silence, so the crack lands on the frame the
 blow does, cut to 0.3 s and saved as mono 16-bit WAV: an MP3 would start

@@ -16,7 +16,7 @@ describe("the race music", () => {
   });
 
   it("is served by the app, every track and every recorded hit", async () => {
-    const hits = [0, 1, 2, 3, 4].flatMap((i) => [`/assets/sfx/wood-light-${i}.wav`, `/assets/sfx/tin-medium-${i}.wav`]);
+    const hits = [0, 1, 2, 3, 4].map((i) => `/assets/sfx/wood-light-${i}.wav`);
     for (const path of [...MUSIC, ...hits]) {
       const res = await fetch(new URL(path, baseUrl));
       expect(res.status, path).toBe(200);
