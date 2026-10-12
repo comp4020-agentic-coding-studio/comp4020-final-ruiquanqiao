@@ -81,6 +81,12 @@ export type Store = {
 
 export type Logger = (event: Record<string, unknown>) => void;
 
+/** A person as the logs name them: the name they ride under, and the rider number behind it, so two people who share a name are still two. */
+export const who = (c: Pick<Conn, "name" | "rider">): string => `${c.name}#${c.rider}`;
+
+/** The ids a race event names a rider by, which the log replaces with who they are. */
+const ROLES = ["by", "on", "rider", "from", "other", "cop"] as const;
+
 // Riders of my own for the AI field (ledger H7: no names from the original).
 const AI_NAMES = [
   "Dex Carbine", "Mona Sprocket", "Big Lou", "Rita Voltz", "Kid Marrow", "Saul Brake", "Juno Fang",
@@ -130,7 +136,7 @@ export class Lobby {
       // each newcomer restarts the ten seconds, so more can make it in
       pool.startsAt = now + POOL_WAIT.human;
     }
-    this.log({ ev: "queue", rider: conn.rider, mode, level: conn.level, pool: pool.members.length });
+    this.log({ ev: "queue", who: who(conn), mode, level: conn.level, road: ROADS[conn.road]?.name, pool: pool.members.length });
     if (!conn.watching) this.watchNewest(conn);
     this.announce(mode, now);
   }
@@ -145,7 +151,7 @@ export class Lobby {
     if (pool.members.length === 0) pool.startsAt = null;
     conn.pool = null;
     for (const live of this.races.values()) if (live.id !== conn.watching) live.watchers.delete(conn);
-    this.log({ ev: "unqueue", rider: conn.rider, mode });
+    this.log({ ev: "unqueue", who: who(conn), mode });
     this.announce(mode, now);
   }
 
@@ -180,11 +186,12 @@ export class Lobby {
     conn.watching = race;
     live.watchers.add(conn);
     conn.send({ t: "start", race: live.id, level: live.level, track: live.road, seed: live.seed, entrants: live.entrants, you: null, countdown: Math.max(0, -live.race.t) });
-    this.log({ ev: "watch", rider: conn.rider, race });
+    this.log({ ev: "watch", who: who(conn), race });
   }
 
   unwatch(conn: Conn): void {
     const race = conn.watching;
+    if (race) this.log({ ev: "unwatch", who: who(conn), race });
     conn.watching = null;
     for (const live of this.races.values()) if (live.id === race) live.watchers.delete(conn);
   }
@@ -205,6 +212,7 @@ export class Lobby {
     const m = conn.match;
     if (!m || m.phase !== "check" || m.accepted.has(conn)) return;
     m.accepted.add(conn);
+    this.log({ ev: "accept", who: who(conn), match: m.id, accepted: m.accepted.size, of: m.members.length });
     for (const c of m.members) c.send({ t: "check", match: m.id, accepted: m.accepted.size, of: m.members.length });
     if (m.accepted.size === m.members.length) this.load(m, now);
   }
@@ -212,6 +220,7 @@ export class Lobby {
   decline(conn: Conn, now: number): void {
     const m = conn.match;
     if (!m || m.phase !== "check") return;
+    this.log({ ev: "decline", who: who(conn), match: m.id });
     this.fail(m, [conn], now, "declined");
   }
 
@@ -231,7 +240,7 @@ export class Lobby {
     }
     pool.members.unshift(...back);
     if (pool.members.length > 0) pool.startsAt = now + POOL_WAIT[m.mode];
-    this.log({ ev: "match_failed", match: m.id, why, out: out.map((c) => c.rider), back: back.length });
+    this.log({ ev: "match_failed", match: m.id, why, out: out.map(who), back: back.map(who) });
     this.announce(m.mode, now);
   }
 
@@ -265,7 +274,7 @@ export class Lobby {
       const r = live.race.riders.find((x) => x.id === conn.local);
       if (r && r.phase !== "finished") r.phase = "wrecked";
       live.conns.delete(conn.local);
-      this.log({ ev: "quit", rider: conn.rider, race: live.id });
+      this.log({ ev: "quit", who: who(conn), race: live.id });
     }
     conn.race = null;
   }
@@ -312,7 +321,7 @@ export class Lobby {
       c.match = m;
       c.send({ t: "found", match: m.id, mode, of: members.length, answer: CHECK_WAIT });
     }
-    this.log({ ev: "match_found", match: m.id, mode, humans: members.length });
+    this.log({ ev: "match_found", match: m.id, mode, people: members.map(who) });
     if (pool.members.length > 0) this.announce(mode, now);
   }
 
@@ -420,7 +429,9 @@ export class Lobby {
       c.send({ t: "start", race: id, level, track: road, seed, entrants, you: i, countdown: Math.max(0, TUNE.countdown - (c.rtt ?? 0) / 2) });
     });
     const late = members.filter((c) => !m.gone.has(c) && (m.progress.get(c) ?? 0) < 1).length;
-    this.log({ ev: "race_start", race: id, match: m.id, mode, level, humans: members.length, riders: entrants.length, loadSecs: Math.round((now - m.since) * 10) / 10, late, pings: members.map((c) => Math.round((c.rtt ?? 0) * 1000)) });
+    // who each rider number in this race is, for reading its events back
+    const riders = Object.fromEntries(members.map((c, i) => [i, who(c)]));
+    this.log({ ev: "race_start", race: id, match: m.id, mode, level, road: track.name, riders, npcs: entrants.length - members.length, loadSecs: Math.round((now - m.since) * 10) / 10, late, pings: members.map((c) => Math.round((c.rtt ?? 0) * 1000)) });
     // anyone still queued watches the new race
     for (const p of Object.values(this.pools)) {
       for (const c of p.members) {
@@ -497,7 +508,8 @@ export class Lobby {
       // many and too small to be worth a line
       for (let i = live.sent; i < live.race.events.length; i++) {
         const e = live.race.events[i];
-        if (e.kind !== "bump") this.log({ ev: e.kind, race: live.id, ...e });
+        const line = e.kind === "bump" ? null : this.named(live, e as unknown as Record<string, unknown> & { kind: string; t: number });
+        if (line) this.log(line);
       }
       const events = live.race.events.slice(live.sent);
       live.sent = live.race.events.length;
@@ -511,6 +523,33 @@ export class Lobby {
 
     const everyoneGone = live.conns.size === 0;
     if (humansDone(live.race) || everyoneGone || live.race.t > live.timeLimit) this.finish(live, now);
+  }
+
+  /**
+   * A race event as the log keeps it: every rider by name, a person as who
+   * they are and the rest marked NPC or cop. An event no person is part of is
+   * not kept: fifteen NPCs fighting each other wrote a line every few tenths
+   * of a second and buried the two people the log is read for.
+   */
+  private named(live: Live, e: Record<string, unknown> & { kind: string; t: number }): Record<string, unknown> | null {
+    const line: Record<string, unknown> = { ev: e.kind, race: live.id, t: Math.round(e.t * 10) / 10 };
+    let person = false;
+    for (const [k, v] of Object.entries(e)) {
+      if (k === "kind" || k === "t") continue;
+      if (!(ROLES as readonly string[]).includes(k) || typeof v !== "number") {
+        line[k] = v;
+        continue;
+      }
+      const c = live.riders.has(v) ? live.entrants.find((x) => x.id === v && x.human) : undefined;
+      if (c) {
+        person = true;
+        line[k] = `${c.name}#${live.riders.get(v)}`;
+      } else {
+        const r = live.race.riders.find((x) => x.id === v);
+        line[k] = r ? `${r.name} (${r.cop ? "cop" : "NPC"})` : v;
+      }
+    }
+    return person ? line : null;
   }
 
   private finish(live: Live, now: number): void {
@@ -539,7 +578,7 @@ export class Lobby {
       };
     });
     this.store.finishRace(live.id, live.level, live.track, result);
-    this.log({ ev: "race_end", race: live.id, secs: Math.round(live.race.t), standings: result.filter((s) => s.human).map((s) => [s.name, s.place, s.outcome]) });
+    this.log({ ev: "race_end", race: live.id, secs: Math.round(live.race.t), standings: result.filter((s) => s.human).map((s) => [`${s.name}#${s.id}`, s.place, s.outcome]) });
     for (const c of live.conns.values()) {
       c.send({ t: "end", race: live.id, standings: result, qualified: this.store.qualified(c.rider) });
       c.race = null;

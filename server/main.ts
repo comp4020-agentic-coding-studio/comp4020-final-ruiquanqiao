@@ -9,15 +9,21 @@ import { marked } from "marked";
 import { WebSocketServer } from "ws";
 import type { ToClient, ToServer } from "../game/protocol.ts";
 import { openDb } from "./db.ts";
-import { type Conn, Lobby } from "./lobby.ts";
+import { type Conn, Lobby, who } from "./lobby.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const DATA = process.env.DATA_DIR ?? (existsSync("/data") ? "/data" : ".data");
 const ROOT = process.cwd();
 
 const db = openDb(join(DATA, "rash.db"));
-// one structured line per thing that happened, read with `flyctl logs`
-const log = (event: Record<string, unknown>): void => console.log(JSON.stringify({ at: new Date().toISOString(), ...event }));
+// one structured line per thing that happened: printed, for `flyctl logs`, and
+// kept in the database, because Fly holds only a short buffer and a restart
+// empties it (read the kept ones with scripts/log.ts)
+const log = (event: Record<string, unknown>): void => {
+  const at = new Date().toISOString();
+  console.log(JSON.stringify({ at, ...event }));
+  if (event.ev !== "listening") db.log(at, event);
+};
 const lobby = new Lobby(db, log);
 
 // ---- pages ----
@@ -156,7 +162,7 @@ wss.on("connection", (ws, req) => {
     local: -1,
     seq: 0,
   };
-  log({ ev: "connect", rider: rider.id });
+  log({ ev: "connect", who: who({ name: rider.name, rider: rider.id }) });
   conn.send({ t: "hello", you: rider, qualified: db.qualified(rider.id) });
   lobby.hello(conn);
 
@@ -181,9 +187,10 @@ wss.on("connection", (ws, req) => {
     else if (msg.t === "name" && typeof msg.name === "string") {
       const name = msg.name.replace(/\s+/g, " ").trim().slice(0, 20);
       if (name) {
+        const before = who(conn);
         db.rename(conn.rider, name);
         conn.name = name;
-        log({ ev: "rename", rider: conn.rider, name });
+        log({ ev: "rename", who: who(conn), was: before });
         conn.send({ t: "hello", you: { id: conn.rider, name }, qualified: db.qualified(conn.rider) });
       }
     }
@@ -191,7 +198,7 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     lobby.disconnect(conn, performance.now() / 1000);
-    log({ ev: "disconnect", rider: rider.id });
+    log({ ev: "disconnect", who: who(conn) });
   });
 });
 

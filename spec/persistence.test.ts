@@ -60,3 +60,20 @@ it("ranks everyone who has raced by points for their finishes, wins and podiums,
   ]);
   db.close();
 });
+
+it("keeps the log of who did what across a restart, and finds a person's lines by name", () => {
+  const file = join(dir, "log.db");
+  let db = openDb(file);
+  db.log("2026-10-19T03:00:01.000Z", { ev: "connect", who: "Ana#11" });
+  db.log("2026-10-19T03:00:02.000Z", { ev: "connect", who: "Ben#12" });
+  db.log("2026-10-19T03:00:09.000Z", { ev: "hit", race: 4, by: "Ana#11", on: "Ben#12", move: "punch" });
+  db.close();
+
+  db = openDb(file);
+  expect(db.logSince("2026-10-19T03:00:00Z").map((r) => r.line.ev)).toEqual(["connect", "connect", "hit"]);
+  expect(db.logSince("2026-10-19T03:00:00Z", "Ana").map((r) => r.line)).toEqual([
+    { ev: "connect", who: "Ana#11" },
+    { ev: "hit", race: 4, by: "Ana#11", on: "Ben#12", move: "punch" },
+  ]);
+  db.close();
+});

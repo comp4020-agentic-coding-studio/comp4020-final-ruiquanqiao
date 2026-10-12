@@ -453,3 +453,77 @@ describe("live rooms and spectating (N11)", () => {
     expect(started(a).length).toBe(before);
   });
 });
+
+// The logs are what the crit is narrated from and what is read when the
+// deployed app misbehaves: every line has to say who, by name.
+describe("the log (who did what)", () => {
+  function logged() {
+    const lines: Record<string, unknown>[] = [];
+    const l = new Lobby({ startRace: () => 1, finishRace: () => {}, qualified: () => [] }, (e) => void lines.push(e), () => 0.5);
+    return { l, lines };
+  }
+
+  it("names every person in matchmaking and at the start, so two people can be told apart", () => {
+    const { l, lines } = logged();
+    const ana = conn(11, "Ana");
+    const ben = conn(12, "Ben");
+    l.join(ana, "human", 1, 0);
+    l.join(ben, "human", 1, 1);
+    go(l, 11);
+    expect(lines.find((e) => e.ev === "queue")).toMatchObject({ who: "Ana#11" });
+    expect(lines.filter((e) => e.ev === "accept").map((e) => e.who)).toEqual(["Ana#11", "Ben#12"]);
+    expect(lines.find((e) => e.ev === "race_start")).toMatchObject({ riders: { 0: "Ana#11", 1: "Ben#12" } });
+  });
+
+  it("writes a race event with every rider by name, and leaves out the ones no person is part of", () => {
+    const { l, lines } = logged();
+    const ana = conn(11, "Ana");
+    l.join(ana, "ai", 1, 0, 0, 3);
+    const t = go(l, 5);
+    const live = [...l.races.values()][0];
+    const npc = live.entrants.find((e) => !e.human)!;
+    const other = live.entrants.filter((e) => !e.human)[1];
+    live.race.events.push({ t: 1, kind: "hit", by: ana.local, on: npc.id, move: "punch" });
+    live.race.events.push({ t: 1, kind: "hit", by: npc.id, on: other.id, move: "kick" });
+    for (let now = t; now < t + 0.2; now += 1 / 60) l.tick(now);
+    const hits = lines.filter((e) => e.ev === "hit");
+    expect(hits).toEqual([{ ev: "hit", race: live.id, t: 1, by: "Ana#11", on: `${npc.name} (NPC)`, move: "punch" }]);
+  });
+});
+
+// Who may change what (docs/decisions/0002): the server never takes a rider
+// from what a browser sends, only from which connection sent it.
+describe("what a person may change", () => {
+  it("lets a person's keys move only their own bike, whatever else the message carries", () => {
+    const { l } = lobby();
+    const a = conn(1);
+    const b = conn(2);
+    l.join(a, "human", 1, 0);
+    l.join(b, "human", 1, 1);
+    go(l, 11);
+    const live = [...l.races.values()][0];
+    // a forged message naming the other rider changes nothing of theirs
+    (l.input as (...args: unknown[]) => void)(a, 1, 0b1111, b.local);
+    expect([...live.inputs.keys()]).toEqual([a.local]);
+    // and keys from someone not in the race go nowhere
+    const stranger = conn(3);
+    l.input(stranger, 1, 0b1111);
+    expect([...live.inputs.keys()]).toEqual([a.local]);
+  });
+
+  it("lets a person leave only their own race, and answer only their own match", () => {
+    const { l } = lobby();
+    const a = conn(1);
+    const b = conn(2);
+    l.join(a, "human", 1, 0);
+    l.join(b, "human", 1, 1);
+    go(l, 11);
+    const live = [...l.races.values()][0];
+    const stranger = conn(3);
+    l.quit(stranger);
+    l.accept(stranger, 14);
+    l.decline(stranger, 14);
+    expect(live.quit.size).toBe(0);
+    expect(live.conns.size).toBe(2);
+  });
+});
