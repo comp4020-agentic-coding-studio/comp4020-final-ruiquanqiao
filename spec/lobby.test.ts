@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { liveryOf } from "../game/liveries.ts";
-import type { Standing, ToClient } from "../game/protocol.ts";
+import { LIVERIES, liveryOf } from "../game/liveries.ts";
+import { ROOM, type Standing, type ToClient } from "../game/protocol.ts";
 import { type Conn, Lobby } from "../server/lobby.ts";
 
 // The two matchmaking pools (ledger N2, N3, N4, N5), driven by a fake clock.
@@ -197,37 +197,52 @@ describe("choosing how many AI riders (N2)", () => {
 });
 
 // Leathers. One's own rider used to be drawn in a fixed set of colours in
-// one's own view only, while everyone else saw whatever pair the rider's
-// number dealt. Each person now picks a livery, and it travels in the entry
-// list every rider in the race is sent.
+// one's own view only; then each person picked a livery, and two could pick
+// the same. Now the room deals them, one each, and the pair travels in the
+// entry list every rider in the race is sent.
 describe("each person's leathers", () => {
-  it("are the ones they picked, in the entry list everyone in the race is sent", () => {
+  it("are dealt by the room, never the same twice among its people, and the same in everyone's entry list", () => {
     const { l } = lobby();
-    const a = conn(1);
-    const b = conn(2);
-    l.join(a, "human", 1, 0, 0, undefined, 3);
-    l.join(b, "human", 1, 1, 0, undefined, 7);
+    const people = Array.from({ length: ROOM }, (_, i) => conn(i + 1));
+    people.forEach((c, i) => l.join(c, "human", 1, i * 0.1));
     l.tick(20);
-    const lists = [a, b].map((c) => started(c).at(-1)!.entrants.map((e) => [e.name, e.look]));
-    expect(lists[0]).toEqual(lists[1]);
-    expect(lists[0]).toEqual([["r1", 3], ["r2", 7]]);
+    const lists = people.map((c) => started(c).at(-1)!.entrants.filter((e) => e.human).map((e) => [e.name, e.look]));
+    for (const list of lists) expect(list).toEqual(lists[0]);
+    const looks = lists[0].map(([, look]) => look as number);
+    expect(new Set(looks).size).toBe(ROOM);
+    for (const look of looks) expect(LIVERIES[look]).toBeDefined();
   });
 
-  it("are dropped, not trusted, when the number is not a livery", () => {
+  it("come from a set of at least eight, with the two that vanished on the road cut", () => {
+    expect(LIVERIES.length).toBeGreaterThanOrEqual(ROOM);
+    const names = LIVERIES.map((l) => l.name);
+    expect(names).not.toContain("Black & acid");
+    expect(names).not.toContain("Orange & red");
+  });
+
+  it("are not taken from the queue message, whatever it says", () => {
     const { l } = lobby();
     const a = conn(1);
-    l.join(a, "ai", 1, 0, 0, 0, 99);
+    (l.join as (...args: unknown[]) => void)(a, "ai", 1, 0, 0, 0, 99);
     l.tick(6);
-    expect(started(a).at(-1)!.entrants.find((e) => e.human)!.look).toBeUndefined();
+    expect(LIVERIES[started(a).at(-1)!.entrants.find((e) => e.human)!.look!]).toBeDefined();
   });
 
-  it("read nothing stored or sent as no pick, so a first visit is dealt one at random", () => {
-    for (const nothing of [null, undefined, ""]) expect(liveryOf(nothing)).toBeUndefined();
+  it("still validates a number from anywhere as a livery or nothing", () => {
+    for (const nothing of [null, undefined, "", 99, -1]) expect(liveryOf(nothing)).toBeUndefined();
     expect(liveryOf("0")).toBe(0);
+  });
+});
+
+describe("a room (N1)", () => {
+  it("holds at most eight people; the ninth waits for the next room", () => {
     const { l } = lobby();
-    const a = conn(1);
-    l.join(a, "ai", 1, 0, 0, 0, null);
-    l.tick(6);
-    expect(started(a).at(-1)!.entrants.find((e) => e.human)!.look).toBeUndefined();
+    const people = Array.from({ length: ROOM + 1 }, (_, i) => conn(i + 1));
+    people.forEach((c, i) => l.join(c, "ai", 1, i * 0.1));
+    l.tick(1);
+    expect(l.races.size).toBe(1);
+    expect([...l.races.values()][0].entrants.filter((e) => e.human)).toHaveLength(ROOM);
+    expect(people[ROOM].pool).toBe("ai");
+    expect(started(people[ROOM]).every((m) => m.you === null)).toBe(true);
   });
 });

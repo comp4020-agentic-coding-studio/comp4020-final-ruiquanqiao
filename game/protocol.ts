@@ -9,10 +9,12 @@ export const POOL_WAIT = { ai: 5, human: 10 } as const; // seconds (ledger N2, N
 export const GRID = 15; // riders in an AI-pool race (O1)
 /** the most AI riders anyone can ask for (N2): ten rows of three on the grid */
 export const MAX_AI = 29;
+/** the most people in one room: the original's Mano a Mano limit (N1), and one livery each */
+export const ROOM = 8;
 export const SNAPSHOT_HZ = 20;
 
 export type ToServer =
-  | { t: "queue"; mode: Mode; level: number; track?: number; ai?: number; /** the leathers asked for, an index in LIVERIES */ look?: number }
+  | { t: "queue"; mode: Mode; level: number; track?: number; ai?: number }
   | { t: "leave" }
   /** out of the race one is in, back to the board (H8) */
   | { t: "quit" }

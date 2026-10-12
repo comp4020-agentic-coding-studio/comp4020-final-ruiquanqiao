@@ -1,12 +1,16 @@
-// The leathers a person can ride in, picked in the lobby and seen the same by
-// everyone in the race. Each is a classic racing pairing: a main colour for
+// The leathers a person rides in, dealt when a room forms and seen the same by
+// everyone in the race. No two people in one room wear the same pair, which is
+// why a room holds at most as many people as there are pairs (ROOM). Each is a classic racing pairing: a main colour for
 // the sleeves, seat and legs, a second over the shoulders and back, a helmet,
 // and the bike painted to match. AI riders keep their own fifteen pairs
 // (client/scene.ts), none of them one of these.
 //
 // Before, one's own rider was dealt a pair by its number in the race, and a
 // fixed "hero" set was drawn over it only in one's own view: the others saw
-// someone else.
+// someone else. Then each person picked one, and two people could pick the
+// same. Black & acid and Orange & red were cut once all ten were worn by the
+// rider on the road: black legs and bike melted into the asphalt and left a
+// lime blob, and two warm colours with no contrast smeared into one.
 
 export type Livery = { name: string; main: string; trim: string; helmet: string; paint: string; paintTrim: string };
 
@@ -20,8 +24,6 @@ export const LIVERIES: Livery[] = [
   pair("Green & red", "#0d7a3d", "#d81e2b", "#f2f2f2"),
   pair("White & red", "#f2f2f2", "#d01e2d", "#d01e2d"),
   pair("Lime & black", "#62bd2e", "#141414", "#62bd2e"),
-  pair("Black & acid", "#151515", "#9bd12a", "#9bd12a"),
-  pair("Orange & red", "#f2711c", "#c8102e", "#f2f2f2"),
   pair("Purple & yellow", "#5b2a86", "#f0c419", "#f0c419"),
 ];
 

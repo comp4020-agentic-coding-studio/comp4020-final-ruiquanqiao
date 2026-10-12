@@ -2,9 +2,9 @@
 // pools can be tested with a fake clock (spec/lobby.test.ts) and the server
 // just calls tick() with the real one.
 
-import { type Entry, GRID, MAX_AI, type Mode, POOL_WAIT, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
+import { type Entry, GRID, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, TUNE, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
-import { liveryOf } from "../game/liveries.ts";
+import { LIVERIES } from "../game/liveries.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 
 export type Conn = {
@@ -16,8 +16,6 @@ export type Conn = {
   road: number; // the road this connection voted for (N4)
   /** how many AI riders this connection asked to race against (N2), or undefined for a full grid */
   field?: number;
-  /** the leathers this person rides in, an index in LIVERIES */
-  look?: number;
   race: Live | null;
   local: number; // this connection's rider id inside its race
   seq: number; // last input sequence number applied
@@ -76,17 +74,19 @@ export class Lobby {
 
   // ---- the pools (N2, N3) ----
 
-  join(conn: Conn, mode: Mode, level: number, now: number, road = 0, field?: number, look?: unknown): void {
+  join(conn: Conn, mode: Mode, level: number, now: number, road = 0, field?: number): void {
     if (conn.race && !conn.race.ended) return; // already racing
     this.leave(conn, now);
     conn.pool = mode;
     conn.level = Math.min(5, Math.max(1, Math.round(level) || 1));
     conn.road = Math.min(ROADS.length - 1, Math.max(0, Math.round(road) || 0));
     conn.field = field === undefined || !Number.isFinite(field) ? undefined : Math.min(MAX_AI, Math.max(0, Math.round(field)));
-    conn.look = liveryOf(look);
     const pool = this.pools[mode];
     pool.members.push(conn);
-    if (mode === "ai") {
+    if (pool.members.length >= ROOM) {
+      // a full room goes now; anyone after it waits for the next (N1)
+      pool.startsAt = now;
+    } else if (mode === "ai") {
       // everyone who joins in the five seconds after the first is taken along
       pool.startsAt ??= now + POOL_WAIT.ai;
     } else {
@@ -161,9 +161,10 @@ export class Lobby {
 
   private startFrom(mode: Mode, now: number): void {
     const pool = this.pools[mode];
-    const members = pool.members;
-    pool.members = [];
-    pool.startsAt = null;
+    // a room takes the first eight; the rest start the wait for the next
+    const members = pool.members.slice(0, ROOM);
+    pool.members = pool.members.slice(ROOM);
+    pool.startsAt = pool.members.length === 0 ? null : now + POOL_WAIT[mode];
     for (const c of members) c.pool = null;
 
     // level by majority vote; a tie is broken at random (N4)
@@ -181,11 +182,14 @@ export class Lobby {
 
     const entrants: Entry[] = [];
     const seen = new Map<number, number>();
+    // the leathers, dealt: a shuffle of every pair, one each, so no two people
+    // in the room look alike
+    const deck = LIVERIES.map((_, i) => i).sort(() => this.random() - 0.5);
     members.forEach((c, i) => {
       // two tabs of one rider are two bikes; tell them apart by number
       const n = (seen.get(c.rider) ?? 0) + 1;
       seen.set(c.rider, n);
-      entrants.push({ id: i, name: n > 1 ? `${c.name} (${n})` : c.name, human: true, look: c.look });
+      entrants.push({ id: i, name: n > 1 ? `${c.name} (${n})` : c.name, human: true, look: deck[i] });
     });
     if (mode === "ai") {
       // as many AI riders as asked for (N2): the median of what everyone in

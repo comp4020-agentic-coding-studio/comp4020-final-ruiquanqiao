@@ -163,7 +163,7 @@ wss.on("connection", (ws, req) => {
       return;
     }
     const now = performance.now() / 1000;
-    if (msg.t === "queue" && (msg.mode === "ai" || msg.mode === "human")) lobby.join(conn, msg.mode, Number(msg.level), now, Number(msg.track ?? 0), msg.ai === undefined ? undefined : Number(msg.ai), msg.look);
+    if (msg.t === "queue" && (msg.mode === "ai" || msg.mode === "human")) lobby.join(conn, msg.mode, Number(msg.level), now, Number(msg.track ?? 0), msg.ai === undefined ? undefined : Number(msg.ai));
     else if (msg.t === "leave") lobby.leave(conn, now);
     else if (msg.t === "quit") lobby.quit(conn);
     else if (msg.t === "in") lobby.input(conn, Number(msg.seq), Number(msg.keys));

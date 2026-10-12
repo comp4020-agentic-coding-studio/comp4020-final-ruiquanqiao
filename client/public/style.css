@@ -62,12 +62,8 @@ button:hover { border-color: var(--gold); }
 #ai-count-out { min-width: 2ch; font-variant-numeric: tabular-nums; }
 #name { background: var(--bg); border: 2px solid var(--edge); border-radius: 4px; padding: 0.4em 0.6em; width: 14rem; max-width: 100%; }
 #levels label, #roads label { display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.6rem; }
-/* the leathers: one swatch per livery, the main colour with the second across its top and the helmet's dot */
-#looks label { position: relative; display: inline-block; cursor: pointer; }
-#looks input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-#looks .swatch { display: block; width: 2.4rem; height: 2.4rem; border-radius: 0.35rem; border: 2px solid transparent; box-shadow: 0 0 0 1px #0006 inset; }
-#looks input:checked + .swatch { border-color: var(--gold); }
-#looks input:focus-visible + .swatch { outline: 2px solid #fff; outline-offset: 2px; }
+/* a person's leathers: the main colour with the second across its top and the helmet's dot */
+.swatch { display: inline-block; flex: none; width: 2.4rem; height: 2.4rem; border-radius: 0.35rem; box-shadow: 0 0 0 1px #0006 inset; vertical-align: middle; }
 .queue { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 .queue button { font-weight: bold; font-size: 1.05rem; text-align: left; }
 .queue button small { display: block; font-weight: normal; color: var(--dim); font-size: 0.8rem; }
