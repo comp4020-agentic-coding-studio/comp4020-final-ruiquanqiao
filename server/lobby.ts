@@ -1,8 +1,14 @@
 // Matchmaking and the races it starts. Time comes in as an argument, so the
 // pools can be tested with a fake clock (spec/lobby.test.ts) and the server
 // just calls tick() with the real one.
+//
+// A pool that fires does not start a race straight away. It forms a match:
+// everyone in it is asked to accept (N9), then everyone loads the race while
+// the server measures each person's ping (N10), and only then does the race
+// start, with each person's countdown shortened by half their round trip so
+// GO lands at the same moment in every browser.
 
-import { type Entry, GRID, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
+import { CHECK_WAIT, type Entry, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, TUNE, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { LIVERIES } from "../game/liveries.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
@@ -19,6 +25,28 @@ export type Conn = {
   race: Live | null;
   local: number; // this connection's rider id inside its race
   seq: number; // last input sequence number applied
+  /** the match this connection is accepting or loading, if any */
+  match?: Match | null;
+  /** round trip to this browser, s: the shortest seen while loading */
+  rtt?: number;
+};
+
+export type Match = {
+  id: number;
+  mode: Mode;
+  members: Conn[];
+  phase: "check" | "loading";
+  accepted: Set<Conn>;
+  /** check: answer by; loading: go by (s) */
+  deadline: number;
+  since: number;
+  /** fixed when loading starts */
+  level: number;
+  road: number;
+  seed: number;
+  entrants: Entry[];
+  progress: Map<Conn, number>;
+  gone: Set<Conn>;
 };
 
 export type Live = {
@@ -60,7 +88,10 @@ const AI_NAMES = [
 export class Lobby {
   pools: Record<Mode, Pool> = { ai: { members: [], startsAt: null }, human: { members: [], startsAt: null } };
   races = new Map<number, Live>();
+  matches = new Map<number, Match>();
   private clock = 0; // seconds
+  private matchIds = 0;
+  private pinged = -1;
 
   private store: Store;
   private log: Logger;
@@ -76,6 +107,7 @@ export class Lobby {
 
   join(conn: Conn, mode: Mode, level: number, now: number, road = 0, field?: number): void {
     if (conn.race && !conn.race.ended) return; // already racing
+    if (conn.match) return; // already matched
     this.leave(conn, now);
     conn.pool = mode;
     conn.level = Math.min(5, Math.max(1, Math.round(level) || 1));
@@ -99,6 +131,8 @@ export class Lobby {
   }
 
   leave(conn: Conn, now: number): void {
+    // leaving the queue once a match is found is a decline
+    if (conn.match?.phase === "check") return this.decline(conn, now);
     const mode = conn.pool;
     if (!mode) return;
     const pool = this.pools[mode];
@@ -111,9 +145,67 @@ export class Lobby {
   }
 
   disconnect(conn: Conn, now: number): void {
+    const m = conn.match;
+    // gone while loading: the bike is in the race as one that left
+    if (m?.phase === "loading") m.gone.add(conn);
     this.leave(conn, now);
     this.quit(conn);
   }
+
+  // ---- a match found (N9) ----
+
+  accept(conn: Conn, now: number): void {
+    const m = conn.match;
+    if (!m || m.phase !== "check" || m.accepted.has(conn)) return;
+    m.accepted.add(conn);
+    for (const c of m.members) c.send({ t: "check", match: m.id, accepted: m.accepted.size, of: m.members.length });
+    if (m.accepted.size === m.members.length) this.load(m, now);
+  }
+
+  decline(conn: Conn, now: number): void {
+    const m = conn.match;
+    if (!m || m.phase !== "check") return;
+    this.fail(m, [conn], now, "declined");
+  }
+
+  /** Those who did not accept are out; everyone who did goes back to the front of the pool. */
+  private fail(m: Match, out: Conn[], now: number, why: "declined" | "missed"): void {
+    this.matches.delete(m.id);
+    for (const c of out) {
+      c.match = null;
+      c.send({ t: "dropped", why });
+    }
+    const back = m.members.filter((c) => !out.includes(c));
+    const pool = this.pools[m.mode];
+    for (const c of back) {
+      c.match = null;
+      c.pool = m.mode;
+      c.send({ t: "requeued", mode: m.mode });
+    }
+    pool.members.unshift(...back);
+    if (pool.members.length > 0) pool.startsAt = now + POOL_WAIT[m.mode];
+    this.log({ ev: "match_failed", match: m.id, why, out: out.map((c) => c.rider), back: back.length });
+    this.announce(m.mode, now);
+  }
+
+  // ---- loading (N10) ----
+
+  progress(conn: Conn, p: number): void {
+    const m = conn.match;
+    if (!m || m.phase !== "loading" || !Number.isFinite(p)) return;
+    m.progress.set(conn, Math.max(m.progress.get(conn) ?? 0, Math.min(1, Math.max(0, p))));
+  }
+
+  pong(conn: Conn, at: number, now: number): void {
+    const rtt = now - at;
+    if (!Number.isFinite(rtt) || rtt < 0 || rtt > 5) return;
+    // the shortest, as NTP takes it: a page busy loading answers late, and
+    // that wait is the page, not the network. Averaged, a browser on the same
+    // machine read 147 ms while it built the scene, and the count it was sent
+    // would have run out 70 ms before everyone else's
+    conn.rtt = conn.rtt === undefined ? rtt : Math.min(conn.rtt, rtt);
+  }
+
 
   /**
    * Out of the race and back to the board, with the tab still open (H8). The
@@ -159,6 +251,7 @@ export class Lobby {
     conn.send({ t: "start", race: newest.id, level: newest.level, track: newest.road, seed: newest.seed, entrants: newest.entrants, you: null, countdown: TUNE.countdown });
   }
 
+  /** A pool fires: the first eight in it are a match, asked to accept (N9). */
   private startFrom(mode: Mode, now: number): void {
     const pool = this.pools[mode];
     // a room takes the first eight; the rest start the wait for the next
@@ -166,24 +259,41 @@ export class Lobby {
     pool.members = pool.members.slice(ROOM);
     pool.startsAt = pool.members.length === 0 ? null : now + POOL_WAIT[mode];
     for (const c of members) c.pool = null;
+    const m: Match = { id: ++this.matchIds, mode, members, phase: "check", accepted: new Set(), deadline: now + CHECK_WAIT, since: now, level: 1, road: 0, seed: 0, entrants: [], progress: new Map(), gone: new Set() };
+    this.matches.set(m.id, m);
+    for (const c of members) {
+      c.match = m;
+      c.send({ t: "found", match: m.id, mode, of: members.length, answer: CHECK_WAIT });
+    }
+    this.log({ ev: "match_found", match: m.id, mode, humans: members.length });
+    if (pool.members.length > 0) this.announce(mode, now);
+  }
+
+  /** Everyone accepted: fix the race as it will be, and have everyone load it (N10). */
+  private load(m: Match, now: number): void {
+    const { members, mode } = m;
+    for (const c of members) c.rtt = undefined; // measured afresh for this race
+    m.phase = "loading";
+    m.since = now;
+    m.deadline = now + LOAD_MAX;
 
     // level by majority vote; a tie is broken at random (N4)
     const votes = new Map<number, number>();
     for (const c of members) votes.set(c.level, (votes.get(c.level) ?? 0) + 1);
     const most = Math.max(...votes.values());
     const tied = [...votes.keys()].filter((l) => votes.get(l) === most).sort();
-    const level = tied[Math.floor(this.random() * tied.length)];
+    m.level = tied[Math.floor(this.random() * tied.length)];
     // and the road the same way (N4)
     const roadVotes = new Map<number, number>();
     for (const c of members) roadVotes.set(c.road ?? 0, (roadVotes.get(c.road ?? 0) ?? 0) + 1);
     const roadMost = Math.max(...roadVotes.values());
     const roadTied = [...roadVotes.keys()].filter((r) => roadVotes.get(r) === roadMost).sort();
-    const road = roadTied[Math.floor(this.random() * roadTied.length)];
+    m.road = roadTied[Math.floor(this.random() * roadTied.length)];
 
     const entrants: Entry[] = [];
     const seen = new Map<number, number>();
     // the leathers, dealt: a shuffle of every pair, one each, so no two people
-    // in the room look alike
+    // in the room look alike (N13)
     const deck = LIVERIES.map((_, i) => i).sort(() => this.random() - 0.5);
     members.forEach((c, i) => {
       // two tabs of one rider are two bikes; tell them apart by number
@@ -192,7 +302,7 @@ export class Lobby {
       entrants.push({ id: i, name: n > 1 ? `${c.name} (${n})` : c.name, human: true, look: deck[i] });
     });
     if (mode === "ai") {
-      // as many AI riders as asked for (N2): the median of what everyone in
+      // as many NPC riders as asked for (N2): the median of what everyone in
       // the pool asked, so one person cannot empty or flood the road alone;
       // anyone who did not say wants the original's full grid of fifteen
       const asks = members.map((c) => c.field ?? Math.max(0, GRID - members.length)).sort((p, q) => p - q);
@@ -200,9 +310,27 @@ export class Lobby {
       const names = [...AI_NAMES].sort(() => this.random() - 0.5);
       for (let i = entrants.length; i < members.length + ai; i++) entrants.push({ id: i, name: names[(i - members.length) % names.length], human: false });
     }
+    m.entrants = entrants;
+    m.seed = Math.floor(this.random() * 2 ** 31);
+    members.forEach((c, i) => c.send({ t: "loading", match: m.id, level: m.level, track: m.road, seed: m.seed, entrants, you: i }));
+    this.ping(m, now);
+  }
 
+  /** Ask every browser in a loading match for a round trip, and tell them all how everyone is doing. */
+  private ping(m: Match, now: number): void {
+    const riders = m.members.map((c, i) => ({ id: i, p: m.gone.has(c) ? 0 : (m.progress.get(c) ?? 0), ping: Math.round((c.rtt ?? 0) * 1000) }));
+    for (const c of m.members) {
+      if (m.gone.has(c)) continue;
+      c.send({ t: "ping", at: now });
+      c.send({ t: "loads", match: m.id, riders });
+    }
+  }
+
+  /** Everyone loaded, or the wait ran out: the race starts. */
+  private launch(m: Match, now: number): void {
+    this.matches.delete(m.id);
+    const { members, mode, level, road, entrants, seed } = m;
     const track = makeTrack(level, road);
-    const seed = Math.floor(this.random() * 2 ** 31);
     const id = this.store.startRace(mode, level, track.name);
     const race = startRace(track, level, entrants, seed, TUNE.countdown);
     const live: Live = {
@@ -224,20 +352,33 @@ export class Lobby {
       ended: false,
       timeLimit: track.length / 30 + 90,
     };
+    this.races.set(id, live);
     members.forEach((c, i) => {
+      c.match = null;
+      if (m.gone.has(c)) {
+        // left while loading: a bike that never moves, standing as one that left
+        live.quit.add(i);
+        const r = race.riders.find((x) => x.id === i);
+        if (r) r.phase = "wrecked";
+        return;
+      }
       for (const other of this.races.values()) other.watchers.delete(c);
       c.race = live;
       c.local = i;
       c.seq = 0;
       live.conns.set(i, c);
-      c.send({ t: "start", race: id, level, track: road, seed, entrants, you: i, countdown: TUNE.countdown });
+      // the message takes half a round trip to arrive; the count it carries is
+      // that much shorter, so GO lands at the same moment for everyone
+      c.send({ t: "start", race: id, level, track: road, seed, entrants, you: i, countdown: Math.max(0, TUNE.countdown - (c.rtt ?? 0) / 2) });
     });
-    this.races.set(id, live);
-    this.log({ ev: "race_start", race: id, mode, level, humans: members.length, riders: entrants.length });
-    // anyone still queued for the other pool watches the new race
-    for (const c of this.pools[mode === "ai" ? "human" : "ai"].members) {
-      for (const other of this.races.values()) other.watchers.delete(c);
-      this.watchNewest(c);
+    const late = members.filter((c) => !m.gone.has(c) && (m.progress.get(c) ?? 0) < 1).length;
+    this.log({ ev: "race_start", race: id, match: m.id, mode, level, humans: members.length, riders: entrants.length, loadSecs: Math.round((now - m.since) * 10) / 10, late, pings: members.map((c) => Math.round((c.rtt ?? 0) * 1000)) });
+    // anyone still queued watches the new race
+    for (const p of Object.values(this.pools)) {
+      for (const c of p.members) {
+        for (const other of this.races.values()) other.watchers.delete(c);
+        this.watchNewest(c);
+      }
     }
   }
 
@@ -255,6 +396,26 @@ export class Lobby {
         continue;
       }
       if (pool.members.length > 0) this.startFrom(mode, now);
+    }
+
+    for (const m of [...this.matches.values()]) {
+      if (m.phase === "check" && now >= m.deadline) {
+        this.fail(m, m.members.filter((c) => !m.accepted.has(c)), now, "missed");
+        continue;
+      }
+      if (m.phase !== "loading") continue;
+      if (m.members.every((c) => m.gone.has(c))) {
+        // everyone left while loading: there is no one to race
+        this.matches.delete(m.id);
+        continue;
+      }
+      const ready = m.members.every((c) => m.gone.has(c) || (m.progress.get(c) ?? 0) >= 1);
+      if ((ready && now - m.since >= LOAD_MIN) || now >= m.deadline) this.launch(m, now);
+    }
+    // every half second, a round trip asked of everyone loading
+    if (now - this.pinged >= 0.5) {
+      this.pinged = now;
+      for (const m of this.matches.values()) if (m.phase === "loading") this.ping(m, now);
     }
 
     // nothing on the road: the race clock simply follows the wall clock. A

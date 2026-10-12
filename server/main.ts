@@ -166,6 +166,10 @@ wss.on("connection", (ws, req) => {
     if (msg.t === "queue" && (msg.mode === "ai" || msg.mode === "human")) lobby.join(conn, msg.mode, Number(msg.level), now, Number(msg.track ?? 0), msg.ai === undefined ? undefined : Number(msg.ai));
     else if (msg.t === "leave") lobby.leave(conn, now);
     else if (msg.t === "quit") lobby.quit(conn);
+    else if (msg.t === "accept") lobby.accept(conn, now);
+    else if (msg.t === "decline") lobby.decline(conn, now);
+    else if (msg.t === "progress") lobby.progress(conn, Number(msg.p));
+    else if (msg.t === "pong") lobby.pong(conn, Number(msg.at), now);
     else if (msg.t === "in") lobby.input(conn, Number(msg.seq), Number(msg.keys));
     else if (msg.t === "name" && typeof msg.name === "string") {
       const name = msg.name.replace(/\s+/g, " ").trim().slice(0, 20);

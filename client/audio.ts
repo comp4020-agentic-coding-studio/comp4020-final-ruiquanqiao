@@ -329,7 +329,7 @@ export function updateAudio(f: AudioFrame): void {
   e.windTone.frequency.setTargetAtTime(300 + 900 * w, t, 0.15);
 }
 
-export type Sfx = "punch" | "kick" | "club" | "chain" | "hitTaken" | "crash" | "carCrash" | "snatch" | "busted" | "countdown" | "go" | "finish" | "bump" | "carBump" | "scrape" | "runOver" | "rideOver";
+export type Sfx = "punch" | "kick" | "club" | "chain" | "hitTaken" | "crash" | "carCrash" | "snatch" | "busted" | "countdown" | "go" | "finish" | "found" | "bump" | "carBump" | "scrape" | "runOver" | "rideOver";
 
 /** Play a sound effect; `gain` (0-1) for the touches, which come in sizes. */
 export function sfx(kind: Sfx, gain = 1): void {
@@ -407,6 +407,12 @@ export function sfx(kind: Sfx, gain = 1): void {
     case "go":
       beep(g, "square", 1760, t, 0.45, 0.1);
       beep(g, "triangle", 880, t, 0.45, 0.15);
+      break;
+    case "found": // a match: two bright notes up a fifth, then the octave, loud enough to call someone back to the tab
+      [76, 83, 88].forEach((m, i) => {
+        beep(g, "triangle", hz(m), t + i * 0.13, i === 2 ? 0.6 : 0.14, 0.18);
+        beep(g, "square", hz(m), t + i * 0.13, i === 2 ? 0.6 : 0.14, 0.05);
+      });
       break;
     case "finish": // a major arpeggio up from D
       [74, 78, 81, 86].forEach((m, i) => {

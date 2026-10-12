@@ -24,10 +24,16 @@ second back and carried forward to now, as Gabriel Gambetta describes. The
 cost: the rider you punch is where the server says, not quite where you see
 them.
 
-**There is always someone to hit.** A race with NPCs (scripted riders) starts five seconds after
+**There is always someone to hit.** A race with NPCs (scripted riders) forms five seconds after
 the first rider queues and fills the grid to fifteen, so one visitor gets a
-full race. A humans-only race waits for a second person. People waiting watch
-the race already on the road.
+full race. A humans-only race waits for a second person. A room holds eight
+people, each dealt leathers no one else in it wears. People waiting watch the
+race already on the road.
+
+**Matched like a modern game.** In the queue, a bar across the top keeps the
+clock. When a room forms, everyone accepts within ten seconds, then everyone
+loads on one screen that shows each person's ping, and the count is started
+so GO lands at the same moment in every browser.
 
 **The road remembers you.** No accounts: your browser keeps your rider, and a
 top-three finish qualifies you on that road at that level for good.

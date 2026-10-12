@@ -51,6 +51,9 @@ for (const [w, h] of sizes) {
   await page.waitForTimeout(800);
   await page.check(`input[name="road"][value="${road}"]`);
   await page.click("#queue-ai");
+  // the match found: accept it, then the race loads (N9, N10)
+  await page.waitForSelector("#found-yes:not([disabled])", { state: "visible", timeout: 15000 });
+  await page.click("#found-yes");
   await page.waitForFunction(() => document.querySelector("#app")?.getAttribute("data-screen") === "race", null, { timeout: 15000 });
   await page.keyboard.down("KeyW");
   await page.waitForTimeout(ride * 1000);

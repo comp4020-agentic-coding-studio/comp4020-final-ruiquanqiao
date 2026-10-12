@@ -5,12 +5,13 @@
 
 import { type CarState, type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
-import { setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
+import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
+import { LIVERIES } from "../game/liveries.ts";
 import { react } from "./feel.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Prediction, Timeline } from "./netview.ts";
-import { ROADS, makeTrack } from "../game/track.ts";
+import { ROADS, type Track, makeTrack } from "../game/track.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
 const app = $("#app");
@@ -31,6 +32,10 @@ function connect(): void {
   ws.onmessage = (e) => onMessage(JSON.parse(e.data) as ToClient);
   ws.onclose = () => {
     setTimeout(connect, 1000);
+    // the server has dropped any match this tab was in; so does the page
+    if (found) closeFound();
+    if (app.dataset.screen === "loading") show("lobby");
+    clearQueue();
     if (current?.you !== null && current) banner("Connection lost");
   };
 }
@@ -63,15 +68,21 @@ const ranOver = new Map<number, number>();
 const heard: unknown[] = [];
 
 function begin(msg: Extract<ToClient, { t: "start" }>): void {
-  const track = makeTrack(msg.level, msg.track ?? 0);
+  // built while loading, if this is the race that was loaded (N10)
+  const ready = msg.you !== null && prepared?.seed === msg.seed ? prepared : null;
+  const track = ready?.track ?? makeTrack(msg.level, msg.track ?? 0);
   const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed, msg.countdown ?? 0);
   const go = performance.now() / 1000 + (msg.countdown ?? 0);
   current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null };
   if (msg.you !== null) {
     show("race");
     askQuit(false);
-    roadScene.setTrack(track);
-    roadScene.setLooks(msg.entrants);
+    loadingMatch = -1;
+    if (!ready) {
+      roadScene.setTrack(track);
+      roadScene.setLooks(msg.entrants);
+    }
+    prepared = null;
     resize();
     banner(`${track.name} · level ${msg.level} · ${(track.length / 1000).toFixed(1)} km`, 2500);
     // each road has its own track, from the top at every start; chosen before
@@ -184,6 +195,21 @@ function onMessage(msg: ToClient): void {
     if (document.activeElement !== name) name.value = me.name;
     board();
   } else if (msg.t === "pool") pool(msg);
+  else if (msg.t === "found") onFound(msg);
+  else if (msg.t === "check") {
+    if (found && found.match === msg.match) {
+      found.accepted = msg.accepted;
+      foundBoxes();
+    }
+  } else if (msg.t === "dropped") {
+    closeFound();
+    clearQueue(msg.why === "declined" ? "You declined the match and left the queue." : "You didn't accept in time, so you've left the queue.");
+  } else if (msg.t === "requeued") {
+    closeFound();
+    $("#pool").textContent = "Someone didn't accept. You're back at the front of the queue.";
+  } else if (msg.t === "loading") onLoading(msg);
+  else if (msg.t === "loads") onLoads(msg);
+  else if (msg.t === "ping") send({ t: "pong", at: msg.at });
   else if (msg.t === "start") begin(msg);
   else if (msg.t === "snap") onSnap(msg);
   else if (msg.t === "end") {
@@ -197,35 +223,202 @@ function onMessage(msg: ToClient): void {
 
 // ---- lobby ----
 
-function show(screen: "lobby" | "race" | "result"): void {
+type Screen = "lobby" | "race" | "result" | "loading";
+
+function show(screen: Screen): void {
   app.dataset.screen = screen;
+  queueBar();
 }
 
+// ---- the queue, a match found, and loading (N9, N10) ----
+
 let queued: Mode | null = null;
+/** this tab's clock when the queue was joined, kept through a requeue */
+let queuedAt = 0;
+let poolTimer: { count: number; until: number | null; waiting: boolean } | null = null;
+const modeName = (m: Mode): string => (m === "ai" ? "With NPCs" : "Humans only");
 
 function pool(msg: Extract<ToClient, { t: "pool" }>): void {
-  const line = $("#pool");
   if (!msg.mode) return;
+  if (queued === null) queuedAt = performance.now() / 1000;
   queued = msg.mode;
-  const who = msg.count === 1 ? "just you" : `${msg.count} riders`;
-  if (msg.waitingForMore) line.textContent = `Humans only: ${who}. Waiting for one more rider…`;
-  else if (msg.startsIn !== null) line.textContent = `${msg.mode === "ai" ? "With NPCs" : "Humans only"}: ${who}. Starting in ${Math.ceil(msg.startsIn)}s.`;
-  poolTimer = msg.startsIn === null ? null : { mode: msg.mode, count: msg.count, until: performance.now() / 1000 + msg.startsIn };
+  poolTimer = { count: msg.count, until: msg.startsIn === null ? null : performance.now() / 1000 + msg.startsIn, waiting: msg.waitingForMore };
   queueButtons();
 }
 
-let poolTimer: { mode: Mode; count: number; until: number } | null = null;
-
-function tickPool(): void {
-  if (!poolTimer || app.dataset.screen !== "lobby") return;
-  const left = Math.max(0, poolTimer.until - performance.now() / 1000);
-  const who = poolTimer.count === 1 ? "just you" : `${poolTimer.count} riders`;
-  $("#pool").textContent = `${poolTimer.mode === "ai" ? "With NPCs" : "Humans only"}: ${who}. Starting in ${Math.ceil(left)}s.`;
+/** Out of the queue, with a line saying why (or nothing). */
+function clearQueue(why = ""): void {
+  queued = null;
+  poolTimer = null;
+  $("#pool").textContent = why;
+  queueButtons();
 }
 
 function queueButtons(): void {
   for (const b of document.querySelectorAll<HTMLButtonElement>(".queue button")) b.setAttribute("aria-pressed", String(b.dataset.mode === queued));
-  $("#leave").hidden = queued === null;
+  queueBar();
+}
+
+/** The bar across the top: shown on the lobby pages while queued and no match is up. */
+function queueBar(): void {
+  const bar = $("#qbar");
+  bar.hidden = queued === null || app.dataset.screen !== "lobby" || found !== null;
+  if (bar.hidden || !queued) return;
+  const now = performance.now() / 1000;
+  const secs = Math.floor(now - queuedAt);
+  $("#qbar-mode").textContent = `In queue · ${modeName(queued)}`;
+  $("#qbar-time").textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  const t = poolTimer;
+  const who = !t ? "" : t.count === 1 ? "just you" : `${t.count} riders`;
+  $("#qbar-note").textContent = !t ? "" : t.waiting ? `${who}, waiting for one more` : t.until !== null ? `${who}, room forms in ${Math.max(0, Math.ceil(t.until - now))}s` : who;
+}
+
+$("#qbar-x").addEventListener("click", () => {
+  send({ t: "leave" });
+  clearQueue();
+});
+
+/** the match on screen, while it is being accepted */
+let found: { match: number; of: number; accepted: number; until: number; answer: number; mine: boolean } | null = null;
+
+function onFound(msg: Extract<ToClient, { t: "found" }>): void {
+  found = { match: msg.match, of: msg.of, accepted: 0, until: performance.now() / 1000 + msg.answer, answer: msg.answer, mine: false };
+  $("#found-line").textContent = `${modeName(msg.mode)} · ${msg.of === 1 ? "just you" : `${msg.of} riders`}`;
+  $("#found-wait").hidden = true;
+  $<HTMLButtonElement>("#found-yes").disabled = false;
+  $<HTMLButtonElement>("#found-no").disabled = false;
+  $("#found").hidden = false;
+  foundBoxes();
+  queueBar();
+  $<HTMLButtonElement>("#found-yes").focus();
+  startAudio();
+  sfx("found");
+  // a tab in the background is told in its title, as a game client flashes
+  if (document.hidden) document.title = "Match found! · Knuckle Road";
+}
+
+function foundBoxes(): void {
+  const f = found;
+  if (!f) return;
+  const list = $("#found-boxes");
+  list.innerHTML = "";
+  for (let i = 0; i < f.of; i++) {
+    const li = document.createElement("li");
+    li.className = i < f.accepted ? "yes" : "";
+    list.append(li);
+  }
+}
+
+function closeFound(): void {
+  found = null;
+  $("#found").hidden = true;
+  document.title = "Knuckle Road";
+  queueBar();
+}
+
+$("#found-yes").addEventListener("click", () => {
+  if (!found || found.mine) return;
+  found.mine = true;
+  send({ t: "accept" });
+  $<HTMLButtonElement>("#found-yes").disabled = true;
+  $<HTMLButtonElement>("#found-no").disabled = true;
+  $("#found-wait").hidden = false;
+});
+$("#found-no").addEventListener("click", () => {
+  if (found) send({ t: "decline" });
+});
+
+/** The ring counts the ten seconds down, and the queue clock ticks on. On a
+ * timer, not a frame: someone waiting in a queue has often put the tab behind
+ * another, and a hidden tab gets no frames. */
+setInterval(() => tickQueue(), 200);
+function tickQueue(): void {
+  queueBar();
+  const f = found;
+  if (!f) return;
+  const left = Math.max(0, f.until - performance.now() / 1000);
+  $("#found-secs").textContent = String(Math.ceil(left));
+  $("#found-ring").style.setProperty("--left", String(left / f.answer));
+}
+
+/** What this tab built while loading, so the start does not build it twice. */
+let prepared: { seed: number; track: Track } | null = null;
+let loadingMatch = -1;
+
+function onLoading(msg: Extract<ToClient, { t: "loading" }>): void {
+  closeFound();
+  clearQueue();
+  loadingMatch = msg.match;
+  const npcs = msg.entrants.filter((e) => !e.human).length;
+  $("#loading-mode").textContent = npcs > 0 ? `With NPCs · ${npcs} of them` : "Humans only";
+  $("#loading-head").textContent = ROADS[msg.track]?.name ?? "";
+  $("#loading-line").textContent = `Level ${msg.level}`;
+  const list = $("#loading-cards");
+  list.innerHTML = "";
+  for (const e of msg.entrants.filter((x) => x.human)) {
+    const li = document.createElement("li");
+    li.dataset.id = String(e.id);
+    if (e.id === msg.you) li.className = "me";
+    const name = document.createElement("span");
+    name.className = "who";
+    name.textContent = e.name;
+    const ping = document.createElement("span");
+    ping.className = "ping";
+    ping.textContent = "connecting…";
+    const bar = document.createElement("span");
+    bar.className = "bar";
+    bar.append(document.createElement("i"));
+    li.append(swatch(e.look), name, ping, bar);
+    list.append(li);
+  }
+  show("loading");
+  void prepare(msg);
+}
+
+/** The real work of loading, reported as it goes: the road, the scene, the riders' frames, the music. */
+async function prepare(msg: Extract<ToClient, { t: "loading" }>): Promise<void> {
+  const step = async (p: number): Promise<void> => {
+    send({ t: "progress", p });
+    // give the page a moment to paint the bar (a timer, not a frame: a hidden tab gets no frames)
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  await step(0.05);
+  const track = makeTrack(msg.level, msg.track);
+  await step(0.25);
+  roadScene.setTrack(track);
+  roadScene.setLooks(msg.entrants);
+  prepared = { seed: msg.seed, track };
+  await step(0.5);
+  roadScene.prepare();
+  for (let i = 0; i < 400 && !roadScene.ready; i++) await new Promise((r) => setTimeout(r, 25));
+  await step(0.8);
+  setRoad(msg.track);
+  try {
+    await fetch(MUSIC[msg.track]);
+  } catch {
+    // the race goes on without its music
+  }
+  if (loadingMatch === msg.match) await step(1);
+}
+
+function onLoads(msg: Extract<ToClient, { t: "loads" }>): void {
+  if (msg.match !== loadingMatch) return;
+  for (const r of msg.riders) {
+    const li = $("#loading-cards").querySelector<HTMLElement>(`li[data-id="${r.id}"]`);
+    if (!li) continue;
+    li.querySelector<HTMLElement>(".bar i")!.style.width = `${Math.round(r.p * 100)}%`;
+    li.querySelector(".ping")!.textContent = r.p >= 1 ? `ready · ${r.ping} ms` : `${r.ping} ms`;
+    li.classList.toggle("ready", r.p >= 1);
+  }
+}
+
+/** A person's leathers as a little badge: the main colour, the second across its top, and the helmet's dot. */
+function swatch(look: number | undefined): HTMLElement {
+  const el = document.createElement("span");
+  el.className = "swatch";
+  const l = look === undefined ? undefined : LIVERIES[look];
+  if (l) el.style.background = `radial-gradient(circle at 50% 24%, ${l.helmet} 0 17%, transparent 18%), linear-gradient(${l.trim} 0 42%, ${l.main} 42%)`;
+  return el;
 }
 
 function board(): void {
@@ -272,13 +465,6 @@ for (const b of document.querySelectorAll<HTMLButtonElement>(".queue button")) {
     send({ t: "queue", mode: b.dataset.mode as Mode, level, track, ai: Number(aiCount.value) });
   });
 }
-$("#leave").addEventListener("click", () => {
-  send({ t: "leave" });
-  queued = null;
-  poolTimer = null;
-  $("#pool").textContent = "";
-  queueButtons();
-});
 $<HTMLInputElement>("#name").addEventListener("change", (e) => send({ t: "name", name: (e.target as HTMLInputElement).value }));
 $("#again").addEventListener("click", () => {
   show("lobby");
@@ -309,10 +495,7 @@ function quitRace(): void {
   updateAudio({ speed: 0, top: 1, throttle: false, riding: false });
   $("#count").hidden = true;
   $("#banner").textContent = "";
-  queued = null;
-  poolTimer = null;
-  $("#pool").textContent = "";
-  queueButtons();
+  clearQueue();
   show("lobby");
   board();
 }
@@ -328,10 +511,7 @@ const ordinal = (n: number): string => `${n}${n % 10 === 1 && n % 100 !== 11 ? "
 function result(standings: Standing[], quals: { level: number; track: string }[]): void {
   qualified = quals;
   askQuit(false);
-  queued = null;
-  poolTimer = null;
-  $("#pool").textContent = "";
-  queueButtons();
+  clearQueue();
   const c = current!;
   const mine = standings.find((s, i) => s.human && c.race.riders.find((r) => r.id === c.you)?.name === s.name && i >= 0);
   const outcome = mine?.outcome ?? "unfinished";
@@ -554,7 +734,6 @@ function frame(): void {
   const now = performance.now() / 1000;
   const dt = Math.min(0.1, now - last);
   last = now;
-  tickPool();
   const c = current;
   if (c) {
     acc += dt;

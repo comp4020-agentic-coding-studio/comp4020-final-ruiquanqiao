@@ -12,6 +12,11 @@ export const MAX_AI = 29;
 /** the most people in one room: the original's Mano a Mano limit (N1), and one livery each */
 export const ROOM = 8;
 export const SNAPSHOT_HZ = 20;
+/** a match found: seconds to accept it (N9) */
+export const CHECK_WAIT = 10;
+/** the loading screen: at least this long, so it is seen, and at most this, so one slow browser cannot hold a room (N10) */
+export const LOAD_MIN = 2;
+export const LOAD_MAX = 20;
 
 export type ToServer =
   | { t: "queue"; mode: Mode; level: number; track?: number; ai?: number }
@@ -19,7 +24,13 @@ export type ToServer =
   /** out of the race one is in, back to the board (H8) */
   | { t: "quit" }
   | { t: "in"; seq: number; keys: number }
-  | { t: "name"; name: string };
+  | { t: "name"; name: string }
+  /** the answer to a match found (N9) */
+  | { t: "accept" }
+  | { t: "decline" }
+  /** how far this browser is with loading the race, 0 to 1; 1 is ready (N10) */
+  | { t: "progress"; p: number }
+  | { t: "pong"; at: number };
 
 /** One rider as the wire carries it: just what drawing and the HUD need. */
 export type RiderState = [
@@ -63,6 +74,18 @@ export type Standing = {
 export type ToClient =
   | { t: "hello"; you: { id: number; name: string }; qualified: { level: number; track: string }[] }
   | { t: "pool"; mode: Mode | null; count: number; startsIn: number | null; waitingForMore: boolean }
+  /** a room is ready: accept within `answer` seconds (N9) */
+  | { t: "found"; match: number; mode: Mode; of: number; answer: number }
+  | { t: "check"; match: number; accepted: number; of: number }
+  /** out of matchmaking: one's own decline, or no answer in time */
+  | { t: "dropped"; why: "declined" | "missed" }
+  /** someone else did not accept: back at the front of the pool */
+  | { t: "requeued"; mode: Mode }
+  /** everyone accepted: the race as it will be, to load (N10) */
+  | { t: "loading"; match: number; level: number; track: number; seed: number; entrants: Entry[]; you: number }
+  /** every person's loading and ping, in ms */
+  | { t: "loads"; match: number; riders: { id: number; p: number; ping: number }[] }
+  | { t: "ping"; at: number }
   | { t: "start"; race: number; level: number; track: number; seed: number; entrants: Entry[]; you: number | null; /** seconds on the grid before the race goes (V16) */ countdown?: number }
   | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; cars: CarState[]; events: RaceEvent[] }
   | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[] }

@@ -20,6 +20,10 @@ let racing = false;
 ws.onopen = () => ws.send(JSON.stringify({ t: "queue", mode: "ai", level: 1, track: 0 }));
 ws.onmessage = (e) => {
   const msg = JSON.parse(String(e.data));
+  // accept the match, load at once, answer the ping (N9, N10)
+  if (msg.t === "found") ws.send(JSON.stringify({ t: "accept" }));
+  if (msg.t === "loading") ws.send(JSON.stringify({ t: "progress", p: 1 }));
+  if (msg.t === "ping") ws.send(JSON.stringify({ t: "pong", at: msg.at }));
   if (msg.t === "start") {
     racing = true;
     // hold the throttle (bit 1) so the race runs at speed

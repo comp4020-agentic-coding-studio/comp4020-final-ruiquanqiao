@@ -394,6 +394,10 @@ export class RaceScene {
   private world = new THREE.Group();
   private riders = new Map<number, Actor>();
   private atlas: Atlas | null = null;
+  /** the riders' frames are drawn and the scene can show a rider */
+  get ready(): boolean {
+    return this.atlas !== null;
+  }
   private cars = new Map<number, THREE.Group>();
   private backdrop: THREE.Mesh;
   private sun: THREE.DirectionalLight;

@@ -9,6 +9,27 @@
 <body>
 <main id="app" data-screen="lobby">
 
+  <!-- in the queue: a bar across the top of every lobby page until a match is found (N9) -->
+  <div id="qbar" role="status" hidden>
+    <span class="pulse" aria-hidden="true"></span>
+    <span class="q-what"><b id="qbar-mode"></b> <span id="qbar-note"></span></span>
+    <span id="qbar-time">0:00</span>
+    <button id="qbar-x" aria-label="Leave the queue">✕</button>
+  </div>
+
+  <!-- a match found: accept within ten seconds (N9) -->
+  <div id="found" role="alertdialog" aria-labelledby="found-head" hidden>
+    <div class="found-card">
+      <div class="ring" aria-hidden="true"><div id="found-ring"></div><span id="found-secs">10</span></div>
+      <h2 id="found-head">Match found</h2>
+      <p id="found-line"></p>
+      <ol id="found-boxes" aria-label="Who has accepted"></ol>
+      <button id="found-yes">Accept</button>
+      <button id="found-no">Decline</button>
+      <p id="found-wait" hidden>Accepted. Waiting for the others…</p>
+    </div>
+  </div>
+
   <section id="lobby" aria-labelledby="title">
     <header class="masthead">
       <h1 id="title">Knuckle Road</h1>
@@ -46,7 +67,6 @@
         <button id="queue-human" data-mode="human">Humans only <small>needs two</small></button>
       </div>
       <p id="pool" role="status" aria-live="polite"></p>
-      <button id="leave" hidden>Leave the queue</button>
     </div>
 
     <div class="panel" id="board">
@@ -62,6 +82,17 @@
 
     <p class="keys">W throttle · S brake · A D steer · J hand · K foot · M music · Esc leave a race</p>
     <p class="credit">A remake of the arcade mode of <cite>Road Rash</cite> (EA, 1996). <a href="/readme/">Read me</a>.</p>
+  </section>
+
+  <!-- everyone loads the race, and the server measures each ping, before the count (N10) -->
+  <section id="loading" aria-labelledby="loading-head">
+    <header>
+      <p class="kicker" id="loading-mode"></p>
+      <h2 id="loading-head"></h2>
+      <p id="loading-line"></p>
+    </header>
+    <ol id="loading-cards"></ol>
+    <p class="hint" id="loading-note">The race starts when everyone is loaded, at the same moment for all of you.</p>
   </section>
 
   <section id="race" aria-label="Race">

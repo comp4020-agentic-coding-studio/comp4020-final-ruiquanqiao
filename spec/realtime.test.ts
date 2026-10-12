@@ -35,6 +35,10 @@ async function person(): Promise<Person> {
   ws.onmessage = (e) => {
     const msg = JSON.parse(String(e.data)) as ToClient;
     p.inbox.push(msg);
+    // a person with no screen: accepts the match, is loaded at once, answers the ping (N9, N10)
+    if (msg.t === "found") send(p, { t: "accept" });
+    if (msg.t === "loading") send(p, { t: "progress", p: 1 });
+    if (msg.t === "ping") send(p, { t: "pong", at: msg.at });
     if (msg.t === "start") {
       p.you = msg.you;
       p.race = msg.race;

@@ -136,3 +136,105 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
   .pad button small { display: block; font-size: 0.65rem; font-weight: normal; color: var(--dim); }
   .pad button.down { background: #3a2226; border-color: var(--hot); }
 }
+
+/* ---- matchmaking (N9, N10) ---- */
+
+#app[data-screen="loading"] #loading { display: block; }
+
+/* in the queue: a bar pinned across the top, a pulse and a running clock */
+#qbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.55rem 0.8rem; margin: 0 0 0.5rem;
+  background: linear-gradient(90deg, #3a2226, #2a2330 70%);
+  border-bottom: 2px solid var(--hot);
+  box-shadow: 0 4px 18px #0008;
+}
+#qbar[hidden] { display: none; }
+#qbar .q-what { flex: 1; min-width: 0; }
+#qbar b { color: var(--gold); text-transform: uppercase; letter-spacing: 0.06em; }
+#qbar-note { color: var(--dim); }
+#qbar-time { font: 700 1.3rem Oswald, sans-serif; font-variant-numeric: tabular-nums; color: var(--ink); }
+#qbar-x { padding: 0.2em 0.6em; }
+.pulse { width: 0.8rem; height: 0.8rem; border-radius: 50%; background: var(--hot); flex: none; animation: pulse 1.2s ease-out infinite; }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 #e0493aaa; }
+  100% { box-shadow: 0 0 0 0.9rem #e0493a00; }
+}
+.queue button[aria-pressed="true"] { animation: searching 1.6s ease-in-out infinite; }
+@keyframes searching {
+  50% { border-color: var(--gold); box-shadow: 0 0 14px #ecc84655; }
+}
+
+/* a match found: the whole page goes dark behind one card */
+#found {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center;
+  background: radial-gradient(circle, #1b1720cc, #000e 70%);
+  animation: fade-in 0.2s ease-out;
+}
+#found[hidden] { display: none; }
+@keyframes fade-in { from { opacity: 0; } }
+.found-card {
+  width: min(24rem, calc(100% - 2rem)); padding: 1.6rem 1.4rem 1.2rem; text-align: center;
+  background: var(--panel); border: 2px solid var(--gold); border-radius: 8px;
+  box-shadow: 0 0 40px #ecc84633;
+  animation: pop 0.28s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes pop { from { transform: scale(0.7); opacity: 0; } }
+#found-ring {
+  --left: 1;
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(var(--gold) calc(var(--left) * 360deg), #4a3d4f 0);
+  -webkit-mask: radial-gradient(circle, transparent 0 2.6rem, #000 2.65rem);
+  mask: radial-gradient(circle, transparent 0 2.6rem, #000 2.65rem);
+}
+.ring { position: relative; width: 6.5rem; height: 6.5rem; margin: 0 auto 0.6rem; }
+#found-secs {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font: 700 2.4rem Oswald, sans-serif; color: var(--ink);
+}
+#found-head { margin: 0; font: italic 700 2rem Oswald, sans-serif; text-transform: uppercase; letter-spacing: 0.04em; color: var(--gold); }
+#found-line { margin: 0.2rem 0 0.8rem; color: var(--dim); }
+#found-boxes { list-style: none; display: flex; justify-content: center; gap: 0.35rem; padding: 0; margin: 0 0 1rem; }
+#found-boxes li { width: 1.2rem; height: 1.2rem; border: 2px solid var(--edge); border-radius: 3px; transition: background 0.15s, border-color 0.15s; }
+#found-boxes li.yes { background: var(--ok); border-color: var(--ok); }
+#found-yes {
+  display: block; width: 100%; margin: 0 0 0.5rem; padding: 0.8em;
+  font: 700 1.3rem Oswald, sans-serif; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #1b1720; background: var(--gold); border-color: var(--gold);
+}
+#found-yes:disabled { opacity: 0.45; cursor: default; }
+#found-no { font-size: 0.9rem; padding: 0.35em 1em; background: transparent; }
+#found-no:disabled { visibility: hidden; }
+#found-wait { margin: 0.6rem 0 0; color: var(--ok); }
+
+/* loading: the road, then one card per person, filling as each loads */
+#loading { position: fixed; inset: 0; overflow: auto; padding: 2rem 1rem; background: radial-gradient(ellipse at top, #3a2226, var(--bg) 60%); }
+#loading header { text-align: center; margin: 0 0 1.5rem; }
+#loading .kicker { margin: 0; color: var(--dim); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.85rem; }
+#loading-head { margin: 0.1rem 0; font: italic 700 clamp(2.2rem, 8vw, 3.6rem) Oswald, sans-serif; text-transform: uppercase; color: var(--hot); text-shadow: 3px 3px 0 #000; }
+#loading-line { margin: 0; color: var(--gold); font-weight: bold; }
+#loading-cards {
+  list-style: none; padding: 0; margin: 0 auto 1rem; max-width: 64rem;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.8rem;
+}
+#loading-cards li {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; column-gap: 0.7rem; align-items: center;
+  padding: 0.8rem; background: var(--panel); border: 2px solid var(--edge); border-radius: 6px;
+  animation: pop 0.3s ease-out backwards;
+}
+#loading-cards li.me { border-color: var(--gold); }
+#loading-cards li.ready { box-shadow: 0 0 0 1px var(--ok) inset; }
+#loading-cards .swatch { grid-row: span 2; width: 3rem; height: 3rem; }
+#loading-cards .who { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#loading-cards .ping { color: var(--dim); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+#loading-cards li.ready .ping { color: var(--ok); }
+#loading-cards .bar { grid-column: 1 / -1; height: 0.45rem; margin-top: 0.6rem; background: #0006; border-radius: 1rem; overflow: hidden; }
+#loading-cards .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--hot), var(--gold)); transition: width 0.3s ease-out; }
+#loading-cards li.ready .bar i { background: var(--ok); }
+#loading-note { text-align: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse, .queue button[aria-pressed="true"], .found-card, #found, #loading-cards li { animation: none; }
+}
