@@ -112,6 +112,14 @@ export class Lobby {
 
   disconnect(conn: Conn, now: number): void {
     this.leave(conn, now);
+    this.quit(conn);
+  }
+
+  /**
+   * Out of the race and back to the board, with the tab still open (H8). The
+   * race goes on for everyone else, and the standings say "left".
+   */
+  quit(conn: Conn): void {
     const live = conn.race;
     if (live && !live.ended) {
       live.quit.add(conn.local);
@@ -120,6 +128,7 @@ export class Lobby {
       live.conns.delete(conn.local);
       this.log({ ev: "quit", rider: conn.rider, race: live.id });
     }
+    conn.race = null;
   }
 
   input(conn: Conn, seq: number, keys: number): void {

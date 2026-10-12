@@ -14,6 +14,8 @@ export const SNAPSHOT_HZ = 20;
 export type ToServer =
   | { t: "queue"; mode: Mode; level: number; track?: number; ai?: number; /** the leathers asked for, an index in LIVERIES */ look?: number }
   | { t: "leave" }
+  /** out of the race one is in, back to the board (H8) */
+  | { t: "quit" }
   | { t: "in"; seq: number; keys: number }
   | { t: "name"; name: string };
 

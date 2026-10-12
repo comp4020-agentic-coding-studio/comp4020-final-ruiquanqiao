@@ -63,7 +63,7 @@
       <canvas id="watch-canvas" width="480" height="270" aria-label="The race in progress, seen from the leader's bike"></canvas>
     </div>
 
-    <p class="keys">W throttle · S brake · A D steer · J hand · K foot · M music</p>
+    <p class="keys">W throttle · S brake · A D steer · J hand · K foot · M music · Esc leave a race</p>
     <p class="credit">A remake of the arcade mode of <cite>Road Rash</cite> (EA, 1996). <a href="/readme/">Read me</a>.</p>
   </section>
 
@@ -75,6 +75,13 @@
       <p id="position" class="sr" aria-live="polite"></p>
       <div id="banner" aria-live="assertive"></div>
       <div id="count" aria-live="assertive" hidden></div>
+      <button id="quit" aria-label="Leave the race">Esc<small>leave</small></button>
+      <div id="quit-ask" role="alertdialog" aria-labelledby="quit-head" hidden>
+        <p id="quit-head">Leave the race?</p>
+        <p class="hint">The race goes on without you. Esc again to leave.</p>
+        <button id="quit-yes">Leave</button>
+        <button id="quit-no">Keep riding</button>
+      </div>
     </div>
     <div id="touch" aria-hidden="true">
       <div class="pad left">

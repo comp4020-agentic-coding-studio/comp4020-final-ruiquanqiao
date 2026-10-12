@@ -105,6 +105,24 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 }
 #count[hidden] { display: none; }
 
+/* leaving a race (H8): a corner button, and Esc, ask before letting go */
+#quit {
+  position: absolute; top: max(0.6rem, env(safe-area-inset-top)); left: max(0.6rem, env(safe-area-inset-left));
+  padding: 0.3em 0.7em; font-size: 0.85rem; font-weight: bold; line-height: 1.1;
+  background: rgb(18 15 21 / 0.7);
+}
+#quit small { display: block; font-size: 0.7rem; font-weight: normal; color: var(--dim); }
+#quit-ask {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: min(22rem, calc(100% - 2rem)); padding: 1.2rem; text-align: center;
+  background: var(--panel); border: 2px solid var(--hot); border-radius: 4px;
+}
+#quit-ask[hidden] { display: none; }
+#quit-head { margin: 0 0 0.4rem; font-size: 1.4rem; font-weight: bold; font-style: italic; text-transform: uppercase; color: var(--gold); }
+#quit-ask .hint { margin: 0 0 1rem; color: var(--dim); font-size: 0.9rem; }
+#quit-ask button { margin: 0 0.25rem; }
+#quit-yes { border-color: var(--hot); }
+
 #touch { display: none; }
 @media (pointer: coarse), (max-width: 700px) {
   #stage { bottom: 9.5rem; }

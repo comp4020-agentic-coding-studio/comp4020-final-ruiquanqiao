@@ -141,6 +141,31 @@ describe("the race a pool starts", () => {
     expect(finished[0]).toHaveLength(15);
     expect(finished[0].find((s) => s.human)?.outcome).toBe("quit");
   });
+
+  it("lets a rider leave mid-race with the tab still open, races on for the rest, and lets them queue again (H8)", () => {
+    const { l, finished } = lobby();
+    const a = conn(1);
+    const b = conn(2);
+    l.join(a, "human", 1, 0);
+    l.join(b, "human", 1, 1);
+    l.tick(11);
+    const live = [...l.races.values()][0];
+    l.quit(a);
+    expect(a.race).toBeNull();
+    l.tick(11.5);
+    // still on the road for the one who stayed, and nothing more sent to the one who left
+    expect(l.races.size).toBe(1);
+    expect(live.race.riders.find((r) => r.id === a.local)?.phase).toBe("wrecked");
+    const snaps = a.inbox.filter((m) => m.t === "snap").length;
+    l.tick(12);
+    expect(a.inbox.filter((m) => m.t === "snap").length).toBe(snaps);
+    // free to queue for another race straight away
+    l.join(a, "ai", 1, 12);
+    expect(a.pool).toBe("ai");
+    l.disconnect(b, 13);
+    l.tick(13.1);
+    expect(finished[0].find((s) => s.name === "r1")?.outcome).toBe("quit");
+  });
 });
 
 describe("choosing how many AI riders (N2)", () => {

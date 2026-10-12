@@ -70,6 +70,7 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null };
   if (msg.you !== null) {
     show("race");
+    askQuit(false);
     roadScene.setTrack(track);
     roadScene.setLooks(msg.entrants);
     resize();
@@ -308,12 +309,49 @@ $("#again").addEventListener("click", () => {
   board();
 });
 
+// ---- leaving a race (H8) ----
+
+// Esc asks, as the original's pause does, and Esc again leaves. Nothing
+// pauses: the race is everyone's, so the bike still answers the keys while
+// the question is up, and it is the server that takes the rider out.
+const quitAsk = $("#quit-ask");
+
+function askQuit(open: boolean): void {
+  quitAsk.hidden = !open;
+  if (open) $<HTMLButtonElement>("#quit-no").focus();
+  else $<HTMLButtonElement>("#quit-no").blur();
+}
+
+function quitRace(): void {
+  const c = current;
+  if (!c || c.you === null) return;
+  send({ t: "quit" });
+  current = null;
+  askQuit(false);
+  for (const k of Object.keys(keys) as (keyof Input)[]) keys[k] = false;
+  // nobody aboard: the engine only ticks over and the wind drops
+  updateAudio({ speed: 0, top: 1, throttle: false, riding: false });
+  $("#count").hidden = true;
+  $("#banner").textContent = "";
+  queued = null;
+  poolTimer = null;
+  $("#pool").textContent = "";
+  queueButtons();
+  show("lobby");
+  board();
+}
+
+$("#quit").addEventListener("click", () => askQuit(true));
+$("#quit-no").addEventListener("click", () => askQuit(false));
+$("#quit-yes").addEventListener("click", quitRace);
+
 // ---- result (H4: four endings, each its own screen) ----
 
 const ordinal = (n: number): string => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
 
 function result(standings: Standing[], quals: { level: number; track: string }[]): void {
   qualified = quals;
+  askQuit(false);
   queued = null;
   poolTimer = null;
   $("#pool").textContent = "";
@@ -387,6 +425,12 @@ addEventListener("keydown", (e) => {
     musicOn = !musicOn;
     setMusic(musicOn);
     banner(musicOn ? "Music on" : "Music off", 900);
+    return;
+  }
+  if (e.code === "Escape" && app.dataset.screen === "race" && !e.repeat) {
+    e.preventDefault();
+    if (quitAsk.hidden) askQuit(true);
+    else quitRace();
     return;
   }
   const k = KEYMAP[e.code];
