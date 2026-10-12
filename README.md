@@ -24,7 +24,7 @@ second back and carried forward to now, as Gabriel Gambetta describes. The
 cost: the rider you punch is where the server says, not quite where you see
 them.
 
-**There is always someone to hit.** A race with AI starts five seconds after
+**There is always someone to hit.** A race with NPCs (scripted riders) starts five seconds after
 the first rider queues and fills the grid to fifteen, so one visitor gets a
 full race. A humans-only race waits for a second person. People waiting watch
 the race already on the road.

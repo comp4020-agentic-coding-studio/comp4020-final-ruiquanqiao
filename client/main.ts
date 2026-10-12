@@ -210,7 +210,7 @@ function pool(msg: Extract<ToClient, { t: "pool" }>): void {
   queued = msg.mode;
   const who = msg.count === 1 ? "just you" : `${msg.count} riders`;
   if (msg.waitingForMore) line.textContent = `Humans only: ${who}. Waiting for one more rider…`;
-  else if (msg.startsIn !== null) line.textContent = `${msg.mode === "ai" ? "With AI" : "Humans only"}: ${who}. Starting in ${Math.ceil(msg.startsIn)}s.`;
+  else if (msg.startsIn !== null) line.textContent = `${msg.mode === "ai" ? "With NPCs" : "Humans only"}: ${who}. Starting in ${Math.ceil(msg.startsIn)}s.`;
   poolTimer = msg.startsIn === null ? null : { mode: msg.mode, count: msg.count, until: performance.now() / 1000 + msg.startsIn };
   queueButtons();
 }
@@ -221,7 +221,7 @@ function tickPool(): void {
   if (!poolTimer || app.dataset.screen !== "lobby") return;
   const left = Math.max(0, poolTimer.until - performance.now() / 1000);
   const who = poolTimer.count === 1 ? "just you" : `${poolTimer.count} riders`;
-  $("#pool").textContent = `${poolTimer.mode === "ai" ? "With AI" : "Humans only"}: ${who}. Starting in ${Math.ceil(left)}s.`;
+  $("#pool").textContent = `${poolTimer.mode === "ai" ? "With NPCs" : "Humans only"}: ${who}. Starting in ${Math.ceil(left)}s.`;
 }
 
 function queueButtons(): void {
@@ -378,7 +378,7 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
     if (s === mine) tr.className = "me";
     const time = s.time === null ? "" : `${Math.floor(s.time / 60)}:${(s.time % 60).toFixed(1).padStart(4, "0")}`;
     const note = s.outcome === "wrecked" ? "wrecked" : s.outcome === "unfinished" ? "—" : s.outcome === "quit" ? "left" : "";
-    for (const text of [String(s.place), s.name + (s.human ? "" : " (AI)"), time, note]) {
+    for (const text of [String(s.place), s.name + (s.human ? "" : " (NPC)"), time, note]) {
       const td = document.createElement("td");
       td.textContent = text;
       tr.append(td);
