@@ -3,7 +3,7 @@
 // server runs, so the bike answers the keys at once, and draws everyone else
 // a tenth of a second in the past, between two snapshots.
 
-import { type CarState, type Entry, type Mode, type RiderState, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
+import { type CarState, type Entry, type Mode, type RiderState, type Room, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
 import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { LIVERIES } from "../game/liveries.ts";
@@ -90,6 +90,16 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
     setRoad(msg.track ?? 0);
     startAudio();
     $("#touch").querySelectorAll("button").forEach((b) => b.classList.remove("down"));
+  } else if (msg.race === spectating) {
+    show("watch");
+    roadScene.setTrack(track);
+    roadScene.setLooks(msg.entrants);
+    roadScene.prepare();
+    resize();
+    follow = msg.entrants.find((e) => e.human)?.id ?? 0;
+    spectateLabel();
+    banner(`${track.name} · level ${msg.level}`, 2500);
+    setRoad(msg.track ?? 0);
   } else {
     $("#watch").hidden = false;
     watchScene.setTrack(track);
@@ -114,7 +124,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     if (e.kind === "bump" && e.with === "rider" && (e.rider === c.you || e.other === c.you) && now - localBump < 0.5) continue;
     if (e.kind === "runOver" && e.by === c.you && ranOver.has(e.what === "bike" ? -1 - e.on : e.on)) continue;
     const felt = react(e, c.race.riders, c.you);
-    (c.you === null ? watchScene : roadScene).feel(felt);
+    (c.you === null && c.id !== spectating ? watchScene : roadScene).feel(felt);
     if (felt.sound && c.you !== null) sfx(felt.sound.kind, felt.sound.gain);
   }
 
@@ -210,12 +220,16 @@ function onMessage(msg: ToClient): void {
   } else if (msg.t === "loading") onLoading(msg);
   else if (msg.t === "loads") onLoads(msg);
   else if (msg.t === "ping") send({ t: "pong", at: msg.at });
+  else if (msg.t === "live") onLive(msg);
   else if (msg.t === "start") begin(msg);
   else if (msg.t === "snap") onSnap(msg);
   else if (msg.t === "end") {
     if (current && current.id === msg.race) {
       if (current.you !== null) result(msg.standings, msg.qualified);
-      else $("#watch").hidden = true;
+      else if (current.id === spectating) {
+        spectating = null;
+        watched(msg.standings);
+      } else $("#watch").hidden = true;
       current = null;
     }
   }
@@ -223,12 +237,147 @@ function onMessage(msg: ToClient): void {
 
 // ---- lobby ----
 
-type Screen = "lobby" | "race" | "result" | "loading";
+type Screen = "lobby" | "live" | "race" | "watch" | "result" | "loading";
+/** the pages one can browse to, each at a URL of its own; everything else is a state of the game */
+const PAGES: Partial<Record<Screen, string>> = { lobby: "/", live: "/live" };
+const lobbyish = (s = app.dataset.screen): boolean => s !== undefined && s in PAGES;
 
 function show(screen: Screen): void {
   app.dataset.screen = screen;
+  for (const a of document.querySelectorAll<HTMLAnchorElement>("#nav a")) a.toggleAttribute("aria-current", a.dataset.route === screen);
+  if (screen === "live") rooms();
   queueBar();
 }
+
+/** Go to one of the pages, and put it in the address bar so it can be shared and gone back to. */
+function go(screen: Screen, push = true): void {
+  const path = PAGES[screen];
+  if (!path) return;
+  if (push && location.pathname !== path) history.pushState(null, "", path);
+  show(screen);
+}
+
+const routeOf = (path: string): Screen => (Object.entries(PAGES).find(([, p]) => p === path)?.[0] as Screen) ?? "lobby";
+for (const a of document.querySelectorAll<HTMLAnchorElement>("#nav a")) {
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    go(a.dataset.route as Screen);
+  });
+}
+addEventListener("popstate", () => {
+  if (lobbyish()) show(routeOf(location.pathname));
+});
+
+// ---- live rooms and spectating (N11) ----
+
+let live: Room[] = [];
+/** the race this tab asked to watch, full screen */
+let spectating: number | null = null;
+/** the rider the spectator's camera follows */
+let follow = 0;
+
+function onLive(msg: Extract<ToClient, { t: "live" }>): void {
+  live = msg.races;
+  const people = live.reduce((n, r) => n + r.humans.filter((h) => !h.out).length, 0);
+  $("#nav-live").textContent = live.length > 0 ? `${live.length}` : "";
+  $("#nav-live").title = `${live.length} races, ${people} people`;
+  if (app.dataset.screen === "live") rooms();
+}
+
+function rooms(): void {
+  const list = $("#rooms");
+  $("#rooms-none").hidden = live.length > 0;
+  // rebuilt only when the set of races or anyone in them changes, so a Watch button is not replaced under the pointer
+  const key = JSON.stringify(live.map((r) => [r.race, r.humans, r.watchers]));
+  if (list.dataset.key === key) {
+    for (const r of live) {
+      const t = list.querySelector(`li[data-race="${r.race}"] .time`);
+      if (t) t.textContent = raceClock(r.time);
+    }
+    return;
+  }
+  list.dataset.key = key;
+  list.innerHTML = "";
+  for (const r of live) {
+    const li = document.createElement("li");
+    li.dataset.race = String(r.race);
+    const head = document.createElement("div");
+    head.className = "room-head";
+    const name = document.createElement("b");
+    name.textContent = ROADS[r.track]?.name ?? "";
+    const meta = document.createElement("span");
+    meta.textContent = ` · level ${r.level} · ${r.mode === "ai" ? `with ${r.npcs} NPCs` : "humans only"}`;
+    const time = document.createElement("span");
+    time.className = "time";
+    time.textContent = raceClock(r.time);
+    head.append(name, meta, time);
+    const who = document.createElement("ul");
+    who.className = "who";
+    for (const h of r.humans) {
+      const p = document.createElement("li");
+      if (h.out) p.className = "out";
+      const n = document.createElement("span");
+      n.textContent = h.name + (h.out ? " (left)" : "");
+      p.append(swatch(h.look), n);
+      who.append(p);
+    }
+    const foot = document.createElement("div");
+    foot.className = "room-foot";
+    const eyes = document.createElement("span");
+    eyes.textContent = r.watchers === 0 ? "No one watching" : `${r.watchers} watching`;
+    const btn = document.createElement("button");
+    btn.textContent = "Watch";
+    btn.addEventListener("click", () => {
+      spectating = r.race;
+      startAudio();
+      send({ t: "watch", race: r.race });
+    });
+    foot.append(eyes, btn);
+    li.append(head, who, foot);
+    list.append(li);
+  }
+}
+
+const raceClock = (t: number): string => (t < 0 ? "on the grid" : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`);
+
+/** The riders a spectator can follow: the people first, then the leader of the rest. */
+function followable(c: Current): Rider[] {
+  const field = c.race.riders.filter((r) => !r.cop);
+  const people = field.filter((r) => r.human);
+  const leader = field.filter((r) => !r.human).sort((p, q) => q.z - p.z)[0];
+  return leader ? [...people, leader] : people;
+}
+
+function cycle(by: number): void {
+  const c = current;
+  if (!c || spectating === null) return;
+  const list = followable(c);
+  if (list.length === 0) return;
+  const i = list.findIndex((r) => r.id === follow);
+  follow = list[(i + by + list.length) % list.length].id;
+  spectateLabel();
+}
+
+function spectateLabel(): void {
+  const c = current;
+  const r = c?.race.riders.find((x) => x.id === follow);
+  $("#spec-who").textContent = r ? r.name + (r.human ? "" : " (NPC)") : "";
+}
+
+function stopWatching(): void {
+  send({ t: "unwatch" });
+  spectating = null;
+  current = null;
+  updateAudio({ speed: 0, top: 1, throttle: false, riding: false });
+  $("#count").hidden = true;
+  $("#banner").textContent = "";
+  go("live");
+}
+
+$("#spec-prev").addEventListener("click", () => cycle(-1));
+$("#spec-next").addEventListener("click", () => cycle(1));
+$("#spec-stop").addEventListener("click", stopWatching);
+$("#again-live").addEventListener("click", () => go("live"));
 
 // ---- the queue, a match found, and loading (N9, N10) ----
 
@@ -467,7 +616,7 @@ for (const b of document.querySelectorAll<HTMLButtonElement>(".queue button")) {
 }
 $<HTMLInputElement>("#name").addEventListener("change", (e) => send({ t: "name", name: (e.target as HTMLInputElement).value }));
 $("#again").addEventListener("click", () => {
-  show("lobby");
+  go("lobby");
   board();
 });
 
@@ -496,7 +645,7 @@ function quitRace(): void {
   $("#count").hidden = true;
   $("#banner").textContent = "";
   clearQueue();
-  show("lobby");
+  go("lobby");
   board();
 }
 
@@ -527,6 +676,27 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
   $("#ending").textContent = head;
   $("#ending-line").textContent = line;
   $("#result").dataset.outcome = outcome;
+  $("#again").hidden = false;
+  $("#again-live").hidden = true;
+  standingsTable(standings, mine);
+  show("result");
+  $<HTMLButtonElement>("#again").focus();
+}
+
+/** The end of a race one only watched: who won, and the table. */
+function watched(standings: Standing[]): void {
+  const first = standings.find((s) => s.outcome === "qualified");
+  $("#ending").textContent = "Race over";
+  $("#ending-line").textContent = first ? `${first.name}${first.human ? "" : " (NPC)"} took it.` : "Nobody reached the line.";
+  $("#result").dataset.outcome = "watched";
+  $("#again").hidden = true;
+  $("#again-live").hidden = false;
+  standingsTable(standings, undefined);
+  show("result");
+  $<HTMLButtonElement>("#again-live").focus();
+}
+
+function standingsTable(standings: Standing[], mine: Standing | undefined): void {
   const body = $("#standings").querySelector("tbody")!;
   body.innerHTML = "";
   for (const s of standings) {
@@ -541,8 +711,6 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
     }
     body.append(tr);
   }
-  show("result");
-  $<HTMLButtonElement>("#again").focus();
 }
 
 // ---- input ----
@@ -581,6 +749,14 @@ addEventListener("keydown", (e) => {
     musicOn = !musicOn;
     setMusic(musicOn);
     banner(musicOn ? "Music on" : "Music off", 900);
+    return;
+  }
+  if (app.dataset.screen === "watch" && !e.repeat) {
+    if (e.code === "Escape") stopWatching();
+    else if (e.code === "ArrowLeft" || e.code === "KeyA") cycle(-1);
+    else if (e.code === "ArrowRight" || e.code === "KeyD") cycle(1);
+    else return;
+    e.preventDefault();
     return;
   }
   if (e.code === "Escape" && app.dataset.screen === "race" && !e.repeat) {
@@ -761,7 +937,7 @@ function frame(): void {
       }
     }
     if (c.you !== null) sendKeys(now);
-    if (c.you !== null) countdown(c, now);
+    if (c.you !== null || c.id === spectating) countdown(c, now);
     interpolate(c, now);
     // and again once the others have moved this frame: the screen refreshes
     // faster than the race steps, and between steps a bike moved up to where
@@ -791,6 +967,14 @@ function frame(): void {
       hud(c);
       const r = c.race.riders.find((x) => x.id === c.you);
       if (r) updateAudio({ speed: r.speed, top: topSpeed(r), throttle: keys.throttle, riding: r.phase === "riding" });
+    } else if (c.id === spectating) {
+      // spectating, full screen, behind whoever was picked, with their dash
+      const r = c.race.riders.find((x) => x.id === follow);
+      if (r) {
+        roadScene.draw(c.race.riders, follow, dashCover / Math.max(1, dash.height), c.race.cars);
+        hud(c, follow);
+        updateAudio({ speed: r.speed, top: topSpeed(r), throttle: false, riding: r.phase === "riding" });
+      }
     } else if (!$("#watch").hidden) {
       // watching: ride along behind whoever is leading
       const lead = c.race.riders.filter((r) => !r.cop).sort((p, q) => q.z - p.z)[0];
@@ -838,8 +1022,8 @@ function banner(text: string, ms = 1500): void {
 
 let lastSaid = "";
 
-function hud(c: Current): void {
-  const r = c.race.riders.find((x) => x.id === c.you) as Rider;
+function hud(c: Current, id = c.you): void {
+  const r = c.race.riders.find((x) => x.id === id) as Rider;
   const o = nearest(c.race, r);
   const position = r.place || positionOf(c.race, r.id);
   dashCover = drawDash(dashCtx, dash.width, dash.height, {
@@ -889,5 +1073,7 @@ window.__rash = {
   riders: () => current?.race.riders.map((r) => ({ id: r.id, cop: r.cop, z: Math.round(r.z), x: r.x.toFixed(1), phase: r.phase, weapon: r.weapon, attack: r.attack && `${r.attack.kind}${r.attack.t.toFixed(2)}${r.attack.landed ? "L" : ""}` })),
 };
 
+// the page the address bar names
+show(routeOf(location.pathname));
 connect();
 requestAnimationFrame(frame);

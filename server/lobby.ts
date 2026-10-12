@@ -8,7 +8,7 @@
 // start, with each person's countdown shortened by half their round trip so
 // GO lands at the same moment in every browser.
 
-import { CHECK_WAIT, type Entry, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
+import { CHECK_WAIT, type Entry, type Room, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, TUNE, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { LIVERIES } from "../game/liveries.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
@@ -27,6 +27,8 @@ export type Conn = {
   seq: number; // last input sequence number applied
   /** the match this connection is accepting or loading, if any */
   match?: Match | null;
+  /** the race this connection asked to spectate (N11), as against one it is shown while queued (N5) */
+  watching?: number | null;
   /** round trip to this browser, s: the shortest seen while loading */
   rtt?: number;
 };
@@ -91,6 +93,9 @@ export class Lobby {
   matches = new Map<number, Match>();
   private clock = 0; // seconds
   private matchIds = 0;
+  /** every open connection, for the live rooms list */
+  conns = new Set<Conn>();
+  private listed = -1;
   private pinged = -1;
 
   private store: Store;
@@ -126,7 +131,7 @@ export class Lobby {
       pool.startsAt = now + POOL_WAIT.human;
     }
     this.log({ ev: "queue", rider: conn.rider, mode, level: conn.level, pool: pool.members.length });
-    this.watchNewest(conn);
+    if (!conn.watching) this.watchNewest(conn);
     this.announce(mode, now);
   }
 
@@ -139,12 +144,54 @@ export class Lobby {
     pool.members = pool.members.filter((c) => c !== conn);
     if (pool.members.length === 0) pool.startsAt = null;
     conn.pool = null;
-    for (const live of this.races.values()) live.watchers.delete(conn);
+    for (const live of this.races.values()) if (live.id !== conn.watching) live.watchers.delete(conn);
     this.log({ ev: "unqueue", rider: conn.rider, mode });
     this.announce(mode, now);
   }
 
+  /** A new connection, listed for the live rooms page. */
+  hello(conn: Conn): void {
+    this.conns.add(conn);
+    conn.send({ t: "live", races: this.rooms() });
+  }
+
+  // ---- live rooms and spectating (N11) ----
+
+  /** Every race on the road, as the live rooms page lists them. */
+  rooms(): Room[] {
+    return [...this.races.values()]
+      .filter((l) => !l.ended)
+      .map((l) => ({
+        race: l.id,
+        mode: l.mode,
+        level: l.level,
+        track: l.road,
+        time: Math.round(l.race.t * 10) / 10,
+        humans: l.entrants.filter((e) => e.human).map((e) => ({ name: e.name, look: e.look, out: l.quit.has(e.id) })),
+        npcs: l.entrants.filter((e) => !e.human).length,
+        watchers: [...l.watchers].filter((c) => c.watching === l.id).length,
+      }));
+  }
+
+  watch(conn: Conn, race: number): void {
+    const live = this.races.get(race);
+    if (!live || live.ended || (conn.race && !conn.race.ended) || conn.match) return;
+    for (const other of this.races.values()) other.watchers.delete(conn);
+    conn.watching = race;
+    live.watchers.add(conn);
+    conn.send({ t: "start", race: live.id, level: live.level, track: live.road, seed: live.seed, entrants: live.entrants, you: null, countdown: Math.max(0, -live.race.t) });
+    this.log({ ev: "watch", rider: conn.rider, race });
+  }
+
+  unwatch(conn: Conn): void {
+    const race = conn.watching;
+    conn.watching = null;
+    for (const live of this.races.values()) if (live.id === race) live.watchers.delete(conn);
+  }
+
   disconnect(conn: Conn, now: number): void {
+    this.conns.delete(conn);
+    this.unwatch(conn);
     const m = conn.match;
     // gone while loading: the bike is in the race as one that left
     if (m?.phase === "loading") m.gone.add(conn);
@@ -363,6 +410,7 @@ export class Lobby {
         return;
       }
       for (const other of this.races.values()) other.watchers.delete(c);
+      c.watching = null;
       c.race = live;
       c.local = i;
       c.seq = 0;
@@ -376,6 +424,7 @@ export class Lobby {
     // anyone still queued watches the new race
     for (const p of Object.values(this.pools)) {
       for (const c of p.members) {
+        if (c.watching) continue;
         for (const other of this.races.values()) other.watchers.delete(c);
         this.watchNewest(c);
       }
@@ -411,6 +460,12 @@ export class Lobby {
       }
       const ready = m.members.every((c) => m.gone.has(c) || (m.progress.get(c) ?? 0) >= 1);
       if ((ready && now - m.since >= LOAD_MIN) || now >= m.deadline) this.launch(m, now);
+    }
+    // once a second, the live rooms to everyone not on the road themselves
+    if (now - this.listed >= 1) {
+      this.listed = now;
+      const races = this.rooms();
+      for (const c of this.conns) if (!c.race) c.send({ t: "live", races });
     }
     // every half second, a round trip asked of everyone loading
     if (now - this.pinged >= 0.5) {

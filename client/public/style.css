@@ -139,7 +139,9 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 
 /* ---- matchmaking (N9, N10) ---- */
 
-#app[data-screen="loading"] #loading { display: block; }
+#app[data-screen="loading"] #loading,
+#app[data-screen="live"] #live,
+#app[data-screen="watch"] #race { display: block; }
 
 /* in the queue: a bar pinned across the top, a pulse and a running clock */
 #qbar {
@@ -238,3 +240,46 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 @media (prefers-reduced-motion: reduce) {
   .pulse, .queue button[aria-pressed="true"], .found-card, #found, #loading-cards li { animation: none; }
 }
+
+/* ---- the pages: race, live (N11) ---- */
+
+#nav { display: none; max-width: 44rem; margin: 0 auto; padding: 0.8rem 1rem 0; gap: 0.3rem; }
+#app[data-screen="lobby"] #nav, #app[data-screen="live"] #nav { display: flex; }
+#nav a {
+  padding: 0.45em 0.9em; border-radius: 4px 4px 0 0; border-bottom: 3px solid transparent;
+  color: var(--dim); text-decoration: none; font-weight: bold; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.9rem;
+}
+#nav a:hover { color: var(--ink); }
+#nav a[aria-current] { color: var(--gold); border-bottom-color: var(--gold); }
+#nav .count:not(:empty) { display: inline-block; min-width: 1.4em; margin-left: 0.2em; padding: 0 0.35em; border-radius: 1em; background: var(--hot); color: #fff; font-size: 0.8rem; text-align: center; }
+
+#live { max-width: 44rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
+#live-head { margin: 0.4rem 0 0.2rem; font: italic 700 2rem Oswald, sans-serif; text-transform: uppercase; color: var(--hot); text-shadow: 2px 2px 0 #000; }
+#rooms { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 0.8rem; }
+#rooms > li { background: var(--panel); border: 2px solid var(--edge); border-radius: 6px; padding: 0.9rem 1rem; }
+.room-head { display: flex; align-items: baseline; gap: 0.2rem; flex-wrap: wrap; }
+.room-head b { color: var(--gold); font-size: 1.1rem; }
+.room-head span { color: var(--dim); }
+.room-head .time { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink); }
+#rooms .who { list-style: none; padding: 0; margin: 0.7rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+#rooms .who li { display: flex; align-items: center; gap: 0.45rem; }
+#rooms .who .swatch { width: 1.6rem; height: 1.6rem; }
+#rooms .who li.out { opacity: 0.5; }
+.room-foot { display: flex; justify-content: space-between; align-items: center; color: var(--dim); font-size: 0.9rem; }
+.room-foot button { font-weight: bold; border-color: var(--gold); }
+
+/* spectating: the race full screen, no touch pad, a strip to pick the rider and leave */
+#spectate { display: none; }
+#app[data-screen="watch"] #spectate {
+  display: flex; align-items: center; gap: 0.5rem;
+  position: absolute; top: max(0.6rem, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  padding: 0.35rem; background: rgb(18 15 21 / 0.8); border: 2px solid var(--edge); border-radius: 6px;
+  max-width: calc(100% - 1rem);
+}
+#spectate p { margin: 0 0.4rem; text-align: center; min-width: 7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#spectate p small { display: block; color: var(--dim); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; }
+#spectate b { color: var(--gold); }
+#spectate button { padding: 0.35em 0.7em; }
+#spec-stop small { color: var(--dim); font-size: 0.7rem; }
+#app[data-screen="watch"] #quit, #app[data-screen="watch"] #touch { display: none; }
+#app[data-screen="watch"] #stage { bottom: 0; }

@@ -33,7 +33,8 @@ race already on the road.
 **Matched like a modern game.** In the queue, a bar across the top keeps the
 clock. When a room forms, everyone accepts within ten seconds, then everyone
 loads on one screen that shows each person's ping, and the count is started
-so GO lands at the same moment in every browser.
+so GO lands at the same moment in every browser. Every race on the road is
+listed at `/live`, and any of them can be watched from behind any rider.
 
 **The road remembers you.** No accounts: your browser keeps your rider, and a
 top-three finish qualifies you on that road at that level for good.

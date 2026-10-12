@@ -17,6 +17,12 @@
     <button id="qbar-x" aria-label="Leave the queue">✕</button>
   </div>
 
+  <!-- the lobby's pages -->
+  <nav id="nav" aria-label="Pages">
+    <a href="/" data-route="lobby">Race</a>
+    <a href="/live" data-route="live">Live <span id="nav-live" class="count"></span></a>
+  </nav>
+
   <!-- a match found: accept within ten seconds (N9) -->
   <div id="found" role="alertdialog" aria-labelledby="found-head" hidden>
     <div class="found-card">
@@ -84,6 +90,14 @@
     <p class="credit">A remake of the arcade mode of <cite>Road Rash</cite> (EA, 1996). <a href="/readme/">Read me</a>.</p>
   </section>
 
+  <!-- every race on the road, to spectate (N11) -->
+  <section id="live" aria-labelledby="live-head">
+    <h2 id="live-head">On the road now</h2>
+    <p class="hint">Every race running, and who is in it. Watch any of them from behind a rider of your choice.</p>
+    <ol id="rooms"></ol>
+    <p id="rooms-none" class="hint">No one is racing right now. Queue up on the Race page and you will be the first.</p>
+  </section>
+
   <!-- everyone loads the race, and the server measures each ping, before the count (N10) -->
   <section id="loading" aria-labelledby="loading-head">
     <header>
@@ -104,6 +118,12 @@
       <div id="banner" aria-live="assertive"></div>
       <div id="count" aria-live="assertive" hidden></div>
       <button id="quit" aria-label="Leave the race">Esc<small>leave</small></button>
+      <div id="spectate">
+        <button id="spec-prev" aria-label="Watch the rider before">◀</button>
+        <p><small>Watching</small> <b id="spec-who"></b></p>
+        <button id="spec-next" aria-label="Watch the next rider">▶</button>
+        <button id="spec-stop">Stop watching <small>Esc</small></button>
+      </div>
       <div id="quit-ask" role="alertdialog" aria-labelledby="quit-head" hidden>
         <p id="quit-head">Leave the race?</p>
         <p class="hint">The race goes on without you. Esc again to leave.</p>
@@ -131,6 +151,7 @@
       <p id="ending-line"></p>
       <table id="standings"><thead><tr><th scope="col">#</th><th scope="col">Rider</th><th scope="col">Time</th><th scope="col"></th></tr></thead><tbody></tbody></table>
       <button id="again">Back to the board</button>
+      <button id="again-live" hidden>Back to live races</button>
     </div>
   </section>
 

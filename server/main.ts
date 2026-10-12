@@ -102,7 +102,7 @@ function cookieToken(req: IncomingMessage): string | null {
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
-  if (path === "/" || path === "/index.html") {
+  if (path === "/" || path === "/index.html" || path === "/live" || path === "/leaderboard") {
     // the rider is remembered by a cookie, set on the first visit (S9)
     if (!cookieToken(req)) {
       const token = randomBytes(18).toString("base64url");
@@ -154,6 +154,7 @@ wss.on("connection", (ws, req) => {
   };
   log({ ev: "connect", rider: rider.id });
   conn.send({ t: "hello", you: rider, qualified: db.qualified(rider.id) });
+  lobby.hello(conn);
 
   ws.on("message", (data) => {
     let msg: ToServer;
@@ -170,6 +171,8 @@ wss.on("connection", (ws, req) => {
     else if (msg.t === "decline") lobby.decline(conn, now);
     else if (msg.t === "progress") lobby.progress(conn, Number(msg.p));
     else if (msg.t === "pong") lobby.pong(conn, Number(msg.at), now);
+    else if (msg.t === "watch") lobby.watch(conn, Number(msg.race));
+    else if (msg.t === "unwatch") lobby.unwatch(conn);
     else if (msg.t === "in") lobby.input(conn, Number(msg.seq), Number(msg.keys));
     else if (msg.t === "name" && typeof msg.name === "string") {
       const name = msg.name.replace(/\s+/g, " ").trim().slice(0, 20);

@@ -30,7 +30,10 @@ export type ToServer =
   | { t: "decline" }
   /** how far this browser is with loading the race, 0 to 1; 1 is ready (N10) */
   | { t: "progress"; p: number }
-  | { t: "pong"; at: number };
+  | { t: "pong"; at: number }
+  /** spectate a race in progress, or stop (N11) */
+  | { t: "watch"; race: number }
+  | { t: "unwatch" };
 
 /** One rider as the wire carries it: just what drawing and the HUD need. */
 export type RiderState = [
@@ -89,7 +92,11 @@ export type ToClient =
   | { t: "start"; race: number; level: number; track: number; seed: number; entrants: Entry[]; you: number | null; /** seconds on the grid before the race goes (V16) */ countdown?: number }
   | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; cars: CarState[]; events: RaceEvent[] }
   | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[] }
-  | { t: "live"; races: { race: number; level: number; riders: number; humans: number }[] };
+  /** every room on the road, once a second, to everyone not racing (N11) */
+  | { t: "live"; races: Room[] };
+
+/** A race in progress as the live rooms page shows it. */
+export type Room = { race: number; mode: Mode; level: number; track: number; time: number; humans: { name: string; look?: number; out: boolean }[]; npcs: number; watchers: number };
 
 export function encodeRider(r: Rider): RiderState {
   const a = r.attack ? `${r.attack.kind}:${r.attack.side}:${r.attack.t.toFixed(3)}` : "";

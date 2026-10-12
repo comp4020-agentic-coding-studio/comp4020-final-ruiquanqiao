@@ -404,3 +404,52 @@ describe("loading a race (N10)", () => {
     expect(0.1 + sa.countdown!).toBeCloseTo(0.02 + sb.countdown!, 6);
   });
 });
+
+describe("live rooms and spectating (N11)", () => {
+  it("lists every race on the road with the people in it, and lets anyone watch one, and stop", () => {
+    const { l } = lobby();
+    const a = conn(1, "Ana");
+    l.join(a, "ai", 1, 0, 0, 3);
+    const t = go(l, 5);
+    const eye = conn(9);
+    l.hello(eye);
+    const room = of(eye, "live").at(-1)!.races[0];
+    expect(room).toMatchObject({ mode: "ai", level: 1, npcs: 3, watchers: 0 });
+    expect(room.humans).toEqual([{ name: "Ana", look: started(a).at(-1)!.entrants[0].look, out: false }]);
+
+    l.watch(eye, room.race);
+    expect(started(eye).at(-1)).toMatchObject({ race: room.race, you: null });
+    for (let now = t; now < t + 1; now += 1 / 60) l.tick(now);
+    expect(of(eye, "snap").length).toBeGreaterThan(0);
+    expect(l.rooms()[0].watchers).toBe(1);
+
+    l.unwatch(eye);
+    const seen = of(eye, "snap").length;
+    for (let now = t + 1; now < t + 2; now += 1 / 60) l.tick(now);
+    expect(of(eye, "snap").length).toBe(seen);
+    expect(l.rooms()[0].watchers).toBe(0);
+  });
+
+  it("keeps a spectator watching the race they picked through joining and leaving a queue", () => {
+    const { l } = lobby();
+    l.join(conn(1), "ai", 1, 0);
+    const t = go(l, 5);
+    const id = [...l.races.keys()][0];
+    const eye = conn(9);
+    l.watch(eye, id);
+    l.join(eye, "human", 1, t);
+    l.leave(eye, t + 0.1);
+    expect(l.races.get(id)!.watchers.has(eye)).toBe(true);
+  });
+
+  it("lets no one spectate while they are racing or being matched", () => {
+    const { l } = lobby();
+    const a = conn(1);
+    l.join(a, "ai", 1, 0);
+    go(l, 5);
+    const id = [...l.races.keys()][0];
+    const before = started(a).length;
+    l.watch(a, id);
+    expect(started(a).length).toBe(before);
+  });
+});
