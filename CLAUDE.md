@@ -86,6 +86,17 @@ their own browsers.
   that survives a restart. It stops when idle, so nothing may live only in
   memory that a returning rider expects to find.
 
+## When the deployed app misbehaves, read the log first
+
+- Every line names a person as `Name#rider`. Live:
+  `flyctl logs -a comp4020-final-ruiquanqiao`. Fly keeps only a short buffer
+  and a restart empties it, so every line is also kept in the database; read
+  it on the machine with
+  `flyctl ssh console -a comp4020-final-ruiquanqiao -C "node server/readlog.ts --since <UTC time> --about <name>"`.
+- A race's `race_start` line maps each bike number to a person. An event no
+  person is part of is not logged; anything new a person does is logged with
+  `who`, and `spec/lobby.test.ts` checks the names are there.
+
 ## Checks
 
 - `pnpm check` runs against the running app. It must be green before a commit.
