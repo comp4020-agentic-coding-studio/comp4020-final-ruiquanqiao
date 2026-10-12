@@ -36,3 +36,27 @@ it("does not qualify a rider who only placed", () => {
   expect(db.qualified(rider.id)).toEqual([]);
   db.close();
 });
+
+it("ranks everyone who has raced by points for their finishes, wins and podiums, and lists no NPC (N12)", () => {
+  const db = openDb(join(dir, "leaders.db"));
+  const mika = db.rider("token-mika");
+  const juno = db.rider("token-juno");
+  db.rename(mika.id, "Mika");
+  db.rename(juno.id, "Juno");
+  const one = db.startRace("ai", 1, "Ridge Road");
+  db.finishRace(one, 1, "Ridge Road", [
+    { id: -1, name: "Dex Carbine", human: false, place: 1, outcome: "qualified", time: 190 },
+    { id: mika.id, name: "Mika", human: true, place: 2, outcome: "qualified", time: 191 },
+    { id: juno.id, name: "Juno", human: true, place: 5, outcome: "placed", time: 199 },
+  ]);
+  const two = db.startRace("human", 1, "Gold Town");
+  db.finishRace(two, 1, "Gold Town", [
+    { id: juno.id, name: "Juno", human: true, place: 1, outcome: "qualified", time: 180 },
+    { id: mika.id, name: "Mika", human: true, place: 2, outcome: "wrecked", time: null },
+  ]);
+  expect(db.leaderboard()).toEqual([
+    { rank: 1, id: juno.id, name: "Juno", points: 10 + 25, races: 2, wins: 1, podiums: 1, boards: 1 },
+    { rank: 2, id: mika.id, name: "Mika", points: 18, races: 2, wins: 0, podiums: 1, boards: 1 },
+  ]);
+  db.close();
+});

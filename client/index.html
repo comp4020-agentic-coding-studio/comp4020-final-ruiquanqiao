@@ -21,6 +21,7 @@
   <nav id="nav" aria-label="Pages">
     <a href="/" data-route="lobby">Race</a>
     <a href="/live" data-route="live">Live <span id="nav-live" class="count"></span></a>
+    <a href="/leaderboard" data-route="leaders">Leaderboard</a>
   </nav>
 
   <!-- a match found: accept within ten seconds (N9) -->
@@ -96,6 +97,19 @@
     <p class="hint">Every race running, and who is in it. Watch any of them from behind a rider of your choice.</p>
     <ol id="rooms"></ol>
     <p id="rooms-none" class="hint">No one is racing right now. Queue up on the Race page and you will be the first.</p>
+  </section>
+
+  <!-- everyone who has raced, by points (N12) -->
+  <section id="leaders" aria-labelledby="leaders-head">
+    <h2 id="leaders-head">Leaderboard</h2>
+    <p class="hint">Everyone who has raced. A finish scores by its place across the line, NPCs included in the count: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1. Wrecked, busted or leaving scores nothing.</p>
+    <div class="table-wrap">
+      <table id="leaderboard">
+        <thead><tr><th scope="col">#</th><th scope="col">Rider</th><th scope="col">Points</th><th scope="col">Races</th><th scope="col">Wins</th><th scope="col">Podiums</th><th scope="col" title="Road and level boards qualified on">Boards</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="leaders-none" class="hint" hidden>No one has finished a race yet.</p>
   </section>
 
   <!-- everyone loads the race, and the server measures each ping, before the count (N10) -->

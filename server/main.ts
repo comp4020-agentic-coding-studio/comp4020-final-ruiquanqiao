@@ -115,6 +115,10 @@ const server = createServer((req, res) => {
     return;
   }
   if (path === "/favicon.ico") return void res.writeHead(204).end();
+  if (path === "/api/leaderboard") {
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }).end(JSON.stringify(db.leaderboard()));
+    return;
+  }
   if (path === "/healthz") {
     res.writeHead(200, { "content-type": "text/plain" }).end("ok");
     return;

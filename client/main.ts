@@ -3,7 +3,7 @@
 // server runs, so the bike answers the keys at once, and draws everyone else
 // a tenth of a second in the past, between two snapshots.
 
-import { type CarState, type Entry, type Mode, type RiderState, type Room, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
+import { type CarState, type Entry, type Leader, type Mode, type RiderState, type Room, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash } from "./dash.ts";
 import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { LIVERIES } from "../game/liveries.ts";
@@ -204,6 +204,8 @@ function onMessage(msg: ToClient): void {
     const name = $<HTMLInputElement>("#name");
     if (document.activeElement !== name) name.value = me.name;
     board();
+    // the leaderboard may have loaded before this tab knew which row is its own
+    if (app.dataset.screen === "leaders") void leaderboard();
   } else if (msg.t === "pool") pool(msg);
   else if (msg.t === "found") onFound(msg);
   else if (msg.t === "check") {
@@ -237,15 +239,16 @@ function onMessage(msg: ToClient): void {
 
 // ---- lobby ----
 
-type Screen = "lobby" | "live" | "race" | "watch" | "result" | "loading";
+type Screen = "lobby" | "live" | "leaders" | "race" | "watch" | "result" | "loading";
 /** the pages one can browse to, each at a URL of its own; everything else is a state of the game */
-const PAGES: Partial<Record<Screen, string>> = { lobby: "/", live: "/live" };
+const PAGES: Partial<Record<Screen, string>> = { lobby: "/", live: "/live", leaders: "/leaderboard" };
 const lobbyish = (s = app.dataset.screen): boolean => s !== undefined && s in PAGES;
 
 function show(screen: Screen): void {
   app.dataset.screen = screen;
   for (const a of document.querySelectorAll<HTMLAnchorElement>("#nav a")) a.toggleAttribute("aria-current", a.dataset.route === screen);
   if (screen === "live") rooms();
+  if (screen === "leaders") void leaderboard();
   queueBar();
 }
 
@@ -267,6 +270,30 @@ for (const a of document.querySelectorAll<HTMLAnchorElement>("#nav a")) {
 addEventListener("popstate", () => {
   if (lobbyish()) show(routeOf(location.pathname));
 });
+
+// ---- the leaderboard (N12) ----
+
+async function leaderboard(): Promise<void> {
+  let rows: Leader[] = [];
+  try {
+    rows = (await (await fetch("/api/leaderboard")).json()) as Leader[];
+  } catch {
+    return;
+  }
+  const body = $("#leaderboard").querySelector("tbody")!;
+  body.innerHTML = "";
+  $("#leaders-none").hidden = rows.length > 0;
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    if (r.id === me?.id) tr.className = "me";
+    for (const text of [String(r.rank), r.name, String(r.points), String(r.races), String(r.wins), String(r.podiums), String(r.boards)]) {
+      const td = document.createElement("td");
+      td.textContent = text;
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+}
 
 // ---- live rooms and spectating (N11) ----
 

@@ -5,7 +5,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Standing } from "../game/protocol.ts";
+import { type Leader, POINTS, type Standing } from "../game/protocol.ts";
 
 export type Db = ReturnType<typeof openDb>;
 
@@ -55,6 +55,20 @@ export function openDb(file: string) {
     insertResult: db.prepare("INSERT INTO results (race_id, rider_id, name, place, outcome, time_ms) VALUES (?, ?, ?, ?, ?, ?)"),
     qualify: db.prepare("INSERT OR IGNORE INTO qualifications (rider_id, level, track, race_id, at) VALUES (?, ?, ?, ?, ?)"),
     qualified: db.prepare("SELECT level, track FROM qualifications WHERE rider_id = ? ORDER BY level, track"),
+    // every person who has raced, from the results kept for every race: a
+    // finish scores by its place across the line, NPCs counted in the place
+    // but never listed; wrecked, busted, left or out of time score nothing
+    leaders: db.prepare(`
+      SELECT r.id, r.name,
+        COUNT(*) AS races,
+        SUM(CASE WHEN x.outcome IN ('qualified', 'placed') THEN COALESCE((SELECT value FROM json_each(?) WHERE key = x.place - 1), 0) ELSE 0 END) AS points,
+        SUM(x.outcome IN ('qualified', 'placed') AND x.place = 1) AS wins,
+        SUM(x.outcome IN ('qualified', 'placed') AND x.place <= 3) AS podiums,
+        (SELECT COUNT(*) FROM qualifications q WHERE q.rider_id = r.id) AS boards
+      FROM results x JOIN riders r ON r.id = x.rider_id
+      GROUP BY r.id
+      ORDER BY points DESC, wins DESC, podiums DESC, races ASC, r.id ASC
+      LIMIT ?`),
   };
 
   return {
@@ -89,6 +103,11 @@ export function openDb(file: string) {
     },
     qualified(id: number): { level: number; track: string }[] {
       return q.qualified.all(id) as { level: number; track: string }[];
+    },
+    /** Everyone who has raced, best first (N12). */
+    leaderboard(limit = 100): Leader[] {
+      const rows = q.leaders.all(JSON.stringify(POINTS), limit) as Omit<Leader, "rank">[];
+      return rows.map((r, i) => ({ rank: i + 1, id: Number(r.id), name: r.name, points: Number(r.points), races: Number(r.races), wins: Number(r.wins), podiums: Number(r.podiums), boards: Number(r.boards) }));
     },
     close(): void {
       db.close();

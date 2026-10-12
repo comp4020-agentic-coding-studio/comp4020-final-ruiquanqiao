@@ -141,6 +141,7 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 
 #app[data-screen="loading"] #loading,
 #app[data-screen="live"] #live,
+#app[data-screen="leaders"] #leaders,
 #app[data-screen="watch"] #race { display: block; }
 
 /* in the queue: a bar pinned across the top, a pulse and a running clock */
@@ -244,7 +245,7 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 /* ---- the pages: race, live (N11) ---- */
 
 #nav { display: none; max-width: 44rem; margin: 0 auto; padding: 0.8rem 1rem 0; gap: 0.3rem; }
-#app[data-screen="lobby"] #nav, #app[data-screen="live"] #nav { display: flex; }
+#app[data-screen="lobby"] #nav, #app[data-screen="live"] #nav, #app[data-screen="leaders"] #nav { display: flex; }
 #nav a {
   padding: 0.45em 0.9em; border-radius: 4px 4px 0 0; border-bottom: 3px solid transparent;
   color: var(--dim); text-decoration: none; font-weight: bold; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.9rem;
@@ -283,3 +284,15 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 #spec-stop small { color: var(--dim); font-size: 0.7rem; }
 #app[data-screen="watch"] #quit, #app[data-screen="watch"] #touch { display: none; }
 #app[data-screen="watch"] #stage { bottom: 0; }
+
+/* ---- the leaderboard (N12) ---- */
+
+#leaders { max-width: 44rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
+#leaders-head { margin: 0.4rem 0 0.2rem; font: italic 700 2rem Oswald, sans-serif; text-transform: uppercase; color: var(--hot); text-shadow: 2px 2px 0 #000; }
+.table-wrap { overflow-x: auto; background: var(--panel); border: 2px solid var(--edge); border-radius: 6px; margin-top: 1rem; }
+#leaderboard th, #leaderboard td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+#leaderboard th:nth-child(n+3), #leaderboard td:nth-child(n+3) { text-align: right; }
+#leaderboard td:nth-child(2) { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
+#leaderboard td:nth-child(3) { color: var(--gold); font-weight: bold; }
+#leaderboard tbody tr:nth-child(-n+3) td:first-child { color: var(--gold); font-weight: bold; }
+#leaderboard tr.me td { background: #3a2226; }

@@ -95,6 +95,12 @@ export type ToClient =
   /** every room on the road, once a second, to everyone not racing (N11) */
   | { t: "live"; races: Room[] };
 
+/** One person on the leaderboard (N12). */
+export type Leader = { rank: number; id: number; name: string; points: number; races: number; wins: number; podiums: number; boards: number };
+
+/** Points by place across the line, F1's: only a finish scores (N12). */
+export const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+
 /** A race in progress as the live rooms page shows it. */
 export type Room = { race: number; mode: Mode; level: number; track: number; time: number; humans: { name: string; look?: number; out: boolean }[]; npcs: number; watchers: number };
 
