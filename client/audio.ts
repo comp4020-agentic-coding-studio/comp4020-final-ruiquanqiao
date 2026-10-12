@@ -319,7 +319,8 @@ export function updateAudio(f: AudioFrame): void {
   e.sub.frequency.setTargetAtTime(f0 / 2, t, lag);
   e.am.frequency.setTargetAtTime(f0 / 2, t, lag);
   e.tone.frequency.setTargetAtTime(300 + 2600 * revs + (f.throttle ? 700 : 0), t, 0.08);
-  e.out.gain.setTargetAtTime(f.riding ? 0.16 + 0.14 * revs + (f.throttle ? 0.12 : 0) : 0.04, t, 0.08);
+  // half what it was: riding, it drowned the music and every other sound
+  e.out.gain.setTargetAtTime(f.riding ? 0.08 + 0.07 * revs + (f.throttle ? 0.06 : 0) : 0.02, t, 0.08);
   // wind goes with how fast you are going, not how hard the bike is working.
   // At 0.22 and a band opening to 2.75 kHz it was a hiss as loud as the
   // engine over everything at speed; now a low rush under it
@@ -336,33 +337,19 @@ export function sfx(kind: Sfx, gain = 1): void {
   if (!g) return;
   const t = g.ctx.currentTime + 0.005;
   const v = Math.max(0, Math.min(1, gain));
-  // hits in the original are dull thumps: ~50 ms long, nearly all below 250 Hz
   switch (kind) {
+    // Of all the blows only a club on a helmet is heard, and only as the
+    // recording of one: fists, kicks and the chain land in silence, and so
+    // does a blow taken. Each had a synthesised thump, a slap of noise and a
+    // sub-bass hit laid over it, and they sounded like nothing real
     case "punch":
-      blip(g, "sine", 140, 55, t, 0.14, 0.9);
-      hiss(g, "lowpass", 1500, 1500, 0.7, t, 0.05, 0.5);
-      break;
     case "kick":
-      blip(g, "sine", 110, 40, t, 0.22, 1);
-      blip(g, "triangle", 70, 45, t, 0.2, 0.4);
-      hiss(g, "lowpass", 800, 300, 0.7, t, 0.09, 0.5);
+    case "chain":
+    case "hitTaken":
       break;
-    case "club": // a club on a helmet: a hard wooden crack. A hollow ring of a
-      // struck shell (impactTin) was laid under it at first, and sounded tinny
+    case "club":
       sample(g, "wood", t, 1.1);
-      blip(g, "sine", 160, 70, t, 0.1, 0.5);
-      break;
-    case "chain": // a thud and three rattles of inharmonic links
-      blip(g, "sine", 120, 50, t, 0.1, 0.6);
-      for (const d of [0, 0.03, 0.065]) {
-        for (const p of [2310, 3170, 4430, 5890]) blip(g, "square", p * (1 + Math.random() * 0.03), p, t + d, 0.12, 0.05);
-        hiss(g, "highpass", 6000, 6000, 0.7, t + d, 0.08, 0.25);
-      }
-      break;
-    case "hitTaken": // lower and longer than a hit given, with a grunt of saw
-      blip(g, "sine", 100, 42, t, 0.2, 1);
-      blip(g, "sawtooth", 220, 90, t, 0.18, 0.1);
-      hiss(g, "lowpass", 600, 600, 0.7, t, 0.12, 0.5);
+      duck(g, 0.5);
       break;
     case "crash": // the thud, a bounce, and the bike scraping off down the road
       duck(g, 0.5);
@@ -429,16 +416,6 @@ export function sfx(kind: Sfx, gain = 1): void {
         beep(g, "triangle", hz(m), at, len, 0.12);
       });
       break;
-  }
-  if (kind === "punch" || kind === "kick" || kind === "club" || kind === "chain" || kind === "hitTaken") {
-    // the impact itself: a slap of bright noise over in 20 ms and a sub-bass
-    // thump under it, felt in the chest on speakers as a pad's rumble would be
-    // felt in the hands. The thump alone, as first written, read as a muffled
-    // bump; the music now dips harder under it as well
-    hiss(g, "highpass", 2500, 2500, 0.7, t, 0.02, 0.9);
-    hiss(g, "bandpass", 900, 500, 1.5, t, 0.04, 0.6);
-    blip(g, "sine", 62, 38, t, 0.16, 1);
-    duck(g, 0.5);
   }
 }
 

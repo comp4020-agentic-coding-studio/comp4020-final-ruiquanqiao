@@ -10,9 +10,9 @@ import { makeTrack } from "../game/track.ts";
 const rider = (): Rider => startRace(makeTrack(1), 1, [{ id: 0, name: "me", human: true }], 1).riders[0];
 
 describe("rider frames", () => {
-  it("throws a punch as one movement, out at full stretch the moment it lands, on the side it is thrown", () => {
-    // it was two pictures, drawn back and out, cut between the instant it
-    // landed; the recording's arm sweeps out through frames in between
+  it("throws a punch straight out from the bar, out at full stretch the moment it lands, on the side it is thrown", () => {
+    // drawn back first, through raise, cocked and two sweep frames, it read
+    // as an arm wound round for a warm-up; now one frame halfway, then out
     const r = rider();
     r.attack = { kind: "punch", side: 1, t: 0, target: -1, landed: false };
     const seen: string[] = [];
@@ -20,21 +20,21 @@ describe("rider frames", () => {
       r.attack.t = t;
       if (seen.at(-1) !== frameFor(r)) seen.push(frameFor(r));
     }
-    expect(seen).toEqual(["punch~raise.R", "punchCock.R", "punch~sweep1.R", "punch~sweep2.R", "punchOut.R", "punch~return.R"]);
+    expect(seen).toEqual(["punch~strike.R", "punchOut.R", "punch~return.R"]);
     r.attack.t = TUNE.windup;
     expect(frameFor(r)).toBe("punchOut.R");
     r.attack.side = -1;
     expect(frameFor(r)).toBe("punchOut.L");
   });
 
-  it("puts every in-between pose between its neighbours, so no step of a blow jumps further than the measured ones", () => {
-    // the fist, from straight behind, in helmet widths: drawn back to out
-    // was one jump of 1.77. Through the sweep at a third and two thirds the
-    // steps were 0.97, 0.67, 0.09; spaced by where the fist goes, 0.64, 0.75, 0.41
-    const path = ["punchCock.R", "punch~sweep1.R", "punch~sweep2.R", "punchOut.R"].map((f) => measure(f).hand);
+  it("puts a strike's one in-between pose where the fist is halfway out, so it moves in two even steps", () => {
+    // the fist, from straight behind, in helmet widths, from the bar to out
+    const path = ["ride.R", "punch~strike.R", "punchOut.R"].map((f) => measure(f).hand);
     const steps = path.slice(1).map((p, i) => Math.hypot(p[0] - path[i][0], p[1] - path[i][1]));
-    const whole = Math.hypot(path[3][0] - path[0][0], path[3][1] - path[0][1]);
-    for (const step of steps) expect(step).toBeLessThan(whole * 0.5);
+    const whole = Math.hypot(path[2][0] - path[0][0], path[2][1] - path[0][1]);
+    // halfway by the joints' straight lines put the fist 1.67 of 2.24 out in
+    // one step and 0.57 in the next: the arm is straight early
+    for (const step of steps) expect(step).toBeLessThan(whole * 0.6);
   });
 
   it("raises a club over the head before it comes down, and rides holding whatever it carries", () => {
@@ -61,11 +61,12 @@ describe("rider frames", () => {
       }
   });
 
-  it("chambers a kick, leg bent and out, until it lands, then kicks it straight", () => {
-    // the recording: leg cocked 57.00-57.20 (6 frames), out 57.24-57.40 (5)
+  it("kicks straight out, with no chambering first", () => {
+    // the recording chambers the leg for 6 frames (57.00-57.20) before it
+    // goes out; copied, the kick landed late, so it goes straight out
     const r = rider();
     r.attack = { kind: "kick", side: -1, t: TUNE.windup * 0.5, target: -1, landed: false };
-    expect(frameFor(r)).toBe("kickCock.L");
+    expect(frameFor(r)).toBe("kick~strike.L");
     r.attack.t = TUNE.windup;
     expect(frameFor(r)).toBe("kick.L");
   });
@@ -157,7 +158,7 @@ describe("how finely the frames are drawn", () => {
     expect(desk.tile).toBe(224);
     expect(desk.perRow * desk.tile).toBeLessThanOrEqual(4096);
     expect(desk.rows * desk.tile).toBeLessThanOrEqual(4096);
-    expect(desk.pages * desk.rows * desk.perRow).toBeGreaterThanOrEqual(desk.pages > 0 ? 760 : 0);
+    expect(desk.pages * desk.rows * desk.perRow).toBeGreaterThanOrEqual(desk.pages > 0 ? 702 : 0); // 760 before fists and kicks lost their drawn-back frames
     // two bytes a texel; the one RGBA page before the in-between frames was 4032 x 4032 x 4
     const bytes = desk.pages * desk.rows * desk.tile * desk.perRow * desk.tile * 2;
     expect(bytes).toBeLessThanOrEqual(4032 * 4032 * 4 * 1.35);

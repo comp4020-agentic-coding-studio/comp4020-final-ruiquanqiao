@@ -255,8 +255,23 @@ function between(a: Pose, b: Pose, f: number): Pose {
 const SWEEP: Record<string, [number, number]> = { kick: [1 / 3, 2 / 3] };
 const ARM_SWEEP: [number, number] = [0.22, 0.48];
 
+// A fist or a kick is one movement, straight out from the bar through a single
+// frame halfway, with nothing drawn back first. Through raise, drawn back and
+// two sweep frames it read as an arm being wound round for a warm-up, and the
+// hit came late (TUNE.windup). A weapon keeps its swing: it is snatched while
+// it is drawn back.
+const STRIKES = new Set(["punch", "backhand", "kick"]);
+/** where on the way out a fist's one in-between frame sits */
+const STRIKE_ARM = 0.3;
+
 for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
   const [A, B, C] = [RIGHT[rest], RIGHT[back], RIGHT[out]];
+  if (STRIKES.has(blow)) {
+    // the arm is straight early, so its frame sits nearer the bar than halfway
+    RIGHT[`${blow}~strike`] = between(A, C, blow === "kick" ? 0.5 : STRIKE_ARM);
+    RIGHT[`${blow}~return`] = between(C, A, 0.5);
+    continue;
+  }
   const [f1, f2] = SWEEP[blow] ?? ARM_SWEEP;
   RIGHT[`${blow}~raise`] = between(A, B, 0.5);
   RIGHT[`${blow}~sweep1`] = between(B, C, f1);
@@ -891,6 +906,7 @@ export function frameFor(r: Rider): string {
   const [, back, out] = BLOWS[blow];
   const w = windupOf(r, a);
   const t = a.t;
+  if (STRIKES.has(blow)) return `${t < w ? `${blow}~strike` : t < w + 0.12 ? out : `${blow}~return`}.${side}`;
   const name =
     t < 0.3 * w ? `${blow}~raise`
     : t < 0.55 * w ? back

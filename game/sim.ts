@@ -64,8 +64,11 @@ export const TUNE = {
   leanLimit: 0.6,
   punchReach: { z: 1.8, x: 1.6 },
   kickReach: { z: 1.5, x: 1.7 },
-  // a blow is 6 frames drawn back and 5 out, at 25 fps, in the original
-  windup: 0.22, // s from key to contact
+  // A fist or a kick lands on the next few steps: straight out from the bar,
+  // no drawing back. The original draws back for 6 frames at 25 fps (0.22 s),
+  // and copied, it rode as a warm-up swing with the hit arriving late; a
+  // weapon still draws back (weaponWindup), since that is when it is snatched
+  windup: 0.07, // s from key to contact
   punchCooldown: 0.44,
   // duels (C11, O5): how readily a rider picks a fight per second, scaled by
   // its aggression, with whoever is level with it for its place, and with
