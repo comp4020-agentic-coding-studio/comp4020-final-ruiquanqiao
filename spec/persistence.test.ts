@@ -77,3 +77,15 @@ it("keeps the log of who did what across a restart, and finds a person's lines b
   ]);
   db.close();
 });
+
+it("reads back only the kinds of line asked for, so the network's story is one query (N14)", () => {
+  const db = openDb(join(dir, "kinds.db"));
+  db.log("2026-10-19T03:00:01.000Z", { ev: "connect", who: "Ana#11" });
+  db.log("2026-10-19T03:00:05.000Z", { ev: "lag_spike", who: "Ana#11", race: 4, kind: "rtt", ms: 420, usual: 30 });
+  db.log("2026-10-19T03:00:06.000Z", { ev: "hit", race: 4, by: "Ana#11", on: "Ben#12", move: "punch" });
+  db.log("2026-10-19T03:02:00.000Z", { ev: "net", who: "Ana#11", race: 4, rtt: 30 });
+  db.log("2026-10-19T03:02:00.000Z", { ev: "net", who: "Ben#12", race: 4, rtt: 12 });
+  expect(db.logSince("2026-10-19T03:00:00Z", null, 1000, ["net", "lag_spike"]).map((r) => r.line.ev)).toEqual(["lag_spike", "net", "net"]);
+  expect(db.logSince("2026-10-19T03:00:00Z", "Ben", 1000, ["net"]).map((r) => r.line.who)).toEqual(["Ben#12"]);
+  db.close();
+});

@@ -11,6 +11,7 @@ import { react } from "./feel.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Prediction, Timeline } from "./netview.ts";
+import { NetWatch, pingLabel } from "./netwatch.ts";
 import { ROADS, type Track, makeTrack } from "../game/track.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -57,6 +58,8 @@ type Current = {
   counted: number;
   /** one's own bike before the latest step, to draw between the two */
   drawFrom: { z: number; x: number } | null;
+  /** what this tab sees of the network, reported to the server (N14) */
+  net: NetWatch;
 };
 
 let current: Current | null = null;
@@ -73,7 +76,8 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   const track = ready?.track ?? makeTrack(msg.level, msg.track ?? 0);
   const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed, msg.countdown ?? 0);
   const go = performance.now() / 1000 + (msg.countdown ?? 0);
-  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null };
+  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch() };
+  showPing(null);
   if (msg.you !== null) {
     show("race");
     askQuit(false);
@@ -129,6 +133,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
   }
 
   if (c.you === null) return;
+  c.net.snap(msg.ack, now);
   const mine = msg.riders.find((s) => s[0] === c.you);
   const r = c.race.riders.find((x) => x.id === c.you);
   if (!mine || !r) return;
@@ -139,6 +144,8 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     // except a swing begun here that the server has not heard of yet - taking
     // its word for that wiped the player's own punch within 80 ms
     const swing = r.attack;
+    // a jump the rider sees, if it was riding on a prediction that far out
+    if (mine[8] === "riding" && before === "riding" && Math.hypot(mine[1] - r.z, mine[2] - r.x) > 1) c.net.snappedBack();
     applyRider(r, mine);
     c.prediction.reset();
     if (!r.attack && swing && mine[8] === "riding" && swing.t < windupOf(r, swing) + 0.2) r.attack = swing;
@@ -221,7 +228,13 @@ function onMessage(msg: ToClient): void {
     $("#pool").textContent = "Someone didn't accept. You're back at the front of the queue.";
   } else if (msg.t === "loading") onLoading(msg);
   else if (msg.t === "loads") onLoads(msg);
-  else if (msg.t === "ping") send({ t: "pong", at: msg.at });
+  else if (msg.t === "ping") {
+    send({ t: "pong", at: msg.at });
+    if (current && current.you !== null && msg.rtt !== undefined) {
+      current.net.rtt = msg.rtt;
+      showPing(msg.rtt);
+    }
+  }
   else if (msg.t === "live") onLive(msg);
   else if (msg.t === "start") begin(msg);
   else if (msg.t === "snap") onSnap(msg);
@@ -315,11 +328,17 @@ function rooms(): void {
   const list = $("#rooms");
   $("#rooms-none").hidden = live.length > 0;
   // rebuilt only when the set of races or anyone in them changes, so a Watch button is not replaced under the pointer
-  const key = JSON.stringify(live.map((r) => [r.race, r.humans, r.watchers]));
+  // (not on anyone's ping, which changes every second and is updated in place)
+  const key = JSON.stringify(live.map((r) => [r.race, r.humans.map((h) => [h.name, h.look, h.out]), r.watchers]));
   if (list.dataset.key === key) {
     for (const r of live) {
       const t = list.querySelector(`li[data-race="${r.race}"] .time`);
       if (t) t.textContent = raceClock(r.time);
+      // the pings change every second; updated in place, like the clock
+      const pings = list.querySelectorAll(`li[data-race="${r.race}"] .who li:not(.out) .ping`);
+      r.humans.filter((h) => !h.out).forEach((h, i) => {
+        if (pings[i]) pings[i].textContent = h.ping == null ? "" : `${h.ping} ms`;
+      });
     }
     return;
   }
@@ -346,6 +365,12 @@ function rooms(): void {
       const n = document.createElement("span");
       n.textContent = h.name + (h.out ? " (left)" : "");
       p.append(swatch(h.look), n);
+      if (!h.out) {
+        const ms = document.createElement("span");
+        ms.className = "ping";
+        ms.textContent = h.ping == null ? "" : `${h.ping} ms`;
+        p.append(ms);
+      }
       who.append(p);
     }
     const foot = document.createElement("div");
@@ -828,6 +853,7 @@ function sendKeys(now: number): void {
   const bits = packInput(keys);
   if (bits !== lastSent || now - lastSentAt > 0.25) {
     send({ t: "in", seq: ++seq, keys: bits });
+    current?.net.keys(seq, now);
     lastSent = bits;
     lastSentAt = now;
   }
@@ -936,6 +962,8 @@ let hitFlash = 0;
 function frame(): void {
   const now = performance.now() / 1000;
   const dt = Math.min(0.1, now - last);
+  // the frame's real length, unclamped, for the network report (N14)
+  const last0 = last;
   last = now;
   const c = current;
   if (c) {
@@ -963,7 +991,12 @@ function frame(): void {
         }
       }
     }
-    if (c.you !== null) sendKeys(now);
+    if (c.you !== null) {
+      sendKeys(now);
+      c.net.drew(now - last0);
+      const report = c.net.report(now);
+      if (report) send({ t: "net", ...report });
+    }
     if (c.you !== null || c.id === spectating) countdown(c, now);
     interpolate(c, now);
     // and again once the others have moved this frame: the screen refreshes
@@ -1035,6 +1068,16 @@ function countdown(c: Current, now: number): void {
     sfx("go");
     window.setTimeout(() => (el.hidden = true), 700);
   }
+}
+
+/** The round trip in the corner of the race (N14); null hides it until the first is measured. */
+function showPing(rtt: number | null): void {
+  const el = $("#ping");
+  const p = pingLabel(rtt);
+  el.hidden = p === null;
+  if (!p) return;
+  el.textContent = p.text;
+  el.className = p.tone;
 }
 
 let bannerTimer = 0;

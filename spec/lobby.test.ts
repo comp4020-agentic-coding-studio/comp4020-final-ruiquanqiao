@@ -415,7 +415,7 @@ describe("live rooms and spectating (N11)", () => {
     l.hello(eye);
     const room = of(eye, "live").at(-1)!.races[0];
     expect(room).toMatchObject({ mode: "ai", level: 1, npcs: 3, watchers: 0 });
-    expect(room.humans).toEqual([{ name: "Ana", look: started(a).at(-1)!.entrants[0].look, out: false }]);
+    expect(room.humans).toEqual([{ name: "Ana", look: started(a).at(-1)!.entrants[0].look, out: false, ping: null }]);
 
     l.watch(eye, room.race);
     expect(started(eye).at(-1)).toMatchObject({ race: room.race, you: null });

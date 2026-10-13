@@ -1,6 +1,7 @@
 // The messages between a browser and the server, one JSON object per
 // WebSocket frame. Shared by both ends so they cannot drift apart.
 
+import type { NetReport } from "./net.ts";
 import { type Car, type Phase, type RaceEvent, type Rider, type Weapon, windupOf } from "./sim.ts";
 
 export type Mode = "ai" | "human";
@@ -31,6 +32,8 @@ export type ToServer =
   /** how far this browser is with loading the race, 0 to 1; 1 is ready (N10) */
   | { t: "progress"; p: number }
   | { t: "pong"; at: number }
+  /** what this browser saw of the network over the last few seconds of its race (N14) */
+  | ({ t: "net" } & NetReport)
   /** spectate a race in progress, or stop (N11) */
   | { t: "watch"; race: number }
   | { t: "unwatch" };
@@ -88,7 +91,8 @@ export type ToClient =
   | { t: "loading"; match: number; level: number; track: number; seed: number; entrants: Entry[]; you: number }
   /** every person's loading and ping, in ms */
   | { t: "loads"; match: number; riders: { id: number; p: number; ping: number }[] }
-  | { t: "ping"; at: number }
+  /** a round trip asked for; in a race it carries this person's last one, in ms, for the HUD (N14) */
+  | { t: "ping"; at: number; rtt?: number | null }
   | { t: "start"; race: number; level: number; track: number; seed: number; entrants: Entry[]; you: number | null; /** seconds on the grid before the race goes (V16) */ countdown?: number }
   | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; cars: CarState[]; events: RaceEvent[] }
   | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[] }
@@ -102,7 +106,7 @@ export type Leader = { rank: number; id: number; name: string; points: number; r
 export const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 
 /** A race in progress as the live rooms page shows it. */
-export type Room = { race: number; mode: Mode; level: number; track: number; time: number; humans: { name: string; look?: number; out: boolean }[]; npcs: number; watchers: number };
+export type Room = { race: number; mode: Mode; level: number; track: number; time: number; humans: { name: string; look?: number; out: boolean; /** their usual round trip in this race, ms (N14) */ ping?: number | null }[]; npcs: number; watchers: number };
 
 export function encodeRider(r: Rider): RiderState {
   const a = r.attack ? `${r.attack.kind}:${r.attack.side}:${r.attack.t.toFixed(3)}` : "";

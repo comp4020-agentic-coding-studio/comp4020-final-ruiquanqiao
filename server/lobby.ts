@@ -11,6 +11,7 @@
 import { CHECK_WAIT, type Entry, type Room, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, TUNE, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { LIVERIES } from "../game/liveries.ts";
+import { NET, Samples, cleanReport, ms } from "../game/net.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 
 export type Conn = {
@@ -32,6 +33,24 @@ export type Conn = {
   /** round trip to this browser, s: the shortest seen while loading */
   rtt?: number;
 };
+
+/** One person's network over one race (N14), kept by bike so it outlives their connection. */
+export type PersonNet = {
+  who: string;
+  /** round trips while racing, ms */
+  rtt: Samples;
+  /** each report's p95s, ms */
+  input: Samples;
+  gap: Samples;
+  frame: Samples;
+  stalls: number;
+  snapped: number;
+  spikes: number;
+  /** when the last lag_spike line for them was written (s) */
+  spoke: number;
+};
+
+const personNet = (who: string): PersonNet => ({ who, rtt: new Samples(600), input: new Samples(), gap: new Samples(), frame: new Samples(), stalls: 0, snapped: 0, spikes: 0, spoke: -Infinity });
 
 export type Match = {
   id: number;
@@ -69,6 +88,8 @@ export type Live = {
   sent: number; // events already sent
   ended: boolean;
   timeLimit: number; // s
+  /** each person's network, by bike (N14) */
+  net: Map<number, PersonNet>;
 };
 
 type Pool = { members: Conn[]; startsAt: number | null };
@@ -103,15 +124,24 @@ export class Lobby {
   conns = new Set<Conn>();
   private listed = -1;
   private pinged = -1;
+  private racePinged = -1;
+  /** the server's own share of the wait (N14): ms each tick started late, and ms one race step took */
+  readonly late = new Samples(600);
+  readonly stepCost = new Samples(600);
+  private lastTick: number | null = null;
+  private stalled = -Infinity;
 
   private store: Store;
   private log: Logger;
   private random: () => number;
+  /** a wall clock in ms, for timing the work itself; a test passes a fake */
+  private perf: () => number;
 
-  constructor(store: Store, log: Logger = () => {}, random: () => number = Math.random) {
+  constructor(store: Store, log: Logger = () => {}, random: () => number = Math.random, perf: () => number = () => performance.now()) {
     this.store = store;
     this.log = log;
     this.random = random;
+    this.perf = perf;
   }
 
   // ---- the pools (N2, N3) ----
@@ -173,7 +203,7 @@ export class Lobby {
         level: l.level,
         track: l.road,
         time: Math.round(l.race.t * 10) / 10,
-        humans: l.entrants.filter((e) => e.human).map((e) => ({ name: e.name, look: e.look, out: l.quit.has(e.id) })),
+        humans: l.entrants.filter((e) => e.human).map((e) => ({ name: e.name, look: e.look, out: l.quit.has(e.id), ping: ms(l.net.get(e.id)?.rtt.median() ?? null) })),
         npcs: l.entrants.filter((e) => !e.human).length,
         watchers: [...l.watchers].filter((c) => c.watching === l.id).length,
       }));
@@ -255,11 +285,81 @@ export class Lobby {
   pong(conn: Conn, at: number, now: number): void {
     const rtt = now - at;
     if (!Number.isFinite(rtt) || rtt < 0 || rtt > 5) return;
+    const live = conn.race;
+    if (live && !live.ended) return this.racePong(live, conn, rtt * 1000, now);
     // the shortest, as NTP takes it: a page busy loading answers late, and
     // that wait is the page, not the network. Averaged, a browser on the same
     // machine read 147 ms while it built the scene, and the count it was sent
     // would have run out 70 ms before everyone else's
     conn.rtt = conn.rtt === undefined ? rtt : Math.min(conn.rtt, rtt);
+  }
+
+  // ---- the network while racing (N14) ----
+
+  /**
+   * A round trip in a race. Every one is kept, not the shortest: here the
+   * question is how the connection is doing, and a slow answer is the answer.
+   * One far past the person's usual is a spike, and is written down.
+   */
+  private racePong(live: Live, conn: Conn, rtt: number, now: number): void {
+    const n = live.net.get(conn.local);
+    if (!n) return;
+    const usual = n.rtt.count >= 5 ? n.rtt.median()! : null;
+    n.rtt.add(rtt);
+    if (usual !== null && rtt > NET.spikeMs && rtt > NET.spikeRatio * usual) {
+      n.spikes++;
+      if (now - n.spoke >= NET.spikeQuiet) {
+        n.spoke = now;
+        this.log({ ev: "lag_spike", who: n.who, race: live.id, kind: "rtt", ms: Math.round(rtt), usual: Math.round(usual) });
+      }
+    }
+  }
+
+  /** What a racing browser saw over its last few seconds. */
+  report(conn: Conn, raw: Record<string, unknown>, now: number): void {
+    const live = conn.race;
+    const n = live && !live.ended ? live.net.get(conn.local) : undefined;
+    if (!live || !n) return;
+    const r = cleanReport(raw);
+    if (r.input !== null) n.input.add(r.input);
+    if (r.gap !== null) n.gap.add(r.gap);
+    if (r.frame !== null) n.frame.add(r.frame);
+    n.stalls += r.stalls;
+    n.snapped += r.snapped;
+    if (r.stalls > 0 && now - n.spoke >= NET.spikeQuiet) {
+      n.spoke = now;
+      this.log({ ev: "lag_spike", who: n.who, race: live.id, kind: "stall", stalls: r.stalls, gap: r.gap, snapped: r.snapped });
+    }
+  }
+
+  /**
+   * One line per person per race: how their network was, start to finish or
+   * to leaving. The browser's figures are p95s of five seconds each; the line
+   * gives their median (a typical stretch) and their worst.
+   */
+  private netLine(live: Live, id: number): void {
+    const n = live.net.get(id);
+    if (!n) return;
+    live.net.delete(id);
+    this.log({
+      ev: "net",
+      who: n.who,
+      race: live.id,
+      pings: n.rtt.count,
+      rtt: ms(n.rtt.median()),
+      rttP95: ms(n.rtt.p95()),
+      rttMax: ms(n.rtt.max()),
+      jitter: ms(n.rtt.jitter()),
+      spikes: n.spikes,
+      input: ms(n.input.median()),
+      inputWorst: ms(n.input.max()),
+      gap: ms(n.gap.median()),
+      gapWorst: ms(n.gap.max()),
+      stalls: n.stalls,
+      snapped: n.snapped,
+      frame: ms(n.frame.median()),
+      frameWorst: ms(n.frame.max()),
+    });
   }
 
 
@@ -275,6 +375,7 @@ export class Lobby {
       if (r && r.phase !== "finished") r.phase = "wrecked";
       live.conns.delete(conn.local);
       this.log({ ev: "quit", who: who(conn), race: live.id });
+      this.netLine(live, conn.local);
     }
     conn.race = null;
   }
@@ -407,6 +508,7 @@ export class Lobby {
       sent: 0,
       ended: false,
       timeLimit: track.length / 30 + 90,
+      net: new Map(),
     };
     this.races.set(id, live);
     members.forEach((c, i) => {
@@ -424,6 +526,7 @@ export class Lobby {
       c.local = i;
       c.seq = 0;
       live.conns.set(i, c);
+      live.net.set(i, personNet(who(c)));
       // the message takes half a round trip to arrive; the count it carries is
       // that much shorter, so GO lands at the same moment for everyone
       c.send({ t: "start", race: id, level, track: road, seed, entrants, you: i, countdown: Math.max(0, TUNE.countdown - (c.rtt ?? 0) / 2) });
@@ -446,6 +549,17 @@ export class Lobby {
 
   /** Advance everything to `now` (seconds). */
   tick(now: number): void {
+    // how far past its due time this tick ran; only while racing, since an
+    // idle server's ticks keep nobody waiting
+    if (this.lastTick !== null && this.races.size > 0) {
+      const late = Math.max(0, (now - this.lastTick - 1 / 120) * 1000);
+      this.late.add(late);
+      if (late > NET.serverStallMs && now - this.stalled >= NET.spikeQuiet) {
+        this.stalled = now;
+        this.log({ ev: "server_stall", ms: Math.round(late), races: this.races.size, riders: [...this.races.values()].reduce((k, l) => k + l.race.riders.length, 0) });
+      }
+    }
+    this.lastTick = now;
     for (const mode of ["ai", "human"] as const) {
       const pool = this.pools[mode];
       if (pool.startsAt === null || now < pool.startsAt) continue;
@@ -483,6 +597,14 @@ export class Lobby {
       this.pinged = now;
       for (const m of this.matches.values()) if (m.phase === "loading") this.ping(m, now);
     }
+    // and once a second of everyone racing, carrying the last round trip for the HUD (N14)
+    if (now - this.racePinged >= NET.pingEvery) {
+      this.racePinged = now;
+      for (const live of this.races.values()) {
+        if (live.ended) continue;
+        for (const [id, c] of live.conns) c.send({ t: "ping", at: now, rtt: ms(live.net.get(id)?.rtt.values().at(-1) ?? null) });
+      }
+    }
 
     // nothing on the road: the race clock simply follows the wall clock. A
     // stall longer than a quarter of a second is dropped rather than replayed
@@ -499,7 +621,9 @@ export class Lobby {
     if (live.ended) return;
     const inputs = new Map<number, Input>();
     for (const r of live.race.riders) if (r.human) inputs.set(r.id, live.quit.has(r.id) ? NO_INPUT : (live.inputs.get(r.id) ?? NO_INPUT));
+    const before = this.perf();
     step(live.race, inputs);
+    this.stepCost.add(this.perf() - before);
     live.steps++;
 
     if (live.steps % (60 / SNAPSHOT_HZ) === 0) {
@@ -579,6 +703,10 @@ export class Lobby {
     });
     this.store.finishRace(live.id, live.level, live.track, result);
     this.log({ ev: "race_end", race: live.id, secs: Math.round(live.race.t), standings: result.filter((s) => s.human).map((s) => [`${s.name}#${s.id}`, s.place, s.outcome]) });
+    for (const id of [...live.net.keys()]) this.netLine(live, id);
+    // and the server's own share of the wait, over its last ten seconds or so
+    const hundredths = (x: number | null): number | null => (x === null ? null : Math.round(x * 100) / 100);
+    this.log({ ev: "server", race: live.id, lateP95: ms(this.late.p95()), lateMax: ms(this.late.max()), stepP95: hundredths(this.stepCost.p95()), stepMax: hundredths(this.stepCost.max()) });
     for (const c of live.conns.values()) {
       c.send({ t: "end", race: live.id, standings: result, qualified: this.store.qualified(c.rider) });
       c.race = null;

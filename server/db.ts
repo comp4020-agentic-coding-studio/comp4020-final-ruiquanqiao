@@ -64,7 +64,7 @@ export function openDb(file: string) {
     qualify: db.prepare("INSERT OR IGNORE INTO qualifications (rider_id, level, track, race_id, at) VALUES (?, ?, ?, ?, ?)"),
     qualified: db.prepare("SELECT level, track FROM qualifications WHERE rider_id = ? ORDER BY level, track"),
     log: db.prepare("INSERT INTO log (at, ev, who, line) VALUES (?, ?, ?, ?)"),
-    logSince: db.prepare("SELECT at, line FROM log WHERE at >= ? AND (? IS NULL OR line LIKE ?) ORDER BY id LIMIT ?"),
+    logSince: db.prepare("SELECT at, line FROM log WHERE at >= ? AND (? IS NULL OR line LIKE ?) AND (? IS NULL OR ev IN (SELECT value FROM json_each(?))) ORDER BY id LIMIT ?"),
     // every person who has raced, from the results kept for every race: a
     // finish scores by its place across the line, NPCs counted in the place
     // but never listed; wrecked, busted, left or out of time score nothing
@@ -118,9 +118,10 @@ export function openDb(file: string) {
     log(at: string, event: Record<string, unknown>): void {
       q.log.run(at, String(event.ev ?? ""), typeof event.who === "string" ? event.who : null, JSON.stringify(event));
     },
-    /** The kept log from a moment on, optionally only lines mentioning some text (a name, a race). */
-    logSince(at: string, text: string | null = null, limit = 1000): { at: string; line: Record<string, unknown> }[] {
-      const rows = q.logSince.all(at, text, text === null ? null : `%${text}%`, limit) as { at: string; line: string }[];
+    /** The kept log from a moment on, optionally only lines mentioning some text (a name, a race), and only of some kinds. */
+    logSince(at: string, text: string | null = null, limit = 1000, kinds: string[] | null = null): { at: string; line: Record<string, unknown> }[] {
+      const ks = kinds === null ? null : JSON.stringify(kinds);
+      const rows = q.logSince.all(at, text, text === null ? null : `%${text}%`, ks, ks, limit) as { at: string; line: string }[];
       return rows.map((r) => ({ at: r.at, line: JSON.parse(r.line) }));
     },
     /** Everyone who has raced, best first (N12). */

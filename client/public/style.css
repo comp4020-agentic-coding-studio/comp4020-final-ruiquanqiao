@@ -108,6 +108,17 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
   background: rgb(18 15 21 / 0.7);
 }
 #quit small { display: block; font-size: 0.7rem; font-weight: normal; color: var(--dim); }
+/* the round trip to the server, in the opposite corner (N14) */
+#ping {
+  position: absolute; top: max(0.6rem, env(safe-area-inset-top)); right: max(0.6rem, env(safe-area-inset-right)); margin: 0;
+  padding: 0.3em 0.6em; border-radius: 4px; background: rgb(18 15 21 / 0.7);
+  font-size: 0.85rem; font-weight: bold; font-variant-numeric: tabular-nums; pointer-events: none;
+}
+#ping[hidden], #app[data-screen="watch"] #ping { display: none; }
+#ping.good { color: var(--ok); }
+#ping.fair { color: var(--gold); }
+#ping.poor { color: var(--hot); }
+#rooms .who .ping { color: var(--dim); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 #quit-ask {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: min(22rem, calc(100% - 2rem)); padding: 1.2rem; text-align: center;
