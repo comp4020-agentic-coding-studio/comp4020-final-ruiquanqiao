@@ -78,6 +78,15 @@ it("keeps the log of who did what across a restart, and finds a person's lines b
   db.close();
 });
 
+// Timed directly, the stall would not come back on a fresh file: it needed a
+// WAL the size of the real one, and even then came one write in four. So the
+// setting that removes it is what is held, read back off the open connection.
+it("does not make the race wait on the disk for every commit: WAL with synchronous NORMAL (N14)", () => {
+  const db = openDb(join(dir, "quiet.db"));
+  expect(db.durability()).toEqual({ journal: "wal", synchronous: 1 });
+  db.close();
+});
+
 it("reads back only the kinds of line asked for, so the network's story is one query (N14)", () => {
   const db = openDb(join(dir, "kinds.db"));
   db.log("2026-10-19T03:00:01.000Z", { ev: "connect", who: "Ana#11" });

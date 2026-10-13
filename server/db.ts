@@ -12,8 +12,15 @@ export type Db = ReturnType<typeof openDb>;
 export function openDb(file: string) {
   mkdirSync(dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
+  // NORMAL, not SQLite's FULL: FULL waits for the disk on every commit, and
+  // node:sqlite is synchronous, so the race clock waited with it. Writes that
+  // follow a second or two of quiet took 60 to 570 ms on my machine
+  // (server_stall, N14); under NORMAL the same writes took under 1 ms. In WAL
+  // mode NORMAL cannot corrupt the file; a power cut can lose the last
+  // commits, which a crashed process cannot.
   db.exec(`
     PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
     CREATE TABLE IF NOT EXISTS riders (
       id INTEGER PRIMARY KEY,
       token TEXT NOT NULL UNIQUE,
@@ -128,6 +135,12 @@ export function openDb(file: string) {
     leaderboard(limit = 100): Leader[] {
       const rows = q.leaders.all(JSON.stringify(POINTS), limit) as Omit<Leader, "rank">[];
       return rows.map((r, i) => ({ rank: i + 1, id: Number(r.id), name: r.name, points: Number(r.points), races: Number(r.races), wins: Number(r.wins), podiums: Number(r.podiums), boards: Number(r.boards) }));
+    },
+    /** How commits reach the disk on this connection: the journal, and synchronous as SQLite numbers it (1 is NORMAL, 2 FULL). */
+    durability(): { journal: string; synchronous: number } {
+      const j = db.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
+      const s = db.prepare("PRAGMA synchronous").get() as { synchronous: number };
+      return { journal: j.journal_mode, synchronous: Number(s.synchronous) };
     },
     close(): void {
       db.close();
