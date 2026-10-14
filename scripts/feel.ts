@@ -3,10 +3,11 @@
 // corner, and how far one's own bike was drawn from a smooth line. Point it
 // at scripts/badnet.ts to ride a bad connection on purpose.
 //
-//   node scripts/feel.ts [--url http://localhost:8090] [--ride 30] [--delay fixed]
+//   node scripts/feel.ts [--url http://localhost:8090] [--ride 30] [--delay fixed] [--handover off]
 //
 // --delay fixed draws the others a fixed tenth of a second back, as before
-// the delay adapted, to ride the two side by side.
+// the delay adapted, to ride the two side by side; --handover off puts one's
+// own bike where the server says in one frame when it takes over, as before.
 //
 // Chrome's profile and temp files go in .cache/, inside this repo.
 
@@ -22,6 +23,7 @@ const flag = (name: string, fallback: string): string => {
 const url = flag("url", "http://localhost:8090");
 const ride = Number(flag("ride", "30"));
 const delayMode = flag("delay", "adaptive");
+const handover = flag("handover", "eased");
 const CHROME = process.env.CHROME ?? (process.platform === "win32" ? "C:/Program Files/Google/Chrome/Application/chrome.exe" : "/usr/bin/google-chrome");
 
 const profile = resolve(".cache/chrome-profile");
@@ -40,7 +42,7 @@ const page = await context.newPage();
 await page.setViewportSize({ width: 1280, height: 720 });
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(e.message));
-await page.goto(url + (url.includes("?") ? "&" : "?") + "probe=1" + (delayMode === "fixed" ? "&delay=fixed" : ""));
+await page.goto(url + (url.includes("?") ? "&" : "?") + "probe=1" + (delayMode === "fixed" ? "&delay=fixed" : "") + (handover === "off" ? "&handover=off" : ""));
 await page.waitForTimeout(800);
 // an NPC race with a few riders to pass and be hit by
 await page.evaluate(() => {
@@ -141,5 +143,5 @@ const out = await page.evaluate(() => {
     starved: w.__delay.filter((x) => x.starved).length / Math.max(1, w.__delay.length),
   };
 });
-console.log(JSON.stringify({ url, ride, delayMode, pings: [...new Set(pings)].slice(0, 12), ...out, errors }, null, 1));
+console.log(JSON.stringify({ url, ride, delayMode, handover, pings: [...new Set(pings)].slice(0, 12), ...out, errors }, null, 1));
 await context.close();

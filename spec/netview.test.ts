@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DELAY, MAX_DELAY, Prediction, type Snap, Timeline } from "../client/netview.ts";
+import { DELAY, HANDOVER, Handover, MAX_DELAY, Prediction, type Snap, Timeline } from "../client/netview.ts";
 import { encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, NO_INPUT, type Race, ride, startRace, step } from "../game/sim.ts";
 import { makeTrack } from "../game/track.ts";
@@ -341,5 +341,44 @@ describe("one's own rider, predicted here and corrected by the server", () => {
     expect(r.worstFix).toBeLessThan(0.15);
     // and does agree with it (measured 1.0 m apart at the end, at speed)
     expect(r.gap).toBeLessThan(3);
+  });
+});
+
+describe("one's own bike when the server takes over from the prediction (N14)", () => {
+  it("is drawn easing over to where the server put it, not moved back by a round trip's riding in one frame", () => {
+    // knocked off at 60 m/s, heard a 300 ms round trip late: the predicted
+    // bike had ridden on 9 m, and was put back all 9 in one frame. The bike
+    // really does slow at once when knocked off; what the hand-over adds is
+    // the drawn bike's distance from the real one, and that is what is held
+    const h = new Handover();
+    h.take(1009, 0, 1000, 0);
+    const added: number[] = [];
+    let before = h.off.z;
+    for (let n = 0; n < 60; n++) {
+      h.step();
+      added.push(Math.abs(h.off.z - before));
+      before = h.off.z;
+    }
+    // measured: 0.72 m in the first step, 8% of the 9, less each step after
+    expect(Math.max(...added)).toBeCloseTo(9 * HANDOVER, 6);
+    expect(Math.max(...added)).toBeLessThan(1);
+    // and has let go of all but 1% within a second
+    expect(Math.abs(h.off.z)).toBeLessThan(0.09);
+  });
+
+  it("lets go of a difference too large to be a delay at once: a new race, a rider put back on the road", () => {
+    const h = new Handover();
+    h.take(500, 0, 0, 0);
+    expect(h.off).toEqual({ z: 0, x: 0 });
+  });
+
+  it("adds a second hand-over to what is left of the first, so the drawn bike never steps", () => {
+    const h = new Handover();
+    h.take(4, 0, 0, 0);
+    h.step();
+    const drawnBefore = 0 + h.off.z;
+    // the server moves the rider again before the first is let go
+    h.take(drawnBefore - h.off.z, 0, -1, 0);
+    expect(-1 + h.off.z).toBeCloseTo(drawnBefore, 9);
   });
 });

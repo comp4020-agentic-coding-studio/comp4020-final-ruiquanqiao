@@ -10,7 +10,7 @@ import { LIVERIES } from "../game/liveries.ts";
 import { react } from "./feel.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
-import { Prediction, Timeline } from "./netview.ts";
+import { Handover, Prediction, Timeline } from "./netview.ts";
 import { NetWatch, pingLabel } from "./netwatch.ts";
 import type { NetReport } from "../game/net.ts";
 import { ROADS, type Track, makeTrack } from "../game/track.ts";
@@ -35,6 +35,9 @@ const probe = new URLSearchParams(location.search).get("probe") === "1" ? "?prob
 // ?delay=fixed draws the others a fixed tenth of a second back, as before N14,
 // so scripts/feel.ts can ride the two side by side in the same browser
 const adaptiveDelay = new URLSearchParams(location.search).get("delay") !== "fixed";
+// ?handover=off puts one's own bike where the server says in one frame, as
+// before N14, to ride the two side by side (scripts/feel.ts --handover off)
+const easeHandover = new URLSearchParams(location.search).get("handover") !== "off";
 
 function connect(): void {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -69,6 +72,8 @@ type Current = {
   drawFrom: { z: number; x: number } | null;
   /** what this tab sees of the network, reported to the server (N14) */
   net: NetWatch;
+  /** one's own bike drawn easing over to where the server put it (N14) */
+  handover: Handover;
 };
 
 let current: Current | null = null;
@@ -85,7 +90,7 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   const track = ready?.track ?? makeTrack(msg.level, msg.track ?? 0);
   const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed, msg.countdown ?? 0);
   const go = performance.now() / 1000 + (msg.countdown ?? 0);
-  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(adaptiveDelay), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch() };
+  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(adaptiveDelay), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch(), handover: new Handover() };
   showPing(null);
   if (msg.you !== null) {
     show("race");
@@ -155,8 +160,11 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     const swing = r.attack;
     // a jump the rider sees, if it was riding on a prediction that far out
     if (mine[8] === "riding" && before === "riding" && Math.hypot(mine[1] - r.z, mine[2] - r.x) > 1) c.net.snappedBack();
+    const was = { z: r.z, x: r.x };
     applyRider(r, mine);
     c.prediction.reset();
+    // drawn where it was, and let go over the next steps (Handover)
+    if (easeHandover) c.handover.take(was.z, was.x, r.z, r.x);
     if (!r.attack && swing && mine[8] === "riding" && swing.t < windupOf(r, swing) + 0.2) r.attack = swing;
   } else {
     // the error it had then is eased out over the next steps (Prediction)
@@ -987,6 +995,7 @@ function frame(): void {
         // on the grid nothing moves; keys held now are sent, and go with everyone's
         if (r && now >= c.go) {
           c.drawFrom = { z: r.z, x: r.x };
+          c.handover.step();
           ride(r, keys, c.race.track);
           const fix = c.prediction.ease();
           r.z += fix.z;
@@ -1027,16 +1036,21 @@ function frame(): void {
       // round it seemed to lurch back and forth (.cache/jitter.mjs: 57 cm a
       // frame off a straight line, the others 2 cm on the road)
       const held = own && c.drawFrom && Math.abs(own.z - c.drawFrom.z) < 5 ? { z: own.z, x: own.x } : null;
+      const real = own ? { z: own.z, x: own.x } : null;
       if (own && held) {
         const f = acc / DT;
         own.z = c.drawFrom!.z + (held.z - c.drawFrom!.z) * f;
         own.x = c.drawFrom!.x + (held.x - c.drawFrom!.x) * f;
       }
+      if (own) {
+        own.z += c.handover.off.z;
+        own.x += c.handover.off.x;
+      }
       roadScene.draw(c.race.riders, c.you, dashCover / Math.max(1, dash.height), c.race.cars);
       if (own) drawnSelf = { z: own.z, x: own.x };
-      if (own && held) {
-        own.z = held.z;
-        own.x = held.x;
+      if (own && real) {
+        own.z = real.z;
+        own.x = real.x;
       }
       hud(c);
       const r = c.race.riders.find((x) => x.id === c.you);

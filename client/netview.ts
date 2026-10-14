@@ -231,3 +231,36 @@ export class Prediction {
     this.pending = { z: 0, x: 0 };
   }
 }
+
+/**
+ * Where one's own bike is drawn, against where it is, after the server takes
+ * over from the prediction: knocked off, thrown, run into. The server's word
+ * is a snapshot already a trip old, and the predicted bike has ridden on
+ * since, so taking it outright moved the bike back by its speed times the
+ * delay, in one frame: through badnet.ts at a 300 ms round trip, 2.2 to 3.7 m,
+ * every jump over a metre in forty seconds. Here the difference is drawn and
+ * then let go a fraction a step. Only the drawing: the rider itself is where
+ * the server says from the first step.
+ */
+export class Handover {
+  /** drawn minus real position, m */
+  off = { z: 0, x: 0 };
+
+  /** The server has taken over a predicted bike that was at (pz, px), and puts it at (z, x). */
+  take(pz: number, px: number, z: number, x: number): void {
+    // drawn where it was: what is still being let go of from before, plus this move
+    const dz = this.off.z + pz - z;
+    const dx = this.off.x + px - x;
+    // further out than a bike can ride in a delay, it is not a delay: a respawn, a new race
+    this.off = Math.hypot(dz, dx) < 10 ? { z: dz, x: dx } : { z: 0, x: 0 };
+  }
+
+  /** One race step: let go of HANDOVER of what is left. */
+  step(): void {
+    this.off.z *= 1 - HANDOVER;
+    this.off.x *= 1 - HANDOVER;
+  }
+}
+
+/** the fraction of the drawn difference let go each step: half of it in about 0.14 s, 95% in 0.6 s */
+export const HANDOVER = 0.08;
