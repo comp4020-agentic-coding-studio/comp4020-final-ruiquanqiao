@@ -35,6 +35,8 @@ type Bot = {
   input: Samples;
   lastSnap: number | null;
   stalls: number;
+  /** stalls already reported to the server */
+  reported: number;
   snaps: number;
   bytes: number;
 };
@@ -43,7 +45,7 @@ async function bot(n: number): Promise<Bot> {
   const cookie = ((await fetch(base + "/")).headers.get("set-cookie") ?? "").split(";")[0];
   // @ts-expect-error Node's WebSocket takes headers as a second argument
   const ws: WebSocket = new WebSocket(base.replace(/^http/, "ws") + "/ws?probe=1", { headers: { cookie } });
-  const b: Bot = { n, ws, race: null, you: null, sent: new Map(), seq: 0, rtt: new Samples(10_000), gap: new Samples(100_000), input: new Samples(100_000), lastSnap: null, stalls: 0, snaps: 0, bytes: 0 };
+  const b: Bot = { n, ws, race: null, you: null, sent: new Map(), seq: 0, rtt: new Samples(10_000), gap: new Samples(100_000), input: new Samples(100_000), lastSnap: null, stalls: 0, reported: 0, snaps: 0, bytes: 0 };
   const send = (m: object): void => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
   };
@@ -117,7 +119,12 @@ const riding = setInterval(() => {
 }, 50);
 // report as a browser does: what this one saw, every five seconds
 const reporting = setInterval(() => {
-  for (const b of bots) if (b.race !== null) sendAll(b, { t: "net", input: b.input.p95(), gap: b.gap.p95(), stalls: 0, snapped: 0, frame: null });
+  for (const b of bots) {
+    if (b.race === null) continue;
+    // the stalls since the last report, as a browser counts them
+    sendAll(b, { t: "net", input: b.input.p95(), gap: b.gap.p95(), stalls: b.stalls - b.reported, snapped: 0, frame: null });
+    b.reported = b.stalls;
+  }
 }, NET.reportEvery * 1000);
 
 await new Promise((r) => setTimeout(r, seconds * 1000));
