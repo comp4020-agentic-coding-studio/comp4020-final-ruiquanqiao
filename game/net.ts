@@ -20,6 +20,10 @@ export const NET = {
   serverStallMs: 100,
   /** seconds between two spike lines for one person, so a bad connection writes one line, not sixty */
   spikeQuiet: 10,
+  /** one's own bike this far (m) from where the server had it is a jump worth a line of its own */
+  jumpM: 10,
+  /** and at most this many such lines from one person in one race */
+  jumpsPerRace: 5,
   /** what the HUD colours: below `good` ms green, below `fair` amber, else red */
   good: 80,
   fair: 150,
@@ -105,6 +109,50 @@ export type NetReport = {
   /** ms a frame took to draw: p95 */
   frame: number | null;
 };
+
+/**
+ * One's own bike found far from where the server had it, as it was seen: a
+ * jump nobody has managed to make happen on purpose (once, a 22 m one on a
+ * tree at a 20 ms round trip, never again in 30-odd rides). Sent the moment
+ * it happens, so the log holds what was going on when a person met it.
+ */
+export type JumpReport = {
+  /** how far apart, m */
+  gap: number;
+  /** race time of the snapshot that said so, s */
+  time: number;
+  /** the phase predicted here, and the one the server said */
+  was: string;
+  now: string;
+  /** predicted, and the server's: z, x, speed */
+  mine: [number, number, number];
+  server: [number, number, number];
+  /** ms since this tab last drew a frame, and since the snapshot before this one arrived */
+  sinceFrame: number;
+  sinceSnap: number;
+  /** what the server reported about this rider in the same snapshot: "crash:tree", "hit:kick" ... */
+  events: string[];
+  /** race-step count here, against the race time; drift between the two is a clock gone wrong */
+  steps: number;
+};
+
+/** A jump report off the wire: numbers in range, words short and few, or nothing at all. */
+export function cleanJump(r: Record<string, unknown>): JumpReport | null {
+  const num = (v: unknown, lim = 1e6): number | null => (typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= lim ? Math.round(v * 100) / 100 : null);
+  const word = (v: unknown): string => (typeof v === "string" ? v.replace(/[^\w:]/g, "").slice(0, 24) : "");
+  const triple = (v: unknown): [number, number, number] | null => {
+    if (!Array.isArray(v) || v.length !== 3) return null;
+    const t = v.map((x) => num(x));
+    return t.every((x) => x !== null) ? (t as [number, number, number]) : null;
+  };
+  const gap = num(r.gap, 1e4);
+  const time = num(r.time, 1e5);
+  const mine = triple(r.mine);
+  const server = triple(r.server);
+  if (gap === null || time === null || !mine || !server) return null;
+  const events = Array.isArray(r.events) ? r.events.slice(0, 6).map(word).filter(Boolean) : [];
+  return { gap, time, was: word(r.was), now: word(r.now), mine, server, sinceFrame: num(r.sinceFrame, 6e4) ?? 0, sinceSnap: num(r.sinceSnap, 6e4) ?? 0, events, steps: Math.round(num(r.steps) ?? 0) };
+}
 
 /** A report off the wire, as numbers in range or nothing: it comes from a browser, and is believed no further. */
 export function cleanReport(r: Record<string, unknown>): NetReport {

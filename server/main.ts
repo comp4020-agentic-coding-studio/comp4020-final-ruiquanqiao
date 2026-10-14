@@ -187,6 +187,7 @@ wss.on("connection", (ws, req) => {
     else if (msg.t === "progress") lobby.progress(conn, Number(msg.p));
     else if (msg.t === "pong") lobby.pong(conn, Number(msg.at), now);
     else if (msg.t === "net") lobby.report(conn, msg as unknown as Record<string, unknown>, now);
+    else if (msg.t === "jump") lobby.jump(conn, msg as unknown as Record<string, unknown>);
     else if (msg.t === "watch") lobby.watch(conn, Number(msg.race));
     else if (msg.t === "unwatch") lobby.unwatch(conn);
     else if (msg.t === "in") lobby.input(conn, Number(msg.seq), Number(msg.keys));

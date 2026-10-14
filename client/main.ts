@@ -12,7 +12,7 @@ import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Handover, Prediction, Timeline } from "./netview.ts";
 import { NetWatch, pingLabel } from "./netwatch.ts";
-import type { NetReport } from "../game/net.ts";
+import { NET, type NetReport } from "../game/net.ts";
 import { ROADS, type Track, makeTrack } from "../game/track.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -74,6 +74,8 @@ type Current = {
   net: NetWatch;
   /** one's own bike drawn easing over to where the server put it (N14) */
   handover: Handover;
+  /** this tab's clock when the last snapshot arrived */
+  lastSnap: number;
 };
 
 let current: Current | null = null;
@@ -90,7 +92,7 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   const track = ready?.track ?? makeTrack(msg.level, msg.track ?? 0);
   const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed, msg.countdown ?? 0);
   const go = performance.now() / 1000 + (msg.countdown ?? 0);
-  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(adaptiveDelay), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch(), handover: new Handover() };
+  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(adaptiveDelay), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch(), handover: new Handover(), lastSnap: performance.now() / 1000 };
   showPing(null);
   if (msg.you !== null) {
     show("race");
@@ -146,12 +148,34 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     if (felt.sound && c.you !== null) sfx(felt.sound.kind, felt.sound.gain);
   }
 
+  const lastSnap = c.lastSnap;
+  c.lastSnap = now;
   if (c.you === null) return;
   c.net.snap(msg.ack, now);
   const mine = msg.riders.find((s) => s[0] === c.you);
   const r = c.race.riders.find((x) => x.id === c.you);
   if (!mine || !r) return;
   const before = r.phase;
+  // far from where the server had it: written down whole, as it happened (N14).
+  // A bike that has only just been put on the road (new race, back on the
+  // bike) is not compared: there is nothing predicted to be far from
+  const gap = Math.hypot(mine[1] - r.z, mine[2] - r.x);
+  if (gap > NET.jumpM && now >= c.go && before !== "running" && mine[8] !== "running") {
+    const own = msg.events.filter((e) => Object.entries(e).some(([k, v]) => ["rider", "on", "by", "other", "from"].includes(k) && v === c.you));
+    send({
+      t: "jump",
+      gap,
+      time: msg.time,
+      was: before,
+      now: mine[8],
+      mine: [r.z, r.x, r.speed],
+      server: [mine[1], mine[2], mine[3]],
+      sinceFrame: (now - last) * 1000,
+      sinceSnap: (now - lastSnap) * 1000,
+      events: own.map((e) => [e.kind, (e as { cause?: string }).cause ?? (e as { move?: string }).move ?? (e as { with?: string }).with].filter(Boolean).join(":")),
+      steps: c.steps,
+    });
+  }
   const eased = mine[8] === "riding" && before === "riding" && c.prediction.heard(c.steps, msg.time, mine[1], mine[2]);
   if (!eased) {
     // off the bike, back on it, or no prediction to compare: the server's word,

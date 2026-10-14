@@ -11,7 +11,7 @@
 import { CHECK_WAIT, type Entry, type Room, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, TUNE, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { LIVERIES } from "../game/liveries.ts";
-import { NET, Samples, cleanReport, ms } from "../game/net.ts";
+import { NET, Samples, cleanJump, cleanReport, ms } from "../game/net.ts";
 import { ROADS, makeTrack } from "../game/track.ts";
 
 export type Conn = {
@@ -46,11 +46,13 @@ export type PersonNet = {
   stalls: number;
   snapped: number;
   spikes: number;
+  /** big_jump lines written for them this race */
+  jumps: number;
   /** when the last lag_spike line for them was written (s) */
   spoke: number;
 };
 
-const personNet = (who: string): PersonNet => ({ who, rtt: new Samples(600), input: new Samples(), gap: new Samples(), frame: new Samples(), stalls: 0, snapped: 0, spikes: 0, spoke: -Infinity });
+const personNet = (who: string): PersonNet => ({ who, rtt: new Samples(600), input: new Samples(), gap: new Samples(), frame: new Samples(), stalls: 0, snapped: 0, spikes: 0, jumps: 0, spoke: -Infinity });
 
 export type Match = {
   id: number;
@@ -333,6 +335,22 @@ export class Lobby {
   }
 
   /**
+   * One's own bike seen far from where the server had it (N14): written down
+   * whole, with the round trip the server knows of, so the log holds what was
+   * going on. A few per person per race, so a bug that fires every frame
+   * cannot fill the database.
+   */
+  jump(conn: Conn, raw: Record<string, unknown>): void {
+    const live = conn.race;
+    const n = live && !live.ended ? live.net.get(conn.local) : undefined;
+    if (!live || !n || n.jumps >= NET.jumpsPerRace) return;
+    const j = cleanJump(raw);
+    if (!j) return;
+    n.jumps++;
+    this.log({ ev: "big_jump", who: n.who, race: live.id, ...j, raceNow: Math.round(live.race.t * 100) / 100, rtt: ms(n.rtt.values().at(-1) ?? null) });
+  }
+
+  /**
    * One line per person per race: how their network was, start to finish or
    * to leaving. The browser's figures are p95s of five seconds each; the line
    * gives their median (a typical stretch) and their worst.
@@ -351,6 +369,7 @@ export class Lobby {
       rttMax: ms(n.rtt.max()),
       jitter: ms(n.rtt.jitter()),
       spikes: n.spikes,
+      bigJumps: n.jumps,
       input: ms(n.input.median()),
       inputWorst: ms(n.input.max()),
       gap: ms(n.gap.median()),

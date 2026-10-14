@@ -1,7 +1,7 @@
 // The messages between a browser and the server, one JSON object per
 // WebSocket frame. Shared by both ends so they cannot drift apart.
 
-import type { NetReport } from "./net.ts";
+import type { JumpReport, NetReport } from "./net.ts";
 import { type Car, type Phase, type RaceEvent, type Rider, type Weapon, windupOf } from "./sim.ts";
 
 export type Mode = "ai" | "human";
@@ -34,6 +34,8 @@ export type ToServer =
   | { t: "pong"; at: number }
   /** what this browser saw of the network over the last few seconds of its race (N14) */
   | ({ t: "net" } & NetReport)
+  /** one's own bike found far from where the server had it, as it happened (N14) */
+  | ({ t: "jump" } & JumpReport)
   /** spectate a race in progress, or stop (N11) */
   | { t: "watch"; race: number }
   | { t: "unwatch" };

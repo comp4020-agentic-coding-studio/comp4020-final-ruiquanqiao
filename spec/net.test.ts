@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NET, Samples, cleanReport } from "../game/net.ts";
+import { NET, Samples, cleanJump, cleanReport } from "../game/net.ts";
 import type { ToClient } from "../game/protocol.ts";
 import { type Conn, Lobby } from "../server/lobby.ts";
 import { NetWatch, pingLabel } from "../client/netwatch.ts";
@@ -121,6 +121,34 @@ describe("the network while racing (N14)", () => {
     const stall = lines.find((e) => e.ev === "server_stall");
     expect(stall).toMatchObject({ ms: 282, races: 1 });
     expect(l.stepCost.median()).toBeCloseTo(0.4, 6);
+  });
+
+  it("writes a big jump down whole, by name, with the round trip, and no more than five a race", () => {
+    const { l, lines, ana, ben, t } = racing();
+    ride(l, [ana, ben], t, t + 3, () => 0.02);
+    const jump = { gap: 22.03, time: 31.05, was: "riding", now: "thrown", mine: [632.1, -10.9, 70.1], server: [610.1, -10.6, 21.0], sinceFrame: 8.4, sinceSnap: 49, events: ["crash:tree"], steps: 1980 };
+    l.jump(ana, jump);
+    const line = lines.find((e) => e.ev === "big_jump");
+    expect(line).toMatchObject({ who: "Ana#11", race: 7, gap: 22.03, was: "riding", now: "thrown", events: ["crash:tree"], rtt: 20 });
+    expect(line?.raceNow).toBeTypeOf("number");
+    for (let i = 0; i < 9; i++) l.jump(ana, jump);
+    expect(lines.filter((e) => e.ev === "big_jump")).toHaveLength(NET.jumpsPerRace);
+    // and the person's race line counts them
+    l.quit(ana);
+    expect(lines.find((e) => e.ev === "net" && e.who === "Ana#11")).toMatchObject({ bigJumps: NET.jumpsPerRace });
+  });
+
+  it("believes a jump report no further than numbers in range and short words", () => {
+    expect(cleanJump({ gap: "far", time: 1, mine: [0, 0, 0], server: [0, 0, 0] })).toBeNull();
+    expect(cleanJump({ gap: 12, time: 1, mine: [0, 0], server: [0, 0, 0] })).toBeNull();
+    const j = cleanJump({ gap: 12.3456, time: 1, was: "riding<script>", now: "thrown", mine: [1, 2, 3], server: [4, 5, 6], events: ["crash:tree", 7, "x".repeat(99), "a", "b", "c", "d", "e"], steps: 3.7 })!;
+    expect(j).toMatchObject({ gap: 12.35, was: "ridingscript", steps: 4 });
+    expect(j.events).toHaveLength(5);
+    expect(j.events[1]).toHaveLength(24);
+    // and from someone not racing, nothing
+    const { l, lines } = racing();
+    l.jump(conn(99, "Stranger"), { gap: 12, time: 1, mine: [0, 0, 0], server: [0, 0, 0] });
+    expect(lines.some((e) => e.ev === "big_jump")).toBe(false);
   });
 
   it("shows each person's usual round trip on the live races page", () => {
