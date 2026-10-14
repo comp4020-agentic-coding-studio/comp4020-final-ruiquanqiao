@@ -32,6 +32,9 @@ function send(msg: ToServer): void {
 // its rider stays off the leaderboard; read once, since going between pages
 // rewrites the address and a reconnect must still say it
 const probe = new URLSearchParams(location.search).get("probe") === "1" ? "?probe=1" : "";
+// ?delay=fixed draws the others a fixed tenth of a second back, as before N14,
+// so scripts/feel.ts can ride the two side by side in the same browser
+const adaptiveDelay = new URLSearchParams(location.search).get("delay") !== "fixed";
 
 function connect(): void {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -82,7 +85,7 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   const track = ready?.track ?? makeTrack(msg.level, msg.track ?? 0);
   const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed, msg.countdown ?? 0);
   const go = performance.now() / 1000 + (msg.countdown ?? 0);
-  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch() };
+  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(adaptiveDelay), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch() };
   showPing(null);
   if (msg.you !== null) {
     show("race");
@@ -1152,6 +1155,8 @@ window.__rash = {
   /** every report this tab has sent of its network (N14), for scripts/feel.ts */
   net: () => netSent,
   /** everyone as drawn this frame, unrounded */
+  /** how far back the others are drawn now, s, and whether this frame was past the newest snapshot (N14) */
+  delay: () => (current ? { delay: current.timeline.delay, starved: current.timeline.starved() } : null),
   drawn: () => current?.race.riders.map((r) => ({ id: r.id, z: r.z, x: r.x, phase: r.phase, cop: r.cop })),
   riders: () => current?.race.riders.map((r) => ({ id: r.id, cop: r.cop, z: Math.round(r.z), x: r.x.toFixed(1), phase: r.phase, weapon: r.weapon, attack: r.attack && `${r.attack.kind}${r.attack.t.toFixed(2)}${r.attack.landed ? "L" : ""}` })),
 };

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DELAY, Prediction, type Snap, Timeline } from "../client/netview.ts";
+import { DELAY, MAX_DELAY, Prediction, type Snap, Timeline } from "../client/netview.ts";
 import { encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, NO_INPUT, type Race, ride, startRace, step } from "../game/sim.ts";
 import { makeTrack } from "../game/track.ts";
 import arrivals from "./fixtures/arrivals.json" with { type: "json" };
+import far from "./fixtures/arrivals-far.json" with { type: "json" };
+import rough from "./fixtures/arrivals-rough.json" with { type: "json" };
 
 // The stutter detector. A real race is run on a pretend server, its snapshots
 // are delivered as late as the live server's actually arrived
@@ -53,13 +55,17 @@ function byArrival(): Sampler {
   };
 }
 
-function byTimeline(): Sampler {
-  const tl = new Timeline();
+function byTimeline(adaptive = true): Sampler & { tl: Timeline } {
+  const tl = new Timeline(adaptive);
   return {
+    tl,
     push: (local, s) => tl.push(local, s),
     z: (id, local) => tl.rider(id, tl.now(local))?.z ?? null,
   };
 }
+
+/** The fixed 0.1 s of before N14. */
+const byFixed = (): Sampler => byTimeline(false);
 
 const LATENCY = 0.04; // s, each way
 
@@ -69,9 +75,8 @@ const LATENCY = 0.04; // s, each way
  * that frame's time (a quarter of a frame's travel at 250 km/h); lag is how
  * far the drawn bike is from where it really is at that moment.
  */
-function stutter(make: () => Sampler, seconds = 40): { jerks: number; frames: number; worst: number; lag: number; collisions: number; offAtCollision: number } {
+function stutter(make: () => Sampler, seconds = 40, late: number[] = arrivals.lateMs): { jerks: number; frames: number; worst: number; lag: number; collisions: number; offAtCollision: number; starved: number; delays: number[] } {
   const { truth, snaps } = race(seconds);
-  const late = arrivals.lateMs;
   const s = make();
   let k = 0;
   let arrive = 0;
@@ -82,6 +87,11 @@ function stutter(make: () => Sampler, seconds = 40): { jerks: number; frames: nu
   const lags: number[] = [];
   let collisions = 0;
   let offAtCollision = 0;
+  // frames drawn past the newest snapshot: guessed, not drawn from anything
+  // the server said, and the delay each frame was drawn at
+  const tl = (s as { tl?: Timeline }).tl;
+  let starved = 0;
+  const delays: number[] = [];
   /**
    * Whether rider `id` changed speed by more than 6 m/s within three steps,
    * in the 0.3 s before t: run into something. Neither brake nor nitro comes
@@ -140,11 +150,16 @@ function stutter(make: () => Sampler, seconds = 40): { jerks: number; frames: nu
       if (err > 0.3) jerks++;
       lags.push(Math.abs(z - now));
     }
+    // read after drawing, so the clock is the one the frame used
+    if (tl && local >= 2) {
+      if (tl.starved()) starved++;
+      delays.push(tl.delay);
+    }
     before = local;
   }
   lags.sort((p, q) => p - q);
   // the 99th percentile: a rider knocked about by contact can be off for a frame or two
-  return { jerks, frames, worst, lag: lags[Math.floor(lags.length * 0.99)], collisions, offAtCollision };
+  return { jerks, frames, worst, lag: lags[Math.floor(lags.length * 0.99)], collisions, offAtCollision, starved, delays };
 }
 
 describe("the other riders, drawn from snapshots that arrive late and in bursts", () => {
@@ -180,6 +195,58 @@ describe("the other riders, drawn from snapshots that arrive late and in bursts"
     const now = stutter(byTimeline);
     expect(now.collisions).toBeGreaterThan(0);
     expect(now.offAtCollision).toBeLessThan(4);
+  });
+
+  it("draws a rough connection from what the server said, not from guesses", () => {
+    // 150±60 ms each way and 3% loss (fixtures/arrivals-rough.json). With the
+    // fixed tenth of a second, measured: 1071 of 2279 frames drawn past the
+    // newest snapshot. Adapting: 89, and fewer jerks (7 down to 4)
+    const fixed = stutter(byFixed, 40, rough.lateMs);
+    const adaptive = stutter(byTimeline, 40, rough.lateMs);
+    // (starved counts frames, and frames counts each bike in each one)
+    expect(fixed.starved / fixed.delays.length).toBeGreaterThan(0.3);
+    expect(adaptive.starved / adaptive.delays.length).toBeLessThan(0.1);
+    expect(adaptive.jerks).toBeLessThanOrEqual(fixed.jerks);
+    expect(Math.max(...adaptive.delays)).toBeLessThanOrEqual(MAX_DELAY);
+  });
+
+  it("keeps the tenth of a second on a connection that delivers on time, from Canberra and from the United States", () => {
+    // measured: 0.1 s throughout on both, so nothing about a good connection changed
+    for (const late of [arrivals.lateMs, far.lateMs]) {
+      const r = stutter(byTimeline, 40, late);
+      expect(Math.max(...r.delays)).toBeLessThan(DELAY + 0.01);
+      expect(r.jerks).toBe(0);
+    }
+  });
+
+  it("lengthens its delay within a second of snapshots turning late, and shortens it slowly after", () => {
+    const tl = new Timeline();
+    let t = 0;
+    const feed = (seconds: number, lateBy: (i: number) => number): void => {
+      for (let i = 0; i < seconds * 20; i++, t += 0.05) tl.push(t + 0.04 + lateBy(i), { time: t, riders: [], cars: [] });
+    };
+    const run = (seconds: number, lateBy: (i: number) => number): number[] => {
+      const seen: number[] = [];
+      const start = t;
+      feed(seconds, lateBy);
+      for (let f = 0; f <= seconds * 60; f++) {
+        tl.now(start + f / 60);
+        seen.push(tl.delay);
+      }
+      return seen;
+    };
+    run(5, () => 0);
+    expect(tl.delay).toBeCloseTo(DELAY, 6);
+    // every other snapshot 200 ms late: within a second the delay is most of the way there
+    const up = run(3, (i) => (i % 2 ? 0.2 : 0));
+    expect(up[60]).toBeGreaterThan(0.25 - 0.01);
+    expect(Math.max(...up)).toBeLessThanOrEqual(0.25 + 1e-9);
+    // never faster than a quarter of real time, so the change is not seen
+    for (let i = 1; i < up.length; i++) expect(up[i] - up[i - 1]).toBeLessThanOrEqual(0.25 / 60 + 1e-9);
+    // on time again: a second later it has barely moved, and it comes down at a fiftieth of real time
+    const down = run(10, () => 0);
+    expect(down[60]).toBeGreaterThan(0.25 - 0.03);
+    for (let i = 1; i < down.length; i++) expect(down[i - 1] - down[i]).toBeLessThanOrEqual(0.02 / 60 + 1e-9);
   });
 
   it("never runs its clock backwards", () => {

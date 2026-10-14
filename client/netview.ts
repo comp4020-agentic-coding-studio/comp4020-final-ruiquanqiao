@@ -16,14 +16,31 @@
 // pass happened 8 m late and the predicted bike was pushed off bikes that were
 // no longer there. Everyone is now interpolated 0.1 s back, where it is
 // smooth, and carried forward by its own speed to the present.
+//
+// "0.1 s back" was fixed until N14. Through a 300 ms, lossy connection
+// (scripts/badnet.ts) the moment drawn was past the newest snapshot in 44-47%
+// of frames, and the others were guessed at, not drawn. The delay now
+// follows how late snapshots are actually coming: 0.1 s on a connection that
+// delivers on time, which is every one measured from Canberra and from the
+// United States, and up to 0.4 s on a bad one.
 
 import type { CarState, RiderState } from "../game/protocol.ts";
+import { Samples } from "../game/net.ts";
 import { DT } from "../game/sim.ts";
 
 export type Snap = { time: number; riders: RiderState[]; cars: CarState[] };
 
-/** How far back snapshots are interpolated before being carried forward. */
+/**
+ * How far back snapshots are interpolated before being carried forward, at
+ * least. It was this, fixed, until N14: right for a connection that delivers
+ * on time, and on one that does not, a late snapshot left the drawn bikes
+ * running past the newest one on guesswork until it came.
+ */
 export const DELAY = 0.1;
+/** ...and at most, however late snapshots come: past this the others are guessed at, not drawn */
+export const MAX_DELAY = 0.4;
+/** a snapshot every this many seconds of race time (SNAPSHOT_HZ) */
+const INTERVAL = 0.05;
 
 export type Placed = { z: number; x: number; lean: number; s: RiderState };
 
@@ -33,6 +50,16 @@ export class Timeline {
   private offset: number | null = null;
   private clock: number | null = null;
   private last = 0;
+  /** how late each recent snapshot came past the least-delayed one, s: five seconds of them */
+  private late = new Samples(100);
+  /** how far back the others are drawn now, s: follows `wanted`, smoothly */
+  delay = DELAY;
+  /** false holds the delay at DELAY, as before N14: kept so the spec can race the two side by side */
+  private adaptive: boolean;
+
+  constructor(adaptive = true) {
+    this.adaptive = adaptive;
+  }
 
   push(localNow: number, snap: Snap): void {
     this.snaps.push(snap);
@@ -42,6 +69,18 @@ export class Timeline {
     // estimate sink slowly (1 ms a second) so clock drift cannot strand it
     if (this.offset === null || o > this.offset) this.offset = o;
     else this.offset -= 0.001 * (snap.time - (this.snaps.at(-2)?.time ?? snap.time));
+    this.late.add(this.offset - o);
+  }
+
+  /**
+   * How far back to draw so that the snapshot after the moment drawn has
+   * almost always arrived: one interval, plus how late the 95th percentile of
+   * the last five seconds' snapshots came. Never less than DELAY, which a
+   * connection that delivers on time keeps, nor more than MAX_DELAY.
+   */
+  wanted(): number {
+    if (!this.adaptive) return DELAY;
+    return Math.min(MAX_DELAY, Math.max(DELAY, INTERVAL + (this.late.p95() ?? 0)));
   }
 
   /** The race time to draw for local time `localNow`: smooth and never backwards. */
@@ -50,11 +89,24 @@ export class Timeline {
     const target = localNow + this.offset;
     const dt = Math.max(0, localNow - this.last);
     this.last = localNow;
+    // the delay moves at a quarter of real time going up, so a connection
+    // turning bad is met within a second, and a fiftieth coming down, so a
+    // good spell does not drop it straight back into the next bad one. Drawn
+    // as "where it was `delay` ago, carried forward by its speed", a bike
+    // moving steadily lands in the same place whatever the delay, so the
+    // change itself is not seen
+    const want = this.wanted();
+    this.delay += Math.max(-0.02 * dt, Math.min(0.25 * dt, want - this.delay));
     if (this.clock === null || Math.abs(target - this.clock) > 0.5) return (this.clock = target);
     // run at real speed, and ease towards the target by at most 10%
     const step = dt + Math.max(-0.1 * dt, Math.min(0.1 * dt, target - (this.clock + dt)));
     this.clock += step;
     return this.clock;
+  }
+
+  /** Whether the moment last drawn was past the newest snapshot: guessed, not drawn from anything the server said. */
+  starved(): boolean {
+    return this.clock !== null && this.clock - this.delay > (this.snaps.at(-1)?.time ?? -Infinity);
   }
 
   /** The two snapshots around race time t, the one before them, and how far between the two. */
@@ -72,7 +124,7 @@ export class Timeline {
 
   /** Rider `id` as drawn at race time `t`. */
   rider(id: number, t: number): Placed | null {
-    const w = this.around(t - DELAY);
+    const w = this.around(t - this.delay);
     if (!w) return null;
     const sa = w.a.riders.find((r) => r[0] === id);
     const sb = w.b.riders.find((r) => r[0] === id);
@@ -98,12 +150,12 @@ export class Timeline {
     // up and down twenty times a second
     const s: RiderState = sb[8] === "thrown" ? [...sb] : sb;
     if (sb[8] === "thrown") s[15] = Math.max(0, lerp(15));
-    return { z: lerp(1) + out(1) * past + v(1) * DELAY, x: lerp(2) + out(2) * past + v(2) * DELAY, lean: lerp(4), s };
+    return { z: lerp(1) + out(1) * past + v(1) * this.delay, x: lerp(2) + out(2) * past + v(2) * this.delay, lean: lerp(4), s };
   }
 
   /** Car `id` as drawn at race time `t`, or null when the server has dropped it. */
   car(id: number, t: number): { z: number; x: number } | null {
-    const w = this.around(t - DELAY);
+    const w = this.around(t - this.delay);
     if (!w) return null;
     const cb = w.b.cars.find((c) => c[0] === id);
     if (!cb) return null;
@@ -113,7 +165,7 @@ export class Timeline {
     const dt = w.b.time - w.a.time;
     const f = Math.max(0, Math.min(w.f, 1 + 0.3 / dt));
     const vz = (cb[1] - ca[1]) / dt;
-    return { z: ca[1] + vz * dt * f + vz * DELAY, x: ca[2] + (cb[2] - ca[2]) * Math.min(1, f) };
+    return { z: ca[1] + vz * dt * f + vz * this.delay, x: ca[2] + (cb[2] - ca[2]) * Math.min(1, f) };
   }
 }
 
