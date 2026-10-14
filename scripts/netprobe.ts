@@ -10,7 +10,8 @@ const seconds = Number(process.argv[3] ?? 20);
 // the server only lets a rider with its cookie in: take one the way a browser does
 const cookie = ((await fetch(base + "/")).headers.get("set-cookie") ?? "").split(";")[0];
 // @ts-expect-error Node's WebSocket takes headers as a second argument
-const ws: WebSocket = new WebSocket(base.replace(/^http/, "ws") + "/ws", { headers: { cookie } });
+// ?probe=1 keeps this rider off the leaderboard (N12)
+const ws: WebSocket = new WebSocket(base.replace(/^http/, "ws") + "/ws?probe=1", { headers: { cookie } });
 ws.onclose = (e) => {
   if (!racing) console.log(`closed before the race: ${e.code} ${e.reason}`);
 };

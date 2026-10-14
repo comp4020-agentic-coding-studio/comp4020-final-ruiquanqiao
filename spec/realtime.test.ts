@@ -30,7 +30,8 @@ async function person(): Promise<Person> {
   const cookie = ((await fetch(new URL("/", baseUrl))).headers.get("set-cookie") ?? "").split(";")[0];
   // Node's WebSocket (undici) takes headers as a second argument; the DOM type does not say so
   const Ws = WebSocket as unknown as new (url: string, opts: { headers: Record<string, string> }) => WebSocket;
-  const ws = new Ws(new URL("/ws", baseUrl).href.replace(/^http/, "ws"), { headers: { cookie } });
+  // ?probe=1: two scripted people, kept off the leaderboard (N12)
+  const ws = new Ws(new URL("/ws?probe=1", baseUrl).href.replace(/^http/, "ws"), { headers: { cookie } });
   const p: Person = { ws, inbox: [], riders: new Map(), heardAt: 0, you: null, race: null, keys: 0 };
   ws.onmessage = (e) => {
     const msg = JSON.parse(String(e.data)) as ToClient;

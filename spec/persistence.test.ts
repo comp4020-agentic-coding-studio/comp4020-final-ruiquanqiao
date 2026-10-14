@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterAll, expect, it } from "vitest";
 import { openDb } from "../server/db.ts";
 
@@ -58,6 +59,29 @@ it("ranks everyone who has raced by points for their finishes, wins and podiums,
     { rank: 1, id: juno.id, name: "Juno", points: 10 + 25, races: 2, wins: 1, podiums: 1, boards: 1 },
     { rank: 2, id: mika.id, name: "Mika", points: 18, races: 2, wins: 0, podiums: 1, boards: 1 },
   ]);
+  db.close();
+});
+
+it("ranks no rider a script made, and adds the mark to a database from before it existed (N12)", () => {
+  const file = join(dir, "probe.db");
+  // a database as it was before the mark: riders without the column
+  const old = new DatabaseSync(file);
+  old.exec("CREATE TABLE riders (id INTEGER PRIMARY KEY, token TEXT NOT NULL UNIQUE, name TEXT NOT NULL, created_at INTEGER NOT NULL)");
+  old.prepare("INSERT INTO riders (token, name, created_at) VALUES ('token-ana', 'Ana', 0)").run();
+  old.close();
+  const db = openDb(file);
+  const ana = db.rider("token-ana");
+  const bot = db.rider("token-bot");
+  expect(db.isProbe(ana.id)).toBe(false);
+  db.markProbe(bot.id);
+  expect(db.isProbe(bot.id)).toBe(true);
+  const race = db.startRace("human", 1, "Ridge Road");
+  db.finishRace(race, 1, "Ridge Road", [
+    { id: bot.id, name: bot.name, human: true, place: 1, outcome: "qualified", time: 100 },
+    { id: ana.id, name: "Ana", human: true, place: 2, outcome: "qualified", time: 101 },
+  ]);
+  // Ana is first among people, with the points for her place across the line
+  expect(db.leaderboard().map((l) => [l.rank, l.name, l.points])).toEqual([[1, "Ana", 18]]);
   db.close();
 });
 

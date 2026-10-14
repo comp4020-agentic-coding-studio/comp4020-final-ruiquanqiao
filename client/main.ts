@@ -12,6 +12,7 @@ import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Prediction, Timeline } from "./netview.ts";
 import { NetWatch, pingLabel } from "./netwatch.ts";
+import type { NetReport } from "../game/net.ts";
 import { ROADS, type Track, makeTrack } from "../game/track.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -27,9 +28,14 @@ function send(msg: ToServer): void {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
+// a page opened by a script (scripts/shoot.ts, scripts/badnet.ts) says so, and
+// its rider stays off the leaderboard; read once, since going between pages
+// rewrites the address and a reconnect must still say it
+const probe = new URLSearchParams(location.search).get("probe") === "1" ? "?probe=1" : "";
+
 function connect(): void {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws = new WebSocket(`${proto}//${location.host}/ws${probe}`);
   ws.onmessage = (e) => onMessage(JSON.parse(e.data) as ToClient);
   ws.onclose = () => {
     setTimeout(connect, 1000);
@@ -953,6 +959,8 @@ function interpolate(c: Current, now: number): void {
   }
 }
 
+/** the network reports this tab has sent, for the debugging handle */
+const netSent: NetReport[] = [];
 /** where one's own bike was last drawn, for the debugging handle */
 let drawnSelf = { z: 0, x: 0 };
 let last = performance.now() / 1000;
@@ -995,7 +1003,10 @@ function frame(): void {
       sendKeys(now);
       c.net.drew(now - last0);
       const report = c.net.report(now);
-      if (report) send({ t: "net", ...report });
+      if (report) {
+        send({ t: "net", ...report });
+        netSent.push(report);
+      }
     }
     if (c.you !== null || c.id === spectating) countdown(c, now);
     interpolate(c, now);
@@ -1138,6 +1149,8 @@ window.__rash = {
   sound: () => soundState(),
   /** one's own bike as drawn this frame, between its last two steps */
   self: () => drawnSelf,
+  /** every report this tab has sent of its network (N14), for scripts/feel.ts */
+  net: () => netSent,
   /** everyone as drawn this frame, unrounded */
   drawn: () => current?.race.riders.map((r) => ({ id: r.id, z: r.z, x: r.x, phase: r.phase, cop: r.cop })),
   riders: () => current?.race.riders.map((r) => ({ id: r.id, cop: r.cop, z: Math.round(r.z), x: r.x.toFixed(1), phase: r.phase, weapon: r.weapon, attack: r.attack && `${r.attack.kind}${r.attack.t.toFixed(2)}${r.attack.landed ? "L" : ""}` })),

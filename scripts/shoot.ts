@@ -47,7 +47,8 @@ for (const [w, h] of sizes) {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
-  await page.goto(url);
+  // ?probe=1 keeps the rider this makes off the leaderboard (N12)
+  await page.goto(url + (url.includes("?") ? "&" : "?") + "probe=1");
   await page.waitForTimeout(800);
   await page.check(`input[name="road"][value="${road}"]`);
   await page.click("#queue-ai");

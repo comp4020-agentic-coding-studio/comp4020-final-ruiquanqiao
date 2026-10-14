@@ -149,6 +149,11 @@ wss.on("connection", (ws, req) => {
     return;
   }
   const rider = db.rider(token);
+  // a script says it is one by connecting to /ws?probe=1, and its rider stays
+  // off the leaderboard for good (N12). A person who does the same only hides
+  // themselves
+  const probe = new URL(req.url ?? "/", "http://localhost").searchParams.get("probe") === "1";
+  if (probe) db.markProbe(rider.id);
   const conn: Conn = {
     rider: rider.id,
     name: rider.name,
@@ -162,7 +167,7 @@ wss.on("connection", (ws, req) => {
     local: -1,
     seq: 0,
   };
-  log({ ev: "connect", who: who({ name: rider.name, rider: rider.id }) });
+  log({ ev: "connect", who: who({ name: rider.name, rider: rider.id }), ...(db.isProbe(rider.id) ? { probe: true } : {}) });
   conn.send({ t: "hello", you: rider, qualified: db.qualified(rider.id) });
   lobby.hello(conn);
 

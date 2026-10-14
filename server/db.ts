@@ -60,11 +60,19 @@ export function openDb(file: string) {
       PRIMARY KEY (rider_id, level, track)
     );
   `);
+  // a rider made by a script rather than a person: a probe of the network, a
+  // load test, the spec run against the app. Raced like anyone, kept out of
+  // the standings (N12). Added after the table had people in it, so an older
+  // database gains the column here
+  const cols = db.prepare("PRAGMA table_info(riders)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "probe")) db.exec("ALTER TABLE riders ADD COLUMN probe INTEGER NOT NULL DEFAULT 0");
 
   const q = {
     byToken: db.prepare("SELECT id, name FROM riders WHERE token = ?"),
     insertRider: db.prepare("INSERT INTO riders (token, name, created_at) VALUES (?, ?, ?)"),
     rename: db.prepare("UPDATE riders SET name = ? WHERE id = ?"),
+    markProbe: db.prepare("UPDATE riders SET probe = 1 WHERE id = ?"),
+    isProbe: db.prepare("SELECT probe FROM riders WHERE id = ?"),
     insertRace: db.prepare("INSERT INTO races (mode, level, track, started_at) VALUES (?, ?, ?, ?)"),
     endRace: db.prepare("UPDATE races SET ended_at = ? WHERE id = ?"),
     insertResult: db.prepare("INSERT INTO results (race_id, rider_id, name, place, outcome, time_ms) VALUES (?, ?, ?, ?, ?, ?)"),
@@ -83,6 +91,7 @@ export function openDb(file: string) {
         SUM(x.outcome IN ('qualified', 'placed') AND x.place <= 3) AS podiums,
         (SELECT COUNT(*) FROM qualifications q WHERE q.rider_id = r.id) AS boards
       FROM results x JOIN riders r ON r.id = x.rider_id
+      WHERE r.probe = 0
       GROUP BY r.id
       ORDER BY points DESC, wins DESC, podiums DESC, races ASC, r.id ASC
       LIMIT ?`),
@@ -99,6 +108,13 @@ export function openDb(file: string) {
     },
     rename(id: number, name: string): void {
       q.rename.run(name, id);
+    },
+    /** Mark a rider as made by a script; for good, since a person never says so of themselves. */
+    markProbe(id: number): void {
+      q.markProbe.run(id);
+    },
+    isProbe(id: number): boolean {
+      return Number((q.isProbe.get(id) as { probe: number } | undefined)?.probe ?? 0) === 1;
     },
     startRace(mode: string, level: number, track: string): number {
       return Number(q.insertRace.run(mode, level, track, Date.now()).lastInsertRowid);
