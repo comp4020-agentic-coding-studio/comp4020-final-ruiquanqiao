@@ -1,0 +1,40 @@
+name: farprobe
+
+# The live site raced from a long way off (ledger N14): GitHub's runners are in
+# the United States and the app is in Sydney, so this is a real trans-Pacific
+# connection, not a simulated one. Run by hand; it touches only the live site,
+# as scripted riders marked as probes (N12), and deploys nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      people:
+        description: scripted people in one room
+        default: "4"
+      seconds:
+        description: seconds to race
+        default: "45"
+
+# never alongside a deploy, which restarts the machine under it
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+      - run: pnpm install --frozen-lockfile
+      - name: Wake the machine
+        # it stops when idle; the first request starts it, and is not the race
+        run: curl -s -o /dev/null -w "first request %{time_total}s\n" https://comp4020-final-ruiquanqiao.fly.dev/healthz
+      - name: Snapshot arrivals
+        run: node scripts/netprobe.ts https://comp4020-final-ruiquanqiao.fly.dev 20
+      - name: A room raced from here
+        run: node scripts/load.ts https://comp4020-final-ruiquanqiao.fly.dev ${{ inputs.people }} ${{ inputs.seconds }}
