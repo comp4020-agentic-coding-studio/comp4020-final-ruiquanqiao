@@ -35,6 +35,13 @@ jobs:
         # it stops when idle; the first request starts it, and is not the race
         run: curl -s -o /dev/null -w "first request %{time_total}s\n" https://comp4020-final-ruiquanqiao.fly.dev/healthz
       - name: Snapshot arrivals
-        run: node scripts/netprobe.ts https://comp4020-final-ruiquanqiao.fly.dev 20
+        run: node scripts/netprobe.ts https://comp4020-final-ruiquanqiao.fly.dev 60
+      - name: Keep the arrivals
+        # each snapshot's arrival against its race time, to replay the far
+        # link through client/netview.ts (spec/netview.test.ts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: netprobe
+          path: .cache/netprobe.json
       - name: A room raced from here
         run: node scripts/load.ts https://comp4020-final-ruiquanqiao.fly.dev ${{ inputs.people }} ${{ inputs.seconds }}
