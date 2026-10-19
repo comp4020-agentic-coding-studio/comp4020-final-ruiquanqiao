@@ -102,6 +102,9 @@ export type Store = {
   qualified(id: number): { level: number; track: string }[];
 };
 
+/** seconds before the same refusal of the same person is logged again */
+export const REJECT_QUIET = 5;
+
 export type Logger = (event: Record<string, unknown>) => void;
 
 /** A person as the logs name them: the name they ride under, and the rider number behind it, so two people who share a name are still two. */
@@ -132,6 +135,8 @@ export class Lobby {
   readonly stepCost = new Samples(600);
   private lastTick: number | null = null;
   private stalled = -Infinity;
+  /** when each person was last logged refused, by action and reason, so a page that keeps asking writes one line, not hundreds */
+  private refused = new WeakMap<Conn, Map<string, number>>();
 
   private store: Store;
   private log: Logger;
@@ -149,8 +154,8 @@ export class Lobby {
   // ---- the pools (N2, N3) ----
 
   join(conn: Conn, mode: Mode, level: number, now: number, road = 0, field?: number): void {
-    if (conn.race && !conn.race.ended) return; // already racing
-    if (conn.match) return; // already matched
+    if (conn.race && !conn.race.ended) return this.reject(conn, "queue", "already racing");
+    if (conn.match) return this.reject(conn, "queue", "already matched");
     this.leave(conn, now);
     conn.pool = mode;
     conn.level = Math.min(5, Math.max(1, Math.round(level) || 1));
@@ -213,12 +218,14 @@ export class Lobby {
 
   watch(conn: Conn, race: number): void {
     const live = this.races.get(race);
-    if (!live || live.ended || (conn.race && !conn.race.ended) || conn.match) return;
+    if (!live || live.ended) return this.reject(conn, "watch", "no such race", { race });
+    if ((conn.race && !conn.race.ended) || conn.match) return this.reject(conn, "watch", "busy racing", { race });
     for (const other of this.races.values()) other.watchers.delete(conn);
     conn.watching = race;
     live.watchers.add(conn);
     conn.send({ t: "start", race: live.id, level: live.level, track: live.road, seed: live.seed, entrants: live.entrants, you: null, countdown: Math.max(0, -live.race.t) });
     this.log({ ev: "watch", who: who(conn), race });
+    this.log({ ev: "snapshot", who: who(conn), kind: "race", race, riders: live.race.riders.length, raceT: Math.round(live.race.t * 10) / 10 });
   }
 
   unwatch(conn: Conn): void {
@@ -235,14 +242,15 @@ export class Lobby {
     // gone while loading: the bike is in the race as one that left
     if (m?.phase === "loading") m.gone.add(conn);
     this.leave(conn, now);
-    this.quit(conn);
+    this.quit(conn, true);
   }
 
   // ---- a match found (N9) ----
 
   accept(conn: Conn, now: number): void {
     const m = conn.match;
-    if (!m || m.phase !== "check" || m.accepted.has(conn)) return;
+    if (!m || m.phase !== "check") return this.reject(conn, "accept", "no match to answer");
+    if (m.accepted.has(conn)) return this.reject(conn, "accept", "already accepted", { match: m.id });
     m.accepted.add(conn);
     this.log({ ev: "accept", who: who(conn), match: m.id, accepted: m.accepted.size, of: m.members.length });
     for (const c of m.members) c.send({ t: "check", match: m.id, accepted: m.accepted.size, of: m.members.length });
@@ -251,7 +259,7 @@ export class Lobby {
 
   decline(conn: Conn, now: number): void {
     const m = conn.match;
-    if (!m || m.phase !== "check") return;
+    if (!m || m.phase !== "check") return this.reject(conn, "decline", "no match to answer");
     this.log({ ev: "decline", who: who(conn), match: m.id });
     this.fail(m, [conn], now, "declined");
   }
@@ -343,9 +351,10 @@ export class Lobby {
   jump(conn: Conn, raw: Record<string, unknown>): void {
     const live = conn.race;
     const n = live && !live.ended ? live.net.get(conn.local) : undefined;
-    if (!live || !n || n.jumps >= NET.jumpsPerRace) return;
+    if (!live || !n) return this.reject(conn, "jump", "not racing");
+    if (n.jumps >= NET.jumpsPerRace) return this.reject(conn, "jump", "over the per-race limit", { race: live.id });
     const j = cleanJump(raw);
-    if (!j) return;
+    if (!j) return this.reject(conn, "jump", "malformed", { race: live.id });
     n.jumps++;
     this.log({ ev: "big_jump", who: n.who, race: live.id, ...j, raceNow: Math.round(live.race.t * 100) / 100, rtt: ms(n.rtt.values().at(-1) ?? null) });
   }
@@ -386,8 +395,9 @@ export class Lobby {
    * Out of the race and back to the board, with the tab still open (H8). The
    * race goes on for everyone else, and the standings say "left".
    */
-  quit(conn: Conn): void {
+  quit(conn: Conn, closing = false): void {
     const live = conn.race;
+    if (!closing && !(live && !live.ended)) this.reject(conn, "quit", "not racing");
     if (live && !live.ended) {
       live.quit.add(conn.local);
       const r = live.race.riders.find((x) => x.id === conn.local);
@@ -401,9 +411,26 @@ export class Lobby {
 
   input(conn: Conn, seq: number, keys: number): void {
     const live = conn.race;
-    if (!live || live.ended || seq <= conn.seq) return;
+    if (!live || live.ended) return this.reject(conn, "input", "not racing");
+    if (seq <= conn.seq) return this.reject(conn, "input", "stale sequence", { seq, last: conn.seq });
     conn.seq = seq;
     live.inputs.set(conn.local, unpackInput(keys));
+  }
+
+  /**
+   * An action the server refused, logged once per person, action and reason
+   * in any few seconds. Refusing without a word was how the server behaved
+   * until crit 10's test, which needs "server rejects action" in the log.
+   */
+  reject(conn: Conn, action: string, why: string, extra: Record<string, unknown> = {}): void {
+    const at = this.perf() / 1000;
+    let seen = this.refused.get(conn);
+    if (!seen) this.refused.set(conn, (seen = new Map()));
+    const key = `${action}|${why}`;
+    const last = seen.get(key);
+    if (last !== undefined && at - last < REJECT_QUIET) return;
+    seen.set(key, at);
+    this.log({ ev: "reject", who: who(conn), action, why, ...extra });
   }
 
   private announce(mode: Mode, now: number): void {

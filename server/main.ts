@@ -170,13 +170,14 @@ wss.on("connection", (ws, req) => {
   log({ ev: "connect", who: who({ name: rider.name, rider: rider.id }), ...(db.isProbe(rider.id) ? { probe: true } : {}) });
   conn.send({ t: "hello", you: rider, qualified: db.qualified(rider.id) });
   lobby.hello(conn);
+  log({ ev: "snapshot", who: who(conn), kind: "hello", races: lobby.rooms().length });
 
   ws.on("message", (data) => {
     let msg: ToServer;
     try {
       msg = JSON.parse(String(data));
     } catch {
-      return;
+      return lobby.reject(conn, "message", "not JSON");
     }
     const now = performance.now() / 1000;
     if (msg.t === "queue" && (msg.mode === "ai" || msg.mode === "human")) lobby.join(conn, msg.mode, Number(msg.level), now, Number(msg.track ?? 0), msg.ai === undefined ? undefined : Number(msg.ai));
@@ -193,14 +194,15 @@ wss.on("connection", (ws, req) => {
     else if (msg.t === "in") lobby.input(conn, Number(msg.seq), Number(msg.keys));
     else if (msg.t === "name" && typeof msg.name === "string") {
       const name = msg.name.replace(/\s+/g, " ").trim().slice(0, 20);
-      if (name) {
+      if (!name) lobby.reject(conn, "name", "empty");
+      else {
         const before = who(conn);
         db.rename(conn.rider, name);
         conn.name = name;
         log({ ev: "rename", who: who(conn), was: before });
         conn.send({ t: "hello", you: { id: conn.rider, name }, qualified: db.qualified(conn.rider) });
       }
-    }
+    } else lobby.reject(conn, "message", "unknown", { t: String((msg as { t?: unknown })?.t).slice(0, 20) });
   });
 
   ws.on("close", () => {

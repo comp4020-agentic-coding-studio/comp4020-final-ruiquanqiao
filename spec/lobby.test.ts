@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { LIVERIES, liveryOf } from "../game/liveries.ts";
 import { CHECK_WAIT, LOAD_MAX, LOAD_MIN, ROOM, type Standing, type ToClient } from "../game/protocol.ts";
 import { type Conn, Lobby } from "../server/lobby.ts";
-import { TUNE } from "../game/sim.ts";
+import { TUNE, unpackInput } from "../game/sim.ts";
 
 // The two matchmaking pools (ledger N2, N3, N4, N5), driven by a fake clock.
 
@@ -488,6 +488,53 @@ describe("the log (who did what)", () => {
     for (let now = t; now < t + 0.2; now += 1 / 60) l.tick(now);
     const hits = lines.filter((e) => e.ev === "hit");
     expect(hits).toEqual([{ ev: "hit", race: live.id, t: 1, by: "Ana#11", on: `${npc.name} (NPC)`, move: "punch" }]);
+  });
+
+  it("names who was refused what and why, once a few seconds however often they ask", () => {
+    const lines: Record<string, unknown>[] = [];
+    let ms = 0;
+    const l = new Lobby({ startRace: () => 1, finishRace: () => {}, qualified: () => [] }, (e) => void lines.push(e), () => 0.5, () => ms);
+    const ana = conn(11, "Ana");
+    const ben = conn(12, "Ben");
+    l.join(ana, "human", 1, 0);
+    l.join(ben, "human", 1, 1);
+    go(l, 11);
+    const live = [...l.races.values()][0];
+    l.input(ana, 5, 0);
+    for (let i = 0; i < 100; i++) l.input(ana, 3, 0b1111);
+    l.join(ana, "ai", 1, 14);
+    const stranger = conn(13, "Cat");
+    l.quit(stranger);
+    l.watch(stranger, 99);
+    const refused = () => lines.filter((e) => e.ev === "reject");
+    expect(refused()).toEqual([
+      { ev: "reject", who: "Ana#11", action: "input", why: "stale sequence", seq: 3, last: 5 },
+      { ev: "reject", who: "Ana#11", action: "queue", why: "already racing" },
+      { ev: "reject", who: "Cat#13", action: "quit", why: "not racing" },
+      { ev: "reject", who: "Cat#13", action: "watch", why: "no such race", race: 99 },
+    ]);
+    ms += 6000;
+    l.input(ana, 3, 0);
+    expect(refused()).toHaveLength(5);
+    // the refused keys never reached the bike
+    expect(live.inputs.get(ana.local)).toEqual(unpackInput(0));
+  });
+
+  it("says when a spectator is sent the race as it stands", () => {
+    const { l, lines } = logged();
+    const ana = conn(11, "Ana");
+    l.join(ana, "ai", 1, 0, 0, 3);
+    go(l, 5);
+    const live = [...l.races.values()][0];
+    const cat = conn(13, "Cat");
+    l.watch(cat, live.id);
+    expect(lines.find((e) => e.ev === "snapshot")).toMatchObject({ who: "Cat#13", kind: "race", race: live.id, riders: live.race.riders.length });
+  });
+
+  it("does not call a closing tab's leaving a refusal", () => {
+    const { l, lines } = logged();
+    l.disconnect(conn(11, "Ana"), 0);
+    expect(lines.filter((e) => e.ev === "reject")).toEqual([]);
   });
 });
 
