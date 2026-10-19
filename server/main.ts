@@ -215,10 +215,19 @@ setInterval(() => lobby.tick(performance.now() / 1000), 1000 / 120);
 
 server.listen(PORT, "0.0.0.0", () => log({ ev: "listening", port: PORT, data: DATA }));
 
+let stopping = false;
 const stop = (): void => {
-  server.close();
-  db.close();
-  process.exit(0);
+  if (stopping) return;
+  stopping = true;
+  // end every race and tell everyone in it before the sockets go; ws.send
+  // only queues, so the frames get a moment to leave before the exit
+  lobby.shutdown("server restarting");
+  for (const c of wss.clients) c.close(1012, "server restarting");
+  setTimeout(() => {
+    server.close();
+    db.close();
+    process.exit(0);
+  }, 300);
 };
 process.on("SIGTERM", stop);
 process.on("SIGINT", stop);

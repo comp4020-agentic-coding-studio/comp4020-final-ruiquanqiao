@@ -284,7 +284,7 @@ function onMessage(msg: ToClient): void {
       if (current.you !== null) result(msg.standings, msg.qualified);
       else if (current.id === spectating) {
         spectating = null;
-        watched(msg.standings);
+        watched(msg.standings, msg.aborted);
       } else $("#watch").hidden = true;
       current = null;
     }
@@ -764,6 +764,7 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
     busted: ["Busted", "You came off with a cop beside you. The race is over for you."],
     unfinished: ["Out of time", "The race closed before you reached the line."],
     quit: ["Left the race", ""],
+    aborted: ["Race stopped", "The server restarted mid-race. It counts for nobody; the page reconnects by itself."],
   };
   const [head, line] = lines[outcome];
   $("#ending").textContent = head;
@@ -777,10 +778,14 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
 }
 
 /** The end of a race one only watched: who won, and the table. */
-function watched(standings: Standing[]): void {
+function watched(standings: Standing[], aborted?: string): void {
   const first = standings.find((s) => s.outcome === "qualified");
-  $("#ending").textContent = "Race over";
-  $("#ending-line").textContent = first ? `${first.name}${first.human ? "" : " (NPC)"} took it.` : "Nobody reached the line.";
+  $("#ending").textContent = aborted ? "Race stopped" : "Race over";
+  $("#ending-line").textContent = aborted
+    ? "The server restarted mid-race. The page reconnects by itself."
+    : first
+      ? `${first.name}${first.human ? "" : " (NPC)"} took it.`
+      : "Nobody reached the line.";
   $("#result").dataset.outcome = "watched";
   $("#again").hidden = true;
   $("#again-live").hidden = false;
@@ -796,7 +801,7 @@ function standingsTable(standings: Standing[], mine: Standing | undefined): void
     const tr = document.createElement("tr");
     if (s === mine) tr.className = "me";
     const time = s.time === null ? "" : `${Math.floor(s.time / 60)}:${(s.time % 60).toFixed(1).padStart(4, "0")}`;
-    const note = s.outcome === "wrecked" ? "wrecked" : s.outcome === "unfinished" ? "—" : s.outcome === "quit" ? "left" : "";
+    const note = s.outcome === "wrecked" ? "wrecked" : s.outcome === "unfinished" ? "—" : s.outcome === "quit" ? "left" : s.outcome === "aborted" ? "stopped" : "";
     for (const text of [String(s.place), s.name + (s.human ? "" : " (NPC)"), time, note]) {
       const td = document.createElement("td");
       td.textContent = text;

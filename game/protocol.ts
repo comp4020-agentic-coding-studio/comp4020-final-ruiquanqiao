@@ -75,7 +75,8 @@ export type Standing = {
   name: string;
   human: boolean;
   place: number;
-  outcome: "qualified" | "placed" | "wrecked" | "busted" | "unfinished" | "quit";
+  /** "aborted": the server stopped mid-race (a restart or a deploy); the race counts for nobody */
+  outcome: "qualified" | "placed" | "wrecked" | "busted" | "unfinished" | "quit" | "aborted";
   time: number | null;
 };
 
@@ -97,7 +98,8 @@ export type ToClient =
   | { t: "ping"; at: number; rtt?: number | null }
   | { t: "start"; race: number; level: number; track: number; seed: number; entrants: Entry[]; you: number | null; /** seconds on the grid before the race goes (V16) */ countdown?: number }
   | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; cars: CarState[]; events: RaceEvent[] }
-  | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[] }
+  /** `aborted` says why, when the server stopped the race rather than the race ending */
+  | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[]; aborted?: string }
   /** every room on the road, once a second, to everyone not racing (N11) */
   | { t: "live"; races: Room[] };
 

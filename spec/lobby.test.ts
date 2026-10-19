@@ -531,6 +531,31 @@ describe("the log (who did what)", () => {
     expect(lines.find((e) => e.ev === "snapshot")).toMatchObject({ who: "Cat#13", kind: "race", race: live.id, riders: live.race.riders.length });
   });
 
+  it("ends every race as stopped when the server shuts down, tells everyone in it, and scores nobody", () => {
+    const lines: Record<string, unknown>[] = [];
+    const finished: Standing[][] = [];
+    const l = new Lobby({ startRace: () => 7, finishRace: (_r, _l, _t, st) => void finished.push(st), qualified: () => [] }, (e) => void lines.push(e), () => 0.5);
+    const ana = conn(11, "Ana");
+    const ben = conn(12, "Ben");
+    l.join(ana, "human", 1, 0);
+    l.join(ben, "human", 1, 1);
+    const t = go(l, 11);
+    for (let now = t; now < t + 1; now += 1 / 60) l.tick(now);
+    const cat = conn(13, "Cat");
+    l.watch(cat, 7);
+    l.shutdown("server restarting");
+    for (const c of [ana, ben, cat]) {
+      const end = c.inbox.findLast((m) => m.t === "end") as Extract<ToClient, { t: "end" }> | undefined;
+      expect(end, c.name).toMatchObject({ race: 7, aborted: "server restarting" });
+      expect(end!.standings.filter((x) => x.human).map((x) => x.outcome)).toEqual(["aborted", "aborted"]);
+    }
+    const end = lines.find((e) => e.ev === "race_end")!;
+    expect(end).toMatchObject({ race: 7, aborted: "server restarting" });
+    expect((end.standings as [string, number, string][]).map(([w, , o]) => `${w} ${o}`).sort()).toEqual(["Ana#11 aborted", "Ben#12 aborted"]);
+    expect(finished).toEqual([]);
+    expect(ana.race).toBeNull();
+  });
+
   it("does not call a closing tab's leaving a refusal", () => {
     const { l, lines } = logged();
     l.disconnect(conn(11, "Ana"), 0);

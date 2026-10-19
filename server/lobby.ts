@@ -722,13 +722,27 @@ export class Lobby {
     return person ? line : null;
   }
 
-  private finish(live: Live, now: number): void {
+  /**
+   * The server is stopping (SIGINT on a restart or a deploy). Every race on
+   * the road ends now, as "aborted", so each page says why the race stopped
+   * instead of only losing its connection, and the log closes every race it
+   * opened: a restart mid-race once left a race_start with no race_end
+   * (docs/testing/multi-user-test-report.md, scenario h). An aborted race is
+   * not written to the leaderboard or the qualifications: nobody finished it.
+   */
+  shutdown(why: string): void {
+    for (const live of this.races.values()) if (!live.ended) this.finish(live, this.clock, why);
+  }
+
+  private finish(live: Live, now: number, aborted: string | null = null): void {
     live.ended = true;
     const order = standings(live.race);
     const result: Standing[] = order.map((r, i) => {
       const quit = live.quit.has(r.id);
       const outcome: Standing["outcome"] = quit
         ? "quit"
+        : aborted
+          ? "aborted"
         : r.phase === "finished"
           ? i < 3
             ? "qualified"
@@ -747,17 +761,17 @@ export class Lobby {
         time: r.finishT >= 0 ? Math.round(r.finishT * 1000) / 1000 : null,
       };
     });
-    this.store.finishRace(live.id, live.level, live.track, result);
-    this.log({ ev: "race_end", race: live.id, secs: Math.round(live.race.t), standings: result.filter((s) => s.human).map((s) => [`${s.name}#${s.id}`, s.place, s.outcome]) });
+    if (!aborted) this.store.finishRace(live.id, live.level, live.track, result);
+    this.log({ ev: "race_end", race: live.id, secs: Math.round(live.race.t), ...(aborted ? { aborted } : {}), standings: result.filter((s) => s.human).map((s) => [`${s.name}#${s.id}`, s.place, s.outcome]) });
     for (const id of [...live.net.keys()]) this.netLine(live, id);
     // and the server's own share of the wait, over its last ten seconds or so
     const hundredths = (x: number | null): number | null => (x === null ? null : Math.round(x * 100) / 100);
     this.log({ ev: "server", race: live.id, lateP95: ms(this.late.p95()), lateMax: ms(this.late.max()), stepP95: hundredths(this.stepCost.p95()), stepMax: hundredths(this.stepCost.max()) });
     for (const c of live.conns.values()) {
-      c.send({ t: "end", race: live.id, standings: result, qualified: this.store.qualified(c.rider) });
+      c.send({ t: "end", race: live.id, standings: result, qualified: this.store.qualified(c.rider), ...(aborted ? { aborted } : {}) });
       c.race = null;
     }
-    for (const c of live.watchers) c.send({ t: "end", race: live.id, standings: result, qualified: [] });
+    for (const c of live.watchers) c.send({ t: "end", race: live.id, standings: result, qualified: [], ...(aborted ? { aborted } : {}) });
     void now;
   }
 }
