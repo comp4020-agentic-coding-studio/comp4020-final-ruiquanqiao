@@ -244,10 +244,34 @@ cleanly, and the new process was listening 3.3 s later:
   run on the machine, printed every line from 03:31:27 onward, including the
   ones written before the restart.
 
-**What I would change:** the shutdown handler could send everyone in a race an
-`end` that says the server is restarting, and log a `race_end` with outcome
-`aborted`. The page would then say what happened instead of "Connection lost",
-and the log would close every race it opened. This is not built yet.
+**Fixed, and run again** (`cd00bef`, ledger N15). On SIGINT or SIGTERM the
+server now ends every race on the road before it exits. Each person's outcome
+is `aborted`, an `end` carrying the reason goes to everyone racing or
+watching, `race_end` is logged with `aborted`, and the sockets close with
+1012 (service restart). The page shows "Race stopped" and reconnects by
+itself. An aborted race is not written to the leaderboard. A restart 5.0 s
+into race 126:
+
+```
+03:47:11.804 H3 Ana is sent the end of race 126: aborted, aborted: server restarting
+03:47:11.807 H3 Ben is sent the end of race 126: aborted, aborted: server restarting
+03:47:16.967 H3 Ben's socket closed, code 1012 (server restarting)
+03:47:19.551 H3 Ben back as H3 Ben#88
+```
+
+The server's own line for the previous run, race 125, shows the log now
+closes the race:
+
+```
+03:46:00.195 {"ev":"race_end","race":125,"secs":6,"aborted":"server restarting","standings":[["H2 Ana#85",1,"aborted"],["H2 Ben#86",2,"aborted"]]}
+```
+
+That run's script reported no end message, and it was wrong. It only looked
+at messages that arrived after the socket closed, and the end arrives before
+the close. The script now looks at everything from the moment of the restart.
+Both people were back 2.6 s after the close, against 1.1 s and 11.4 s before.
+These numbers depend on when the reconnect lands relative to the new process
+starting to listen, not on this change.
 
 ## Summary
 
@@ -261,7 +285,7 @@ and the log would close every race it opened. This is not built yet.
 | e | leave and return | passed |
 | f | isolated rooms | passed |
 | g | two machines | **fails, as predicted**: people cannot meet, and one person becomes two. The app stays on one machine. |
-| h | restart mid-session | as expected: the race is lost, identity and the log survive. The race is left without an end, in the page and in the log. |
+| h | restart mid-session | the race is lost, and identity and the log survive. At first the race was left with no ending, in the page and in the log. **Fixed:** it now ends as `aborted` for everyone in it. |
 
 The pod's own run at the crit, with two people in two Chrome profiles and me
 narrating from `flyctl logs`, is recorded in `reflections/crit-10.md`.

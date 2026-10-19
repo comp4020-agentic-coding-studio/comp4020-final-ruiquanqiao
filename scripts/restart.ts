@@ -54,6 +54,10 @@ function person(name: string, cookie: string): Person {
         if (you.name !== name) p.send({ t: "name", name });
       }
       if (m.t === "ping") p.send({ t: "pong", at: ping });
+      if (m.t === "end") {
+        const mine = (m.standings as { human: boolean; name: string; outcome: string }[]).find((x) => x.name === name);
+        say(`${name} is sent the end of race ${m.race}: ${mine?.outcome}${m.aborted ? `, aborted: ${m.aborted}` : ""}`);
+      }
       if (m.t === "found") p.send({ t: "accept" });
       if (m.t === "loading") p.send({ t: "progress", p: 1 });
       if (m.t === "start" && m.you !== null) {
@@ -61,9 +65,9 @@ function person(name: string, cookie: string): Person {
         p.you = m.you as unknown as number;
       }
     };
-    ws.onclose = () => {
+    ws.onclose = (e) => {
       p.closes.push(Date.now());
-      say(`${name}'s socket closed`);
+      say(`${name}'s socket closed, code ${e.code}${e.reason ? ` (${e.reason})` : ""}`);
       if (!p.stop) setTimeout(connect, 1000);
     };
     ws.onerror = () => {};
@@ -80,6 +84,7 @@ A.send({ t: "queue", mode: "human", level: 1, track: 0 });
 B.send({ t: "queue", mode: "human", level: 1, track: 0 });
 while (A.race === null || B.race === null) await sleep(100);
 say(`race ${A.race} running: ${A.name} bike ${A.you}, ${B.name} bike ${B.you}`);
+const restartAt = { t: 0 };
 let seq = 0;
 const ride = setInterval(() => A.send({ t: "in", seq: ++seq, keys: 1 }), 50);
 await sleep(8000);
@@ -88,6 +93,7 @@ const mine = (before.riders as number[][]).find((r) => r[0] === A.you)!;
 say(`before restart: race time ${(before.time as number).toFixed(1)} s, ${A.name} at z ${mine[1]} m`);
 say("flyctl machine restart");
 const t0 = Date.now();
+restartAt.t = t0;
 execFileSync(fly, ["machine", "restart", machine, "-a", "comp4020-final-ruiquanqiao"], { stdio: "inherit" });
 say(`restart command returned after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 const by = Date.now() + 60_000;
@@ -101,7 +107,7 @@ for (const p of [A, B]) {
   const down = back ? ((back.at - p.closes[0]) / 1000).toFixed(1) : "?";
   say(
     `${p.name}: down ${down} s; snaps of race ${p.race} after: ${after.filter((m) => m.t === "snap" && m.race === p.race).length}; ` +
-      `races listed after: ${JSON.stringify(listed?.races ?? null)}; end message: ${after.some((m) => m.t === "end")}`,
+      `races listed after: ${JSON.stringify(listed?.races ?? null)}; end message: ${p.inbox.some((m) => m.t === "end" && m.at >= restartAt.t)}`,
   );
 }
 A.send({ t: "in", seq: 1000, keys: 1 });
