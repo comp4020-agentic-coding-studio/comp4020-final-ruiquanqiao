@@ -19,8 +19,17 @@ their own browsers.
   visible in one table instead.
 - **When a row is built, flip it to `built` and name its proof** as
   `spec/file.test.ts › test name`. `spec/ledger.test.ts` fails if the test
-  named does not exist, if a planned row has no due crit, or if a source tag
-  does not resolve.
+  named does not exist, if a planned row has no due crit, if a planned row is
+  still planned after its crit's cutoff, or if a source tag does not resolve.
+- **The due date is checked because the form alone was not enough.** On 20 Oct
+  35 rows still read "planned" for C8 or C9 weeks after they were built, while
+  the README said every mechanic had a decision; the test had checked that each
+  row had a due crit, never that the crit had passed. A row that misses its
+  date is built, omitted with the reason, or given a later date in a commit
+  that says it was missed; never moved on silently.
+- A Look row only a person can judge names the commit whose message records
+  the frame-beside-frame comparison, as `judged: <sha>`. Nothing else may be
+  judged rather than tested.
 - **A deviation from the original is a decision, written in the row** as
   `adapted:` with the reason. Changing what a row says is fine; leaving the code
   and the row disagreeing is not.
@@ -64,6 +73,45 @@ their own browsers.
   top speed, how far one second of full steer moves the bike across the road —
   and put it in `spec/`, so a later change that loses it goes red. The commit
   says what was ridden, what felt wrong, and the numbers before and after.
+
+## Your bike answers your keys; the server answers everything else
+
+- **The server owns the race.** It runs the one simulation that counts, takes
+  each person's bike from their connection and never from what a message
+  says, and decides every blow, crash and finish. A browser never decides
+  anything about another rider. `docs/decisions/0001-whose-word-counts.md` and
+  `0002-who-may-do-what.md` say why; `spec/lobby.test.ts` holds the second.
+- **One's own bike moves on the keypress.** The browser runs the same `ride()`
+  on its own rider, and when the server disagrees the drawn bike eases over,
+  never jumps back a round trip. Nothing may make a key wait for the network.
+- **Network behaviour is measured, not reasoned about.** A change to how
+  others are drawn is replayed through `spec/netview.test.ts` against snapshot
+  arrivals recorded from the live server, and ridden through
+  `scripts/badnet.ts` at 300 ms and 3% loss before it ships.
+
+## A room of people comes first
+
+- A room holds eight people. Unless the room asks for another number, NPCs
+  fill the grid to fifteen, so each person who joins takes an NPC's seat;
+  nothing gives a person a different bike, weight or rule from an NPC (ledger
+  N2, O5, R6, R8).
+- Everyone in a room is told apart at a glance: no two people in a room wear
+  the same leathers, and every log line names a person, never a bike number.
+- What a person did is kept on `/data` and survives a restart and a redeploy;
+  a race the server stops ends for everyone in it, and says so.
+
+## Every page, for everyone who arrives
+
+- Markers and visitors start at `/readme/`. Every link on it opens a page
+  (`spec/readme.test.ts`), and every page passes axe in jsdom
+  (`spec/a11y.test.ts`). A change to a screen is run through
+  `node scripts/a11y.ts <url>`, which runs axe in Chrome on every screen of a
+  race at both marking viewports, contrast included, and must report none.
+- Both marking viewports, 1920x1080 and 390x844, are checked with
+  `scripts/shoot.ts` before a visual change ships. A phone gets every action
+  as a button.
+- Loading is timed in Chrome without a GPU as well as with one: a 64 s
+  freeze on the loading screen was invisible on this machine's GPU.
 
 ## Names
 
