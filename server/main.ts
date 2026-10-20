@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { extname, join, normalize } from "node:path";
+import { extname, join, normalize, sep } from "node:path";
 import { marked } from "marked";
 import { WebSocketServer } from "ws";
 import type { ToClient, ToServer } from "../game/protocol.ts";
@@ -44,20 +44,26 @@ const TYPES: Record<string, string> = {
   ".wav": "audio/wav",
 };
 
-function readme(): string {
-  const md = readFileSync(join(ROOT, "README.md"), "utf8");
+/**
+ * A markdown file as a page. The README links into docs/ as it does on GitHub,
+ * and those files link to each other, so every one of them is rendered here
+ * rather than sent as a file the browser would download.
+ */
+function readme(file = "README.md"): string {
+  const md = readFileSync(join(ROOT, file), "utf8");
   const body = marked.parse(md, { async: false }) as string;
+  const title = file === "README.md" ? "README" : (/^#\s+(.+)$/m.exec(md)?.[1] ?? file);
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>README</title>
+<title>${title.replace(/[<&]/g, "")} · Knuckle Road</title>
 <link rel="stylesheet" href="/readme.css">
 </head>
 <body>
 <main>
-<p><a href="/">Back to the road</a></p>
+<p><a href="/">Back to the road</a>${file === "README.md" ? "" : ' · <a href="/readme/">README</a>'}</p>
 ${body}
 </main>
 </body>
@@ -132,6 +138,13 @@ const server = createServer((req, res) => {
   // README images resolve at /readme/ as they do on GitHub (relative docs/)
   const rel = normalize(decodeURIComponent(path.replace(/^\/readme\//, "/"))).replace(/^[\\/]+/, "");
   if (rel.startsWith("..")) return void res.writeHead(400).end();
+  // the markdown the README links to, as pages: the docs, and the asset inventory
+  const md = rel.split(sep).join("/");
+  if (path.startsWith("/readme/") && extname(md) === ".md" && (md === "README.md" || md.startsWith("docs/") || md === "client/public/assets/ASSETS.md")) {
+    if (!existsSync(join(ROOT, md))) return void res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+    res.writeHead(200, { "content-type": TYPES[".html"] }).end(readme(md));
+    return;
+  }
   if (rel.startsWith("docs")) return serveFile(res, join(ROOT, rel));
   // hand-written files in client/public, the bundle in dist/
   const pub = join(ROOT, "client", "public", rel);
