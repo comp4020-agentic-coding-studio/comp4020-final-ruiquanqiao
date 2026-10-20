@@ -9,6 +9,7 @@ import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } fr
 import { LIVERIES } from "../game/liveries.ts";
 import { react } from "./feel.ts";
 import { addFeud, feudLine, moodOf, peopleRows } from "./people.ts";
+import { ACTIONS, type Action, DEFAULT_KEYS, actionOf, keyName, loadKeys, rebind } from "./keys.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Handover, Prediction, Timeline } from "./netview.ts";
@@ -842,18 +843,48 @@ let seq = 0;
 let lastSent = -1;
 let lastSentAt = 0;
 
-const KEYMAP: Record<string, keyof Input> = {
-  KeyW: "throttle",
-  KeyS: "brake",
-  KeyA: "left",
-  KeyD: "right",
-  KeyJ: "hand",
-  KeyK: "foot",
-  ArrowUp: "throttle",
-  ArrowDown: "brake",
-  ArrowLeft: "left",
-  ArrowRight: "right",
-};
+// every control remapped by the rider (R16), kept by this browser
+let bindings = loadKeys(localStorage.getItem("keys"));
+/** the action whose new key is being waited for, if any */
+let choosing: Action | null = null;
+
+function showKeys(): void {
+  const list = $("#keymap");
+  list.replaceChildren();
+  for (const { action, label } of ACTIONS) {
+    const li = document.createElement("li");
+    const span = document.createElement("span");
+    span.textContent = label;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.action = action;
+    b.setAttribute("aria-pressed", String(choosing === action));
+    b.textContent = choosing === action ? "Press a key…" : keyName(bindings[action]);
+    b.setAttribute("aria-label", `${label}: ${choosing === action ? "press the new key" : keyName(bindings[action])}`);
+    b.addEventListener("click", () => {
+      choosing = choosing === action ? null : action;
+      showKeys();
+      list.querySelector<HTMLButtonElement>(`button[data-action="${action}"]`)?.focus();
+    });
+    li.append(span, b);
+    list.append(li);
+  }
+  const k = (a: Action): string => keyName(bindings[a]);
+  $("#keys-line").textContent = `${k("throttle")} ride · ${k("brake")} brake · ${k("left")} ${k("right")} steer · ${k("hand")} hand · ${k("foot")} foot`;
+  // the touch buttons carry the keyboard letter too
+  for (const b of document.querySelectorAll<HTMLElement>("#touch button[data-key]")) {
+    const a = b.dataset.key as Action;
+    const letter = b.firstChild;
+    if ((a === "hand" || a === "foot" || a === "brake" || a === "throttle") && letter?.nodeType === Node.TEXT_NODE) letter.textContent = keyName(bindings[a]);
+  }
+}
+$("#keys-reset").addEventListener("click", () => {
+  bindings = { ...DEFAULT_KEYS };
+  choosing = null;
+  localStorage.setItem("keys", JSON.stringify(bindings));
+  showKeys();
+});
+showKeys();
 
 function setKey(k: keyof Input, down: boolean): void {
   const c = current;
@@ -867,6 +898,19 @@ function setKey(k: keyof Input, down: boolean): void {
 let musicOn = true;
 
 addEventListener("keydown", (e) => {
+  // waiting for a new key for one action (R16): the next key is it, Esc cancels
+  if (choosing) {
+    e.preventDefault();
+    if (e.code !== "Escape") {
+      bindings = rebind(bindings, choosing, e.code);
+      localStorage.setItem("keys", JSON.stringify(bindings));
+    }
+    const was = choosing;
+    choosing = null;
+    showKeys();
+    $<HTMLButtonElement>(`#keymap button[data-action="${was}"]`).focus();
+    return;
+  }
   // F1 to F8 say one of the canned lines (N7), as in the original
   const f = /^F([1-8])$/.exec(e.code);
   if (f && app.dataset.screen === "race") {
@@ -899,13 +943,13 @@ addEventListener("keydown", (e) => {
     else quitRace();
     return;
   }
-  const k = KEYMAP[e.code];
+  const k = actionOf(bindings, e.code);
   if (!k || app.dataset.screen !== "race") return;
   e.preventDefault();
   setKey(k, true);
 });
 addEventListener("keyup", (e) => {
-  const k = KEYMAP[e.code];
+  const k = actionOf(bindings, e.code);
   if (!k) return;
   setKey(k, false);
 });

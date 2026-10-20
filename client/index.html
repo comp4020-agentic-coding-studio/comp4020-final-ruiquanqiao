@@ -87,7 +87,13 @@
       <canvas id="watch-canvas" width="480" height="270" aria-label="The race in progress, seen from the leader's bike"></canvas>
     </div>
 
-    <p class="keys">W throttle · S brake · A D steer · J hand · K foot · M music · Esc leave a race</p>
+    <!-- every control remapped by the rider, kept by this browser (R16) -->
+    <details class="panel" id="controls">
+      <summary>Keys <span id="keys-line" class="keys"></span></summary>
+      <p class="hint">Choose a key, then press the new one. The arrows work too, until you give one away. M is music, Esc leaves a race, F1–F8 say something.</p>
+      <ol id="keymap"></ol>
+      <button id="keys-reset" type="button">Back to W A S D</button>
+    </details>
     <p class="credit">A remake of the arcade mode of <cite>Road Rash</cite> (EA, 1996). <a href="/readme/">Read me</a>.</p>
   </section>
 
