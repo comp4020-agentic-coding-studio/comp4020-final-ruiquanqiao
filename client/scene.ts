@@ -152,8 +152,44 @@ function panoramaTexture(line: Skyline): THREE.CanvasTexture {
     });
     sky[x] = best;
   }
+  // Everything is drawn inside the range's outline, a clip of 4096 points. The
+  // shading and snow are thousands of 1 px strips, and drawn one by one under
+  // that clip they cost so much in a browser with no GPU that loading a race
+  // took 64 s there (headless Chrome on SwiftShader), against milliseconds with
+  // one. So they are painted unclipped on a canvas of their own, and that canvas
+  // goes through the clip once, which trims their ends at the skyline as before.
+  const [strips, sctx] = canvas(w, h);
   const draw = (rock: HTMLImageElement | null): void => {
     ctx.clearRect(0, 0, w, h);
+    sctx.clearRect(0, 0, w, h);
+    // shade the flanks that fall away to the right, by the skyline's own
+    // slope: deciding by which peak owns a column left a hard vertical edge
+    // wherever one peak handed over to the next
+    for (let x = 0; x < w; x++) {
+      const slope = sky[Math.min(w - 1, x + 3)] - sky[Math.max(0, x - 3)];
+      if (slope > 0) {
+        sctx.fillStyle = `rgba(40,40,70,${Math.min(0.3, slope * 0.03)})`;
+        sctx.fillRect(x, sky[x], 1, h);
+      }
+    }
+    // snow down from each summit, in streaks along the fall line
+    const r = rng(7);
+    for (let x = 0; x < (line.snow ? w : 0); x++) {
+      const p = peaks[owner[x]];
+      // snow lies in broad fields broken by rock ribs, not in single streaks
+      const reach = Math.max(0, (320 - p.top) * 0.5);
+      if (reach < 4) continue;
+      // rock ribs break the snow up; on the lesser peaks only the tips hold it
+      const field = 0.45 + 0.3 * Math.sin(x * 0.013 + p.x) + 0.25 * Math.sin(x * 0.047 + p.top);
+      const rib = 0.35 + 0.65 * Math.abs(Math.sin(x * 0.11 + p.x * 0.5));
+      const len = reach * Math.max(0.04, field * field) * rib * (0.9 + r() * 0.1);
+      const g = sctx.createLinearGradient(0, sky[x], 0, sky[x] + len);
+      g.addColorStop(0, "rgba(250,250,255,0.98)");
+      g.addColorStop(0.8, "rgba(235,238,250,0.85)");
+      g.addColorStop(1, "rgba(235,238,250,0)");
+      sctx.fillStyle = g;
+      sctx.fillRect(x, sky[x], 1, len);
+    }
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(0, h);
@@ -171,34 +207,7 @@ function panoramaTexture(line: Skyline): THREE.CanvasTexture {
       ctx.fillStyle = "#86839f";
       ctx.fillRect(0, 0, w, h);
     }
-    // shade the flanks that fall away to the right, by the skyline's own
-    // slope: deciding by which peak owns a column left a hard vertical edge
-    // wherever one peak handed over to the next
-    for (let x = 0; x < w; x++) {
-      const slope = sky[Math.min(w - 1, x + 3)] - sky[Math.max(0, x - 3)];
-      if (slope > 0) {
-        ctx.fillStyle = `rgba(40,40,70,${Math.min(0.3, slope * 0.03)})`;
-        ctx.fillRect(x, sky[x], 1, h);
-      }
-    }
-    // snow down from each summit, in streaks along the fall line
-    const r = rng(7);
-    for (let x = 0; x < (line.snow ? w : 0); x++) {
-      const p = peaks[owner[x]];
-      // snow lies in broad fields broken by rock ribs, not in single streaks
-      const reach = Math.max(0, (320 - p.top) * 0.5);
-      if (reach < 4) continue;
-      // rock ribs break the snow up; on the lesser peaks only the tips hold it
-      const field = 0.45 + 0.3 * Math.sin(x * 0.013 + p.x) + 0.25 * Math.sin(x * 0.047 + p.top);
-      const rib = 0.35 + 0.65 * Math.abs(Math.sin(x * 0.11 + p.x * 0.5));
-      const len = reach * Math.max(0.04, field * field) * rib * (0.9 + r() * 0.1);
-      const g = ctx.createLinearGradient(0, sky[x], 0, sky[x] + len);
-      g.addColorStop(0, "rgba(250,250,255,0.98)");
-      g.addColorStop(0.8, "rgba(235,238,250,0.85)");
-      g.addColorStop(1, "rgba(235,238,250,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(x, sky[x], 1, len);
-    }
+    ctx.drawImage(strips, 0, 0);
     // haze at the foot of the range, where it meets the land
     const haze = ctx.createLinearGradient(0, h * 0.55, 0, h);
     haze.addColorStop(0, "rgba(190,200,225,0)");
