@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NO_INPUT, type Input, TUNE, startRace, step } from "../game/sim.ts";
 import { centreline, frameAt } from "../game/world.ts";
-import { LEVEL_LENGTH, ROADS, SEGMENT, bake, curveAt, makeTrack } from "../game/track.ts";
+import { LEVEL_LENGTH, ROADS, ROAD_HALF, SEGMENT, bake, curveAt, makeTrack } from "../game/track.ts";
 
 // The 3D scene is built on these numbers, so they are checked in metres here
 // rather than by looking at a picture.
@@ -84,7 +84,10 @@ describe("the roads", () => {
         const me = race.riders[0];
         while (me.phase !== "finished" && race.t < 300) {
           const input: Input = { ...NO_INPUT, throttle: true };
-          const want = 3.5 - me.x + TUNE.centrifugal * me.speed * me.speed * curveAt(track, me.z + me.speed * 0.8) * 0.35;
+          // from level 4 the right lane meets a roadblock (P5): take its sand mound
+          const block = track.roadblocks.find((k) => k.z - me.z > -5 && k.z - me.z < 200);
+          const aim = block ? ROAD_HALF - block.mound / 2 : 3.5;
+          const want = aim - me.x + TUNE.centrifugal * me.speed * me.speed * curveAt(track, me.z + me.speed * 0.8) * 0.35;
           input.right = want > 0.3;
           input.left = want < -0.3;
           step(race, new Map([[0, input]]));

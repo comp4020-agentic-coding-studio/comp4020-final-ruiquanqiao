@@ -585,6 +585,62 @@ export class RaceScene {
     const right = new THREE.Mesh(tint(track, strip(track, ROAD_HALF, SHOULDER, 3, () => -0.02, 1)), dirt);
     left.receiveShadow = right.receiveShadow = true;
     this.world.add(road, left, right, slicks(track), ...ribbons(track, this.landMat), town(track));
+    // police roadblocks (P5): red and white barricades across the road with a
+    // bike's width open on the centre line, and a sand mound at each edge
+    for (const b of track.roadblocks) {
+      const stripes = (() => {
+        const [c, ctx] = canvas(128, 16);
+        for (let i = 0; i < 8; i++) {
+          ctx.fillStyle = i % 2 ? "#f2f2f2" : "#d22a1e";
+          ctx.beginPath();
+          ctx.moveTo(i * 16, 16);
+          ctx.lineTo(i * 16 + 8, 0);
+          ctx.lineTo(i * 16 + 24, 0);
+          ctx.lineTo(i * 16 + 16, 16);
+          ctx.fill();
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.wrapS = THREE.RepeatWrapping;
+        return t;
+      })();
+      const leg = new THREE.MeshStandardMaterial({ color: "#c8c8c8", roughness: 0.7 });
+      const sand = new THREE.MeshStandardMaterial({ color: "#c9a66b", roughness: 1, flatShading: true });
+      const inner = ROAD_HALF - b.mound;
+      for (const side of [-1, 1]) {
+        // the barrier from the gap out to the mound, boards at two heights
+        const from = b.gap / 2;
+        const width = inner - from;
+        const mid = side * (from + width / 2);
+        const f = frameAt(track, b.z, mid);
+        const g = new THREE.Group();
+        for (const y of [0.55, 0.95]) {
+          const tex = stripes.clone();
+          tex.repeat.set(width / 1.2, 1);
+          tex.needsUpdate = true;
+          const board = new THREE.Mesh(new THREE.BoxGeometry(width, 0.22, 0.06), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }));
+          board.position.y = y;
+          board.castShadow = true;
+          g.add(board);
+        }
+        for (const lx of [-width / 2 + 0.1, 0, width / 2 - 0.1]) {
+          const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.1, 0.08).translate(0, 0.55, 0), leg);
+          post.position.x = lx;
+          g.add(post);
+        }
+        g.position.set(f.px, f.py, f.pz);
+        g.rotation.y = f.heading + Math.PI / 2 - Math.PI / 2;
+        g.lookAt(new THREE.Vector3(f.px + f.fx, f.py, f.pz + f.fz));
+        this.world.add(g);
+        // the sand mound: a ramp rising to the barrier's line at the edge of the asphalt
+        const m = frameAt(track, b.z - 2.5, side * (inner + b.mound / 2));
+        const ramp = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, b.mound + 0.6, 10, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).scale(1, 0.75, 3.2), sand);
+        ramp.position.set(m.px, m.py - 0.05, m.pz);
+        ramp.rotation.y = m.heading;
+        ramp.castShadow = ramp.receiveShadow = true;
+        this.world.add(ramp);
+      }
+    }
     // traffic cones across a lane (R11): orange with a white band, on a square foot
     this.coneMesh = null;
     if (track.cones.length) {

@@ -349,3 +349,43 @@ describe("getting off on purpose (M3)", () => {
     expect(r.phase).toBe("riding");
   });
 });
+
+describe("police roadblocks (P5)", () => {
+  function through(x: number) {
+    const race = alone();
+    race.track = { ...race.track, roadblocks: [{ z: 1000, gap: 1.1, mound: 1.8 }] };
+    const r = rider(race);
+    Object.assign(r, { z: 900, x, speed: topSpeed(r) * 0.95 });
+    let peak = 0;
+    while (r.z < 1100 && r.phase === "riding") {
+      hold(race, { throttle: true }, DT);
+      peak = Math.max(peak, r.air);
+    }
+    return { phase: r.phase, peak, z: r.z };
+  }
+
+  it("is passed exactly on the centre line or over a sand mound, and stops anything else at the barrier", () => {
+    expect(through(0).phase).toBe("riding");
+    for (const x of [6.2, -6.2]) {
+      const over = through(x);
+      expect(over.phase).toBe("riding");
+      expect(over.peak).toBeGreaterThan(1.1);
+    }
+    for (const x of [0.6, 3.5, -3.5]) expect(through(x).phase).toBe("thrown");
+  });
+
+  it("stands one on every road from level 4 and none below, on a straight, with no car driving through it", () => {
+    for (let road = 0; road < ROADS.length; road++) {
+      expect(makeTrack(3, road).roadblocks).toEqual([]);
+      const t = makeTrack(4, road);
+      expect(t.roadblocks).toHaveLength(1);
+      const b = t.roadblocks[0];
+      expect(t.cones.every((c) => Math.abs(c.z - b.z) > 100)).toBe(true);
+      const race = startRace(t, 4, [{ id: 0, name: "h", human: true }], 3);
+      for (let i = 0; i < 90 / DT; i++) {
+        step(race, new Map());
+        for (const c of race.cars) expect(Math.abs(c.z - b.z), `road ${road}`).toBeGreaterThanOrEqual(150);
+      }
+    }
+  });
+});

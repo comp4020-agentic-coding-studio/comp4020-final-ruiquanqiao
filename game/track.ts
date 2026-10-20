@@ -36,6 +36,13 @@ export type Scenery = { z: number; x: number; kind: "tree" | "pole" | "sign" | "
  */
 export type Slick = { z: number; x: number; length: number; half: number; kind: "oil" | "mud" | "ice" };
 
+/**
+ * A police roadblock across the road (P5): barricades over all four lanes,
+ * with a gap `gap` wide on the yellow centre line and a sand mound at each
+ * edge of the asphalt that throws a bike over the barrier.
+ */
+export type Roadblock = { z: number; gap: number; mound: number };
+
 /** A traffic cone standing on the asphalt (R11): ridden over, it is a ramp. */
 export type Cone = { z: number; x: number };
 
@@ -64,6 +71,8 @@ export type Track = {
   slicks: Slick[];
   /** the traffic cones, in order along the road (R11) */
   cones: Cone[];
+  /** police roadblocks, from level 4 (P5) */
+  roadblocks: Roadblock[];
 };
 
 // Sections ease in and out of their curve and their climb, so a bend never
@@ -193,7 +202,7 @@ export function bake(name: string, sections: Section[], length: number, seed: nu
     for (let i = 0; i < n; i++) cones.push({ z: z + i * 2.5, x: lane + (rand() - 0.5) * 0.6 });
   }
 
-  return { id, name, length, segments, curve, height, biome, wallL, wallR, water, scenery, slicks, cones };
+  return { id, name, length, segments, curve, height, biome, wallL, wallR, water, scenery, slicks, cones, roadblocks: [] };
 }
 
 export const segmentAt = (track: Track, z: number): number =>
@@ -387,5 +396,15 @@ export const LEVEL_LENGTH = [8500, 8800, 9100, 9400, 9700] as const;
 /** A road at a level's length (T2); higher levels run further down the same road (S7). */
 export const makeTrack = (level: number, road = 0): Track => {
   const r = ROADS[Math.min(ROADS.length - 1, Math.max(0, road))];
-  return bake(r.name, r.sections, LEVEL_LENGTH[Math.min(5, Math.max(1, level)) - 1], 20261006 + road, road);
+  const t = bake(r.name, r.sections, LEVEL_LENGTH[Math.min(5, Math.max(1, level)) - 1], 20261006 + road, road);
+  // from level 4, a roadblock two thirds of the way down, on a straight
+  // stretch, with cones and patches cleared from in front of it (P5)
+  if (level >= 4) {
+    let z = Math.round(t.length * 0.62);
+    while (z < t.length - 400 && Math.abs(curveAt(t, z)) > 1 / 900) z += 20;
+    t.roadblocks = [{ z, gap: 1.1, mound: 1.8 }];
+    t.cones = t.cones.filter((c) => Math.abs(c.z - z) > 120);
+    t.slicks = t.slicks.filter((s) => Math.abs(s.z - z) > 120);
+  }
+  return t;
 };

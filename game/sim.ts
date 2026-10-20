@@ -3,7 +3,7 @@
 // client runs the same code to predict its own rider, and spec/ runs it with
 // scripted keys. Ledger row IDs are given where a rule answers one.
 
-import { type Cone, OPEN, ROAD_HALF, SHOULDER, type Slick, type Track, curveAt, heightAt, wallAt } from "./track.ts";
+import { type Cone, OPEN, ROAD_HALF, type Roadblock, SHOULDER, type Slick, type Track, curveAt, heightAt, wallAt } from "./track.ts";
 
 export const DT = 1 / 60; // one fixed step, whatever the display does
 export const MPH = 0.44704; // m/s
@@ -75,6 +75,13 @@ export const TUNE = {
   offBelow: 5.5,
   /** a crest lifts the bike once following the road would take this share of gravity pulling down (R10) */
   crestLift: 1.3,
+  /** a sand mound at a roadblock throws the bike up at this, plus this per m/s (P5): enough to clear the barrier at speed */
+  moundLift: 2,
+  moundPerSpeed: 0.06,
+  /** how high the barricades stand, m; a bike higher than this goes over */
+  barrierHeight: 1.1,
+  /** m either side of a roadblock that no car drives in */
+  blockClosed: 150,
   /** a cone ridden over throws the bike up at this, plus this much per m/s of speed (R11) */
   coneLift: 1.5,
   conePerSpeed: 0.035,
@@ -693,6 +700,25 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
     r.air = 1e-3;
     r.vy = roadV;
   }
+  // a roadblock (P5): its sand mound at either edge is a ramp, the gap on the
+  // centre line is the way through, and anything else is the barrier
+  const block = roadblockAt(track, r.z, r.speed * dt);
+  if (block) {
+    const edge = Math.abs(r.x) > ROAD_HALF - block.mound;
+    const gap = Math.abs(r.x) < block.gap / 2 - BIKE.width / 4;
+    if (r.air <= 0 && edge && r.speed > 8) {
+      r.air = 1e-3;
+      r.vy = TUNE.moundLift + TUNE.moundPerSpeed * r.speed;
+      if (race) race.events.push({ t: race.t, kind: "bump", rider: r.id, other: -1, with: "cone", hard: 0.8, from: r.x });
+    } else if (!gap && !edge && r.air < TUNE.barrierHeight) {
+      const into = r.speed;
+      r.speed *= 0.3;
+      crash(r, "wall", race, popAt(into));
+      // the bike lies far enough back to line up again on the gap or a mound
+      r.bikeZ = block.z - 15;
+      return;
+    }
+  }
   // a cone ridden over is a ramp, every time (R11): the bike goes up off it
   if (r.air <= 0 && r.speed > 8) {
     const c = coneAt(track, r.z, r.x);
@@ -788,6 +814,12 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   }
 
   if (r.leanHeld > TUNE.leanLimit * (slick ? TUNE.slickLean : 1)) crash(r, "lowside", race);
+}
+
+/** The roadblock a bike reaches this step, moving `ahead` metres, if any (P5). */
+export function roadblockAt(track: Track, z: number, ahead: number): Roadblock | null {
+  for (const b of track.roadblocks) if (z <= b.z && z + ahead > b.z) return b;
+  return null;
 }
 
 /** A cone under a bike's front wheel, if any (R11). */
@@ -1237,6 +1269,13 @@ function copInput(race: Race, r: Rider): Input {
     }
     if (target.phase === "riding" && Math.abs(behind) < 1.8 && Math.abs(target.x - r.x) < 2 && random(race) < r.aggression * DT * 4) input.hand = true;
   }
+  // a roadblock ahead (P5): the police know their own barricades, so a cop
+  // takes the sand mound on his side like the field does, chase or no chase
+  const block = race.track.roadblocks.find((b) => b.z - r.z > -5 && b.z - r.z < 250);
+  if (block) {
+    r.line = Math.sign(r.x || 1) * (ROAD_HALF - block.mound / 2);
+    if (block.z - r.z < 60) input.throttle = true;
+  }
   // bends ridden as the field rides them, so flat out does not mean off the road
   const curve = curveAt(race.track, r.z + r.speed * 1.2);
   const want = r.line - r.x + TUNE.centrifugal * r.speed * r.speed * curve * 0.25;
@@ -1262,7 +1301,18 @@ function copInput(race: Race, r: Rider): Input {
 function drive(race: Race): void {
   const L = race.track.length;
   for (const c of race.cars) {
+    const was = c.z;
     c.z += c.dir * c.speed * DT;
+    // the road is shut at a roadblock (P5): no car drives through the
+    // barricades; one reaching the closed stretch comes out the far side,
+    // 150 m either way of it, out of sight round the queue it would be in
+    for (const b of race.track.roadblocks) {
+      const lo = b.z - TUNE.blockClosed;
+      const hi = b.z + TUNE.blockClosed;
+      if (c.dir > 0 && was < lo && c.z >= lo) c.z = hi + (c.z - lo);
+      if (c.dir < 0 && was > hi && c.z <= hi) c.z = lo - (hi - c.z);
+      if (c.z > lo && c.z < hi) c.z = c.dir > 0 ? hi : lo;
+    }
     if (c.z > L + 50) c.z -= L;
     if (c.z < -50) c.z += L;
     c.changeT -= DT;
@@ -1411,9 +1461,13 @@ function pickFoe(race: Race, r: Rider): Rider | null {
 
 export function aiInput(race: Race, r: Rider): Input {
   if (r.cop) return copInput(race, r);
-  const foe = pickFoe(race, r);
+  // a roadblock ahead (P5): an NPC knows the road, leaves any fight and
+  // lines up on the sand mound on its own side
+  const block = race.track.roadblocks.find((b) => b.z - r.z > -5 && b.z - r.z < 250);
+  const foe = block ? null : pickFoe(race, r);
+  if (block) r.foe = -1;
   if (foe) return duelInput(race, r, foe);
-  const line = clearLine(race, r, r.line);
+  const line = block ? Math.sign(r.x || 1) * (ROAD_HALF - block.mound / 2) : clearLine(race, r, r.line);
   const input: Input = { ...NO_INPUT, throttle: true };
   const curve = curveAt(race.track, r.z + r.speed * 1.2);
   // hold the line against the bend
