@@ -8,7 +8,7 @@
 // start, with each person's countdown shortened by half their round trip so
 // GO lands at the same moment in every browser.
 
-import { CHECK_WAIT, type Entry, type Room, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
+import { CHECK_WAIT, type Entry, type Feud, type Room, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, TUNE, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { LIVERIES } from "../game/liveries.ts";
 import { NET, Samples, cleanJump, cleanReport, ms } from "../game/net.ts";
@@ -70,6 +70,8 @@ export type Match = {
   entrants: Entry[];
   progress: Map<Conn, number>;
   gone: Set<Conn>;
+  /** the grudges already held between the people in it, by bike (O3) */
+  feuds: Feud[];
 };
 
 export type Live = {
@@ -92,6 +94,8 @@ export type Live = {
   timeLimit: number; // s
   /** each person's network, by bike (N14) */
   net: Map<number, PersonNet>;
+  /** the grudges between its people, by bike, as they stand now (O3) */
+  feuds: Feud[];
 };
 
 type Pool = { members: Conn[]; startsAt: number | null };
@@ -100,6 +104,10 @@ export type Store = {
   startRace(mode: string, level: number, track: string): number;
   finishRace(race: number, level: number, track: string, standings: Standing[]): void;
   qualified(id: number): { level: number; track: string }[];
+  /** one person knocked another off, kept for good (O3) */
+  grudge?(holder: number, against: number, race: number): void;
+  /** every grudge held between any two of these people (O3) */
+  grudges?(ids: number[]): { holder: number; against: number; n: number }[];
 };
 
 /** seconds before the same refusal of the same person is logged again */
@@ -223,7 +231,7 @@ export class Lobby {
     for (const other of this.races.values()) other.watchers.delete(conn);
     conn.watching = race;
     live.watchers.add(conn);
-    conn.send({ t: "start", race: live.id, level: live.level, track: live.road, seed: live.seed, entrants: live.entrants, you: null, countdown: Math.max(0, -live.race.t) });
+    conn.send({ t: "start", race: live.id, level: live.level, track: live.road, seed: live.seed, entrants: live.entrants, you: null, countdown: Math.max(0, -live.race.t), feuds: live.feuds.map((f) => ({ ...f })) });
     this.log({ ev: "watch", who: who(conn), race });
     this.log({ ev: "snapshot", who: who(conn), kind: "race", race, riders: live.race.riders.length, raceT: Math.round(live.race.t * 10) / 10 });
   }
@@ -451,7 +459,7 @@ export class Lobby {
     const newest = [...this.races.values()].filter((l) => !l.ended).at(-1);
     if (!newest) return;
     newest.watchers.add(conn);
-    conn.send({ t: "start", race: newest.id, level: newest.level, track: newest.road, seed: newest.seed, entrants: newest.entrants, you: null, countdown: TUNE.countdown });
+    conn.send({ t: "start", race: newest.id, level: newest.level, track: newest.road, seed: newest.seed, entrants: newest.entrants, you: null, countdown: TUNE.countdown, feuds: newest.feuds.map((f) => ({ ...f })) });
   }
 
   /** A pool fires: the first eight in it are a match, asked to accept (N9). */
@@ -462,7 +470,7 @@ export class Lobby {
     pool.members = pool.members.slice(ROOM);
     pool.startsAt = pool.members.length === 0 ? null : now + POOL_WAIT[mode];
     for (const c of members) c.pool = null;
-    const m: Match = { id: ++this.matchIds, mode, members, phase: "check", accepted: new Set(), deadline: now + CHECK_WAIT, since: now, level: 1, road: 0, seed: 0, entrants: [], progress: new Map(), gone: new Set() };
+    const m: Match = { id: ++this.matchIds, mode, members, phase: "check", accepted: new Set(), deadline: now + CHECK_WAIT, since: now, level: 1, road: 0, seed: 0, entrants: [], progress: new Map(), gone: new Set(), feuds: [] };
     this.matches.set(m.id, m);
     for (const c of members) {
       c.match = m;
@@ -515,7 +523,20 @@ export class Lobby {
     }
     m.entrants = entrants;
     m.seed = Math.floor(this.random() * 2 ** 31);
-    members.forEach((c, i) => c.send({ t: "loading", match: m.id, level: m.level, track: m.road, seed: m.seed, entrants, you: i }));
+    // who in the room has been knocked off by whom before, in any race (O3),
+    // turned from riders into bikes in this race; two tabs of one rider share
+    // that rider's grudges
+    m.feuds = [];
+    const held = this.store.grudges?.([...new Set(members.map((c) => c.rider))]) ?? [];
+    for (const g of held) {
+      members.forEach((h, i) => {
+        if (h.rider !== g.holder) return;
+        members.forEach((a, j) => {
+          if (a.rider === g.against) m.feuds.push({ holder: i, against: j, n: g.n });
+        });
+      });
+    }
+    members.forEach((c, i) => c.send({ t: "loading", match: m.id, level: m.level, track: m.road, seed: m.seed, entrants, you: i, feuds: m.feuds }));
     this.ping(m, now);
   }
 
@@ -555,6 +576,7 @@ export class Lobby {
       ended: false,
       timeLimit: track.length / 30 + 90,
       net: new Map(),
+      feuds: m.feuds.map((f) => ({ ...f })),
     };
     this.races.set(id, live);
     members.forEach((c, i) => {
@@ -575,7 +597,7 @@ export class Lobby {
       live.net.set(i, personNet(who(c)));
       // the message takes half a round trip to arrive; the count it carries is
       // that much shorter, so GO lands at the same moment for everyone
-      c.send({ t: "start", race: id, level, track: road, seed, entrants, you: i, countdown: Math.max(0, TUNE.countdown - (c.rtt ?? 0) / 2) });
+      c.send({ t: "start", race: id, level, track: road, seed, entrants, you: i, countdown: Math.max(0, TUNE.countdown - (c.rtt ?? 0) / 2), feuds: live.feuds.map((f) => ({ ...f })) });
     });
     const late = members.filter((c) => !m.gone.has(c) && (m.progress.get(c) ?? 0) < 1).length;
     // who each rider number in this race is, for reading its events back
@@ -680,6 +702,7 @@ export class Lobby {
         const e = live.race.events[i];
         const line = e.kind === "bump" ? null : this.named(live, e as unknown as Record<string, unknown> & { kind: string; t: number });
         if (line) this.log(line);
+        if (e.kind === "crash" && e.by !== undefined) this.feud(live, e.rider, e.by);
       }
       const events = live.race.events.slice(live.sent);
       live.sent = live.race.events.length;
@@ -693,6 +716,21 @@ export class Lobby {
 
     const everyoneGone = live.conns.size === 0;
     if (humansDone(live.race) || everyoneGone || live.race.t > live.timeLimit) this.finish(live, now);
+  }
+
+  /**
+   * One person knocked another off (O3): kept for good, held by the one who
+   * went down. Between people only; a grudge an NPC holds lasts its race (O5).
+   */
+  private feud(live: Live, holder: number, against: number): void {
+    const h = live.riders.get(holder);
+    const a = live.riders.get(against);
+    if (h === undefined || a === undefined || h === a) return;
+    this.store.grudge?.(h, a, live.id);
+    // and the same in this race's own tally, for a spectator who arrives later
+    const f = live.feuds.find((x) => x.holder === holder && x.against === against);
+    if (f) f.n++;
+    else live.feuds.push({ holder, against, n: 1 });
   }
 
   /**

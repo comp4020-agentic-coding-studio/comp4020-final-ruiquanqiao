@@ -31,7 +31,8 @@ that are "confrontational" on purpose, because they make play festive in a
 room. Road Rash already is one. A room holds eight people, each in leathers no
 one else there wears; NPCs fill only the empty seats, so one visitor
 still gets the original's full grid, and each person who joins takes an NPC's
-place. Everyone starts on one GO, and anyone can watch a race at `/live`.
+place. Everyone starts on one GO, anyone can watch at `/live`, and whoever
+knocks you off is named the next time you share a road.
 
 **Small on purpose.** Shirky (2004) wrote software for "dozens of users", and
 Sloan (2020) an app nobody else will use. This is for a room of friends: your

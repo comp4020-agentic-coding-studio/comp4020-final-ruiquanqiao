@@ -63,6 +63,9 @@ export type RiderState = [
   tilt: number,
 ];
 
+/** A grudge between two people in a race (O3), by their bikes in it: `holder` was knocked off by `against`, `n` times across every race, this one included. */
+export type Feud = { holder: number; against: number; n: number };
+
 export type Entry = { id: number; name: string; human: boolean; /** a person's leathers, an index in LIVERIES, the same in everyone's view */ look?: number };
 
 /** A car on the wire: where it is, and how fast, for drawing between snaps. */
@@ -91,12 +94,12 @@ export type ToClient =
   /** someone else did not accept: back at the front of the pool */
   | { t: "requeued"; mode: Mode }
   /** everyone accepted: the race as it will be, to load (N10) */
-  | { t: "loading"; match: number; level: number; track: number; seed: number; entrants: Entry[]; you: number }
+  | { t: "loading"; match: number; level: number; track: number; seed: number; entrants: Entry[]; you: number; feuds?: Feud[] }
   /** every person's loading and ping, in ms */
   | { t: "loads"; match: number; riders: { id: number; p: number; ping: number }[] }
   /** a round trip asked for; in a race it carries this person's last one, in ms, for the HUD (N14) */
   | { t: "ping"; at: number; rtt?: number | null }
-  | { t: "start"; race: number; level: number; track: number; seed: number; entrants: Entry[]; you: number | null; /** seconds on the grid before the race goes (V16) */ countdown?: number }
+  | { t: "start"; race: number; level: number; track: number; seed: number; entrants: Entry[]; you: number | null; /** seconds on the grid before the race goes (V16) */ countdown?: number; feuds?: Feud[] }
   | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; cars: CarState[]; events: RaceEvent[] }
   /** `aborted` says why, when the server stopped the race rather than the race ending */
   | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[]; aborted?: string }

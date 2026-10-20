@@ -3,11 +3,12 @@
 // server runs, so the bike answers the keys at once, and draws everyone else
 // a tenth of a second in the past, between two snapshots.
 
-import { type CarState, type Entry, type Leader, type Mode, type RiderState, type Room, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
+import { type CarState, type Entry, type Feud, type Leader, type Mode, type RiderState, type Room, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash, revs } from "./dash.ts";
 import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { LIVERIES } from "../game/liveries.ts";
 import { react } from "./feel.ts";
+import { addFeud, feudLine, peopleRows } from "./people.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Handover, Prediction, Timeline } from "./netview.ts";
@@ -76,6 +77,9 @@ type Current = {
   handover: Handover;
   /** this tab's clock when the last snapshot arrived */
   lastSnap: number;
+  /** who is in it, and the grudges between its people, kept up as knockdowns happen (N6, O3) */
+  entrants: Entry[];
+  feuds: Feud[];
 };
 
 let current: Current | null = null;
@@ -92,7 +96,8 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   const track = ready?.track ?? makeTrack(msg.level, msg.track ?? 0);
   const race = startRace(track, msg.level, msg.entrants.map((e: Entry) => ({ ...e })), msg.seed, msg.countdown ?? 0);
   const go = performance.now() / 1000 + (msg.countdown ?? 0);
-  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(adaptiveDelay), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch(), handover: new Handover(), lastSnap: performance.now() / 1000 };
+  current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(adaptiveDelay), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch(), handover: new Handover(), lastSnap: performance.now() / 1000, entrants: msg.entrants, feuds: (msg.feuds ?? []).map((f) => ({ ...f })) };
+  peopleShown = "";
   showPing(null);
   if (msg.you !== null) {
     show("race");
@@ -138,6 +143,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
   c.go = Math.min(c.go, now - msg.time);
   // every touch is seen and heard (K13): tilts, a knocked car, a rider launched
   for (const e of msg.events) {
+    if (e.kind === "crash" && e.by !== undefined) addFeud(c.feuds, c.entrants, e.rider, e.by);
     heard.push(e);
     if (heard.length > 300) heard.shift();
     // a rub of one's own was already felt as it was predicted
@@ -209,7 +215,10 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
       const by = c.race.riders.find((x) => x.id === e.by);
       if (by) kicked(r, by.x);
     }
-    if (e.kind === "crash" && e.rider === c.you) banner(e.cause === "knockdown" ? "Knocked off" : "Down!", 1200);
+    if (e.kind === "crash" && e.rider === c.you) {
+      const by = e.by === undefined ? undefined : c.entrants.find((x) => x.id === e.by);
+      banner(e.cause !== "knockdown" ? "Down!" : by?.human ? `Knocked off by ${by.name}` : "Knocked off", by?.human ? 2200 : 1200);
+    }
     if (e.kind === "wrecked" && e.rider === c.you) banner("Wrecked", 3000);
     // hitting a car flashes the screen white (K3)
     if (e.kind === "crash" && e.rider === c.you && (e.cause === "rearEnd" || e.cause === "headOn")) flash("#ffffff");
@@ -611,6 +620,16 @@ function onLoading(msg: Extract<ToClient, { t: "loading" }>): void {
     bar.className = "bar";
     bar.append(document.createElement("i"));
     li.append(swatch(e.look), name, ping, bar);
+    // a grudge from an earlier race between this person and the one loading (O3)
+    const tally = (h: number, a: number): number => msg.feuds?.find((f) => f.holder === h && f.against === a)?.n ?? 0;
+    const feud = e.id === msg.you ? "" : feudLine(tally(msg.you, e.id), tally(e.id, msg.you));
+    if (feud) {
+      const p = document.createElement("span");
+      p.className = "feud";
+      p.textContent = feud;
+      li.classList.add("grudge");
+      li.insertBefore(p, bar);
+    }
     list.append(li);
   }
   show("loading");
@@ -1163,6 +1182,7 @@ function hud(c: Current, id = c.you): void {
     stamina: r.stamina / 100,
     opponent: o ? { name: o.name, stamina: o.stamina / 100, gap: o.z - r.z } : null,
   });
+  people(c, id);
   // the same facts for a screen reader, spoken only when they change
   const said = `Position ${position} of ${c.race.riders.filter((x) => !x.cop).length}`;
   if (said !== lastSaid) {
@@ -1170,6 +1190,42 @@ function hud(c: Current, id = c.you): void {
     lastSaid = said;
   }
   void topSpeed;
+}
+
+/** Every person's place in the upper left (N6), with the grudges against the bike the screen is behind (O3); redrawn only when it changes. */
+let peopleShown = "";
+function people(c: Current, id: number | null): void {
+  const rows = peopleRows(c.race, c.entrants, id, c.feuds);
+  const el = $("#people");
+  // one person alone has the place on the dash already
+  const key = rows.length < 2 ? "" : JSON.stringify(rows);
+  if (key === peopleShown) return;
+  peopleShown = key;
+  el.hidden = key === "";
+  el.innerHTML = "";
+  for (const r of rows) {
+    const li = document.createElement("li");
+    li.classList.toggle("me", r.me);
+    li.classList.toggle("out", r.out);
+    li.classList.toggle("grudge", r.onYou > 0);
+    const place = document.createElement("b");
+    place.textContent = String(r.place);
+    const name = document.createElement("span");
+    name.className = "who";
+    name.textContent = r.name;
+    li.append(place, swatch(r.look), name);
+    const feud = feudLine(r.onYou, r.byYou);
+    if (feud) {
+      const mark = document.createElement("span");
+      mark.className = "feud";
+      // a head-to-head score, theirs first: the words are on the loading screen and in the label
+      mark.textContent = `${r.onYou}–${r.byYou}`;
+      mark.title = feud;
+      mark.setAttribute("aria-label", feud);
+      li.append(mark);
+    }
+    el.append(li);
+  }
 }
 
 // ---- debugging and tuning handle (CLAUDE.md: read state, don't screenshot it) ----
@@ -1198,6 +1254,8 @@ window.__rash = {
   net: () => netSent,
   /** everyone as drawn this frame, unrounded */
   /** how far back the others are drawn now, s, and whether this frame was past the newest snapshot (N14) */
+  /** the people list and grudges as this tab has them (N6, O3) */
+  people: () => (current ? { rows: peopleRows(current.race, current.entrants, current.you, current.feuds), feuds: current.feuds } : null),
   delay: () => (current ? { delay: current.timeline.delay, starved: current.timeline.starved() } : null),
   drawn: () => current?.race.riders.map((r) => ({ id: r.id, z: r.z, x: r.x, phase: r.phase, cop: r.cop })),
   riders: () => current?.race.riders.map((r) => ({ id: r.id, cop: r.cop, z: Math.round(r.z), x: r.x.toFixed(1), phase: r.phase, weapon: r.weapon, attack: r.attack && `${r.attack.kind}${r.attack.t.toFixed(2)}${r.attack.landed ? "L" : ""}` })),

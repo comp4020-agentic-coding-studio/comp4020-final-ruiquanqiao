@@ -97,6 +97,9 @@ their own browsers.
   N2, O5, R6, R8).
 - Everyone in a room is told apart at a glance: no two people in a room wear
   the same leathers, and every log line names a person, never a bike number.
+- Every person sees where every other person is placed (N6), and a person who
+  knocked another off is remembered between them for good (O3). What one
+  person did to another is between people: an NPC's grudge lasts its race.
 - What a person did is kept on `/data` and survives a restart and a redeploy;
   a race the server stops ends for everyone in it, and says so.
 

@@ -297,7 +297,8 @@ export type Rider = {
 
 export type RaceEvent =
   | { t: number; kind: "hit"; by: number; on: number; move: AttackKind }
-  | { t: number; kind: "crash"; rider: number; cause: CrashCause }
+  /** `by`: the rider whose blow knocked this one off, for a knockdown (O3) */
+  | { t: number; kind: "crash"; rider: number; cause: CrashCause; by?: number }
   | { t: number; kind: "busted"; rider: number; cop: number }
   | { t: number; kind: "snatch"; by: number; from: number; weapon: Weapon }
   | { t: number; kind: "wrecked"; rider: number }
@@ -704,7 +705,7 @@ function setPhase(r: Rider, phase: Phase): void {
  * Off the bike (M2, M4). Knocked off by another rider, the bike coasts on
  * without you (K5); come off by your own doing, it slides a little and stops.
  */
-function crash(r: Rider, cause: CrashCause, race: Race | null, pop = TUNE.popSlide): void {
+function crash(r: Rider, cause: CrashCause, race: Race | null, pop = TUNE.popSlide, by?: number): void {
   r.damage = Math.max(0, r.damage - TUNE.crashDamage[cause]);
   r.bikeZ = r.z;
   r.bikeX = r.x;
@@ -716,7 +717,7 @@ function crash(r: Rider, cause: CrashCause, race: Race | null, pop = TUNE.popSli
   r.leanHeld = 0;
   r.build = 0;
   r.attack = null;
-  if (race) race.events.push({ t: race.t, kind: "crash", rider: r.id, cause });
+  if (race) race.events.push({ t: race.t, kind: "crash", rider: r.id, cause, ...(by === undefined ? {} : { by }) });
   if (r.damage <= 0) {
     setPhase(r, "wrecked");
     r.speed = 0;
@@ -861,7 +862,7 @@ function hit(race: Race, by: Rider, on: Rider, move: AttackKind): void {
   // anyone else and they hold it against you for the rest of the race (O5)
   if (on.cop && !by.cop) on.chase = by.id;
   else if (!on.cop) on.grudge[by.id] = (on.grudge[by.id] ?? 0) + 1;
-  if (on.stamina <= 0) crash(on, "knockdown", race); // (C8)
+  if (on.stamina <= 0) crash(on, "knockdown", race, TUNE.popSlide, by.id); // (C8), and who did it (O3)
 }
 
 /**

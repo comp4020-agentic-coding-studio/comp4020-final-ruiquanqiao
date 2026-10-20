@@ -9,6 +9,9 @@ import { type Leader, POINTS, type Standing } from "../game/protocol.ts";
 
 export type Db = ReturnType<typeof openDb>;
 
+/** `holder` was knocked off by `against`, `n` times over every race (O3). */
+export type Grudge = { holder: number; against: number; n: number };
+
 export function openDb(file: string) {
   mkdirSync(dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
@@ -59,6 +62,16 @@ export function openDb(file: string) {
       at INTEGER NOT NULL,
       PRIMARY KEY (rider_id, level, track)
     );
+    -- who knocked whom off, between people, for good (O3): the holder was
+    -- knocked off by the other, n times, the last of them in race_id
+    CREATE TABLE IF NOT EXISTS grudges (
+      holder INTEGER NOT NULL REFERENCES riders(id),
+      against INTEGER NOT NULL REFERENCES riders(id),
+      n INTEGER NOT NULL,
+      race_id INTEGER NOT NULL,
+      at INTEGER NOT NULL,
+      PRIMARY KEY (holder, against)
+    );
   `);
   // a rider made by a script rather than a person: a probe of the network, a
   // load test, the spec run against the app. Raced like anyone, kept out of
@@ -78,6 +91,8 @@ export function openDb(file: string) {
     insertResult: db.prepare("INSERT INTO results (race_id, rider_id, name, place, outcome, time_ms) VALUES (?, ?, ?, ?, ?, ?)"),
     qualify: db.prepare("INSERT OR IGNORE INTO qualifications (rider_id, level, track, race_id, at) VALUES (?, ?, ?, ?, ?)"),
     qualified: db.prepare("SELECT level, track FROM qualifications WHERE rider_id = ? ORDER BY level, track"),
+    grudge: db.prepare("INSERT INTO grudges (holder, against, n, race_id, at) VALUES (?, ?, 1, ?, ?) ON CONFLICT (holder, against) DO UPDATE SET n = n + 1, race_id = excluded.race_id, at = excluded.at"),
+    grudges: db.prepare("SELECT holder, against, n FROM grudges WHERE holder IN (SELECT value FROM json_each(?)) AND against IN (SELECT value FROM json_each(?))"),
     log: db.prepare("INSERT INTO log (at, ev, who, line) VALUES (?, ?, ?, ?)"),
     logSince: db.prepare("SELECT at, line FROM log WHERE at >= ? AND (? IS NULL OR line LIKE ?) AND (? IS NULL OR ev IN (SELECT value FROM json_each(?))) ORDER BY id LIMIT ?"),
     // every person who has raced, from the results kept for every race: a
@@ -136,6 +151,15 @@ export function openDb(file: string) {
     },
     qualified(id: number): { level: number; track: string }[] {
       return q.qualified.all(id) as { level: number; track: string }[];
+    },
+    /** One person knocked another off (O3): the one knocked off holds it against the other. */
+    grudge(holder: number, against: number, race: number): void {
+      if (holder !== against) q.grudge.run(holder, against, race, Date.now());
+    },
+    /** Every grudge held between any two of these people (O3). */
+    grudges(ids: number[]): Grudge[] {
+      const list = JSON.stringify(ids);
+      return (q.grudges.all(list, list) as Grudge[]).map((g) => ({ holder: Number(g.holder), against: Number(g.against), n: Number(g.n) }));
     },
     /** Keep one log line: who did what, outliving the process and Fly's log buffer. */
     log(at: string, event: Record<string, unknown>): void {

@@ -118,6 +118,23 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 #ping.good { color: var(--ok); }
 #ping.fair { color: var(--gold); }
 #ping.poor { color: var(--hot); }
+/* every person's place, in the upper left under the leave button (N6), and
+   who has knocked the watching rider off before (O3) */
+#people {
+  position: absolute; top: calc(max(0.6rem, env(safe-area-inset-top)) + 2.9rem); left: max(0.6rem, env(safe-area-inset-left));
+  list-style: none; margin: 0; padding: 0.25rem; width: min(15rem, 46vw); max-height: min(13.5rem, 34vh); overflow-y: auto;
+  background: rgb(18 15 21 / 0.7); border-radius: 4px; font-size: 0.85rem; line-height: 1.2;
+}
+#people[hidden] { display: none; }
+#people li { display: flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.25rem; border-radius: 3px; }
+#people li.me { background: rgb(255 255 255 / 0.12); }
+#people li.out { opacity: 0.55; }
+#people b { min-width: 1.6ch; text-align: right; font-variant-numeric: tabular-nums; color: var(--gold); }
+#people .swatch { width: 0.95rem; height: 0.95rem; border-radius: 0.2rem; }
+#people .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#people .feud { color: var(--dim); font-variant-numeric: tabular-nums; font-size: 0.75rem; }
+#people li.grudge .feud { color: var(--hot); font-weight: bold; }
+#loading-cards .feud { grid-column: 2; color: var(--hot); font-size: 0.85rem; font-weight: bold; }
 #rooms .who .ping { color: var(--dim); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 #quit-ask {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
