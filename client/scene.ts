@@ -7,7 +7,7 @@
 
 import * as THREE from "three";
 import { type Car, type Rider, TUNE, type Weapon, windupOf } from "../game/sim.ts";
-import { BIOMES, type Biome, OPEN, ROAD_HALF, SEGMENT, SHOULDER, type Track, biomeAt, segmentAt } from "../game/track.ts";
+import { BIOMES, type Biome, OPEN, ROAD_HALF, SEGMENT, SHOULDER, type Slick, type Track, biomeAt, segmentAt } from "../game/track.ts";
 import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
 import { Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
@@ -300,6 +300,83 @@ function crownTexture(kind: "broad" | "coast" | "scrub" | "bush"): THREE.CanvasT
 
 // ---- the road and the land ----
 
+/**
+ * A slippery patch as a blot on the asphalt (R9): a ragged pool, dark and
+ * glossy for oil, brown for mud, pale blue-white for ice. Drawn once per kind
+ * into a texture and laid flat a few millimetres over the road.
+ */
+function slickTexture(kind: Slick["kind"]): THREE.CanvasTexture {
+  const [c, ctx] = canvas(128, 256);
+  const rand = rng(kind === "oil" ? 5 : kind === "mud" ? 6 : 7);
+  const colour = { oil: "rgba(8,8,14,0.82)", mud: "rgba(92,62,34,0.88)", ice: "rgba(214,232,246,0.78)" }[kind];
+  ctx.fillStyle = colour;
+  // overlapping blobs, densest down the middle, so the edge is ragged
+  for (let i = 0; i < 46; i++) {
+    const y = 20 + rand() * 216;
+    const x = 64 + (rand() - 0.5) * 70 * Math.sin((Math.PI * (y - 10)) / 236);
+    const r = 10 + rand() * 22;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * (1.2 + rand()), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // a sheen: oil's rainbow streak, ice's white glare, mud's wet highlight
+  ctx.globalCompositeOperation = "source-atop";
+  const sheen = ctx.createLinearGradient(30, 0, 100, 256);
+  if (kind === "oil") {
+    sheen.addColorStop(0.3, "rgba(80,40,120,0)");
+    sheen.addColorStop(0.45, "rgba(90,60,150,0.35)");
+    sheen.addColorStop(0.55, "rgba(40,120,110,0.3)");
+    sheen.addColorStop(0.7, "rgba(80,40,120,0)");
+  } else {
+    sheen.addColorStop(0.35, "rgba(255,255,255,0)");
+    sheen.addColorStop(0.5, kind === "ice" ? "rgba(255,255,255,0.55)" : "rgba(200,170,130,0.35)");
+    sheen.addColorStop(0.65, "rgba(255,255,255,0)");
+  }
+  ctx.fillStyle = sheen;
+  ctx.fillRect(0, 0, 128, 256);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** Every patch on the road, as flat quads following the road's bends and climbs. */
+function slicks(track: Track): THREE.Group {
+  const g = new THREE.Group();
+  for (const kind of ["oil", "mud", "ice"] as const) {
+    const list = track.slicks.filter((s) => s.kind === kind);
+    if (list.length === 0) continue;
+    const pos: number[] = [];
+    const uv: number[] = [];
+    const index: number[] = [];
+    for (const s of list) {
+      // four rows along the patch, so it bends with the road
+      const base = pos.length / 3;
+      for (let j = 0; j <= 4; j++) {
+        const z = s.z + (s.length * j) / 4;
+        for (const side of [-1, 1]) {
+          const f = frameAt(track, z, s.x + side * s.half);
+          pos.push(f.px, f.py + 0.015, f.pz);
+          uv.push(side < 0 ? 0 : 1, j / 4);
+        }
+      }
+      for (let j = 0; j < 4; j++) {
+        const a = base + j * 2;
+        index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(index);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ map: slickTexture(kind), transparent: true, depthWrite: false, roughness: kind === "ice" ? 0.25 : kind === "oil" ? 0.55 : 0.9, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    g.add(mesh);
+  }
+  return g;
+}
+
 /** A strip along the road between two offsets, textured every `tile` metres. */
 function strip(track: Track, from: number, to: number, tile: number, lift: (z: number, x: number) => number, uAcross = 1): THREE.BufferGeometry {
   const c = centreline(track);
@@ -505,7 +582,7 @@ export class RaceScene {
     const left = new THREE.Mesh(tint(track, strip(track, -SHOULDER, -ROAD_HALF, 3, () => -0.02, 1)), dirt);
     const right = new THREE.Mesh(tint(track, strip(track, ROAD_HALF, SHOULDER, 3, () => -0.02, 1)), dirt);
     left.receiveShadow = right.receiveShadow = true;
-    this.world.add(road, left, right, ...ribbons(track, this.landMat), town(track));
+    this.world.add(road, left, right, slicks(track), ...ribbons(track, this.landMat), town(track));
 
     this.terrain = new Terrain(track, this.landMat);
     this.world.add(this.terrain.group);

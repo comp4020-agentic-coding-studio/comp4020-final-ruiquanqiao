@@ -8,9 +8,9 @@ import { ROADS, SHOULDER, bake, makeTrack } from "../game/track.ts";
 
 const straight = bake("straight", [{ length: 30000, curve: 0, climb: 0 }], 30000, 1);
 
-/** One rider alone on the road: no traffic, no cops, nothing on the verge. */
+/** One rider alone on a dry road: no traffic, no cops, nothing on the verge, no slippery patch (R9). */
 function rider(level: number, track = straight): Race {
-  const race = startRace({ ...track, scenery: [] }, level, [{ id: 0, name: "me", human: true }], 1);
+  const race = startRace({ ...track, scenery: [], slicks: [] }, level, [{ id: 0, name: "me", human: true }], 1);
   race.cars = [];
   race.riders = race.riders.filter((r) => !r.cop);
   return race;

@@ -28,6 +28,16 @@ export type Section = {
 
 export type Scenery = { z: number; x: number; kind: "tree" | "pole" | "sign" | "bush" | "rock" | "lamp" };
 
+/**
+ * A patch on the asphalt that takes the grip away (ledger R9): oil in town and
+ * on the coast, mud in the valley and the canyon, ice up in the mountains.
+ * `z` is where it starts, `x` its middle; it runs `length` along the road and
+ * `half` either side of `x`.
+ */
+export type Slick = { z: number; x: number; length: number; half: number; kind: "oil" | "mud" | "ice" };
+
+export const SLICK_KIND: Record<Biome, Slick["kind"]> = { alpine: "ice", coast: "oil", town: "oil", valley: "mud", canyon: "mud" };
+
 /** No wall on that side: open country, ridden into until a tree stops you. */
 export const OPEN = 1e9;
 
@@ -47,6 +57,8 @@ export type Track = {
   /** sea level, for roads that run along a coast; null inland */
   water: number | null;
   scenery: Scenery[];
+  /** the slippery patches, in order along the road (R9) */
+  slicks: Slick[];
 };
 
 // Sections ease in and out of their curve and their climb, so a bend never
@@ -157,7 +169,17 @@ export function bake(name: string, sections: Section[], length: number, seed: nu
   }
   scenery.sort((a, b) => a.z - b.z);
 
-  return { id, name, length, segments, curve, height, biome, wallL, wallR, water, scenery };
+  // a patch every 450 to 850 m, in one of the four lanes, never in the first
+  // 300 m where the field is still bunched off the grid, nor the last 200;
+  // fixed by the road's seed, so a patch is where it was last time (R11's
+  // "each obstacle always does the same thing")
+  const slicks: Slick[] = [];
+  for (let z = 300 + rand() * 300; z < length - 200; z += 450 + rand() * 400) {
+    const lane = Math.floor(rand() * 4);
+    slicks.push({ z, x: -5.25 + lane * 3.5 + (rand() - 0.5), length: 9 + rand() * 7, half: 1.3 + rand() * 0.6, kind: SLICK_KIND[at(z)] });
+  }
+
+  return { id, name, length, segments, curve, height, biome, wallL, wallR, water, scenery, slicks };
 }
 
 export const segmentAt = (track: Track, z: number): number =>

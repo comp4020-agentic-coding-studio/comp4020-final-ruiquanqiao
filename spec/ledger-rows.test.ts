@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type Readout, drawDash, revs } from "../client/dash.ts";
-import { DT, type Input, NO_INPUT, type Race, type Rider, TUNE, beginAttack, kickPays, nearest, packInput, startRace, step, unpackInput } from "../game/sim.ts";
+import { DT, type Input, KMH, NO_INPUT, type Race, type Rider, TUNE, beginAttack, kickPays, nearest, packInput, slickAt, startRace, step, topSpeed, unpackInput } from "../game/sim.ts";
 import { ROADS, bake, makeTrack } from "../game/track.ts";
 
 // Ledger rows that had been built for weeks with nothing to prove it, so they
@@ -10,10 +10,10 @@ import { ROADS, bake, makeTrack } from "../game/track.ts";
 
 const straight = bake("straight", [{ length: 30000, curve: 0, climb: 0 }], 30000, 1);
 
-/** People alone on a straight road: no traffic, no cops, no NPCs, nothing on the verge. */
+/** People alone on a dry straight road: no traffic, no cops, no NPCs, nothing on the verge, no slippery patch. */
 function alone(humans = 1): Race {
   const entrants = Array.from({ length: humans }, (_, i) => ({ id: i, name: `h${i}`, human: true }));
-  const race = startRace({ ...straight, scenery: [] }, 1, entrants, 1);
+  const race = startRace({ ...straight, scenery: [], slicks: [] }, 1, entrants, 1);
   race.cars = [];
   race.riders = race.riders.filter((r) => r.human);
   return race;
@@ -199,5 +199,53 @@ describe("the instrument panel", () => {
     drawDash(ctx, 390, 844, { ...readout, opponent: null });
     expect(said).toEqual(expect.arrayContaining(["4", "01.2", "Ana"]));
     expect(said).not.toContain("Hank Rivet");
+  });
+});
+
+describe("slippery patches (R9)", () => {
+  /** One rider at 95% of top speed heading over a single patch on a straight. */
+  function over(kind: "oil" | "mud" | "ice" | null, steer: boolean): { drift: number; lost: number; phase: string } {
+    const race = alone();
+    race.track = { ...race.track, slicks: kind ? [{ z: 1000, x: 0, length: 12, half: 1.5, kind }] : [] };
+    const r = rider(race);
+    Object.assign(r, { z: 900, x: 0.3, vx: 0.4, speed: topSpeed(r) * 0.95 });
+    const v0 = r.speed;
+    let drift = 0;
+    while (r.z < 1080 && r.phase === "riding") {
+      hold(race, { throttle: true, left: steer && r.x > 0.2, right: steer && r.x < -0.2 }, DT);
+      if (r.z > 1000) drift = Math.max(drift, Math.abs(r.x));
+    }
+    return { drift, lost: (v0 - r.speed) / KMH, phase: r.phase };
+  }
+
+  it("throws the bike sideways the way it was going, and steering only half wins it back", () => {
+    const dry = over(null, false);
+    expect(dry.drift).toBeLessThan(0.6);
+    for (const kind of ["oil", "ice"] as const) {
+      const still = over(kind, false);
+      const fight = over(kind, true);
+      expect(still.drift).toBeGreaterThan(2);
+      expect(fight.drift).toBeGreaterThan(1);
+      expect(fight.drift).toBeLessThan(still.drift);
+      expect(still.phase).toBe("riding");
+    }
+    // mud grips more than oil or ice
+    expect(over("mud", false).drift).toBeLessThan(over("oil", false).drift);
+  });
+
+  it("puts a dozen patches on every road, by its seed, in a lane, oil in town, ice in the mountains", () => {
+    for (let road = 0; road < ROADS.length; road++) {
+      const a = makeTrack(1, road);
+      expect(makeTrack(1, road).slicks).toEqual(a.slicks);
+      expect(a.slicks.length).toBeGreaterThanOrEqual(8);
+      for (const s of a.slicks) {
+        expect(s.z).toBeGreaterThanOrEqual(300);
+        expect(Math.abs(s.x) + s.half).toBeLessThan(7.5);
+      }
+      expect(slickAt(a, a.slicks[0].z + 1, a.slicks[0].x)).toBe(a.slicks[0]);
+      expect(slickAt(a, a.slicks[0].z - 1, a.slicks[0].x)).toBeNull();
+    }
+    expect(makeTrack(1, 3).slicks.some((s) => s.kind === "oil")).toBe(true);
+    expect(makeTrack(1, 0).slicks.some((s) => s.kind === "ice")).toBe(true);
   });
 });

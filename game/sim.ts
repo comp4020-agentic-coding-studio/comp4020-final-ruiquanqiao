@@ -3,7 +3,7 @@
 // client runs the same code to predict its own rider, and spec/ runs it with
 // scripted keys. Ledger row IDs are given where a rule answers one.
 
-import { OPEN, ROAD_HALF, SHOULDER, type Track, curveAt, heightAt, wallAt } from "./track.ts";
+import { OPEN, ROAD_HALF, SHOULDER, type Slick, type Track, curveAt, heightAt, wallAt } from "./track.ts";
 
 export const DT = 1 / 60; // one fixed step, whatever the display does
 export const MPH = 0.44704; // m/s
@@ -62,6 +62,18 @@ export const TUNE = {
   leanTurn: 0.8, // extra fraction of steer rate at full lean
   /** seconds at full lean before the bike lowsides */
   leanLimit: 0.6,
+  /**
+   * A slippery patch (R9): the share of the grip left, so the bars barely
+   * move the bike and what sideways speed it had carries on; how hard it
+   * steps out on the way in, m/s at top speed, the way it was already going;
+   * how much sooner held lean drops it; and mud's drag, m/s²
+   */
+  slickGrip: { oil: 0.08, ice: 0.05, mud: 0.25 },
+  slickKick: { oil: 6, ice: 7, mud: 3.5 },
+  slickLean: 0.5,
+  mudDrag: 9,
+  /** grip comes back after a patch at this share a second, not all at once */
+  gripBack: 2,
   punchReach: { z: 1.8, x: 1.6 },
   kickReach: { z: 1.5, x: 1.7 },
   // A fist or a kick lands on the next few steps: straight out from the bar,
@@ -293,6 +305,9 @@ export type Rider = {
   ramUntil: number;
   /** blows taken this race, by who landed them: a grudge (O5) */
   grudge: Record<number, number>;
+  /** on a slippery patch last step, and the share of grip the tyres have (R9) */
+  slick?: boolean;
+  grip?: number;
 };
 
 export type RaceEvent =
@@ -623,6 +638,15 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   const top = topSpeed(r);
   const limit = cap(r);
   const offRoad = Math.abs(r.x) > ROAD_HALF;
+  const slick = slickAt(track, r.z, r.x);
+  if (slick && !r.slick) {
+    // in onto it: the back steps out the way the bike was already moving
+    const way = Math.sign(r.vx + r.shove) || Math.sign(r.lean) || (r.x < slick.x ? -1 : 1);
+    r.vx += way * TUNE.slickKick[slick.kind] * Math.min(1, r.speed / top);
+  }
+  r.slick = slick !== null;
+  r.grip = slick ? TUNE.slickGrip[slick.kind] : Math.min(1, (r.grip ?? 1) + TUNE.gripBack * dt);
+  if (slick?.kind === "mud" && r.speed > 15) r.speed -= TUNE.mudDrag * dt;
 
   const ground = Math.abs(r.x) > SHOULDER ? TUNE.offRoadSpeed : offRoad ? TUNE.shoulderSpeed : Infinity;
   if (input.brake) {
@@ -657,7 +681,7 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   const speedFrac = Math.min(1, r.speed / top);
   const rate = TUNE.steerSlow + (TUNE.steerFast - TUNE.steerSlow) * speedFrac;
   const target = r.speed < 0.5 ? 0 : steer * rate * (1 + TUNE.leanTurn * Math.abs(r.lean));
-  r.vx += (target - r.vx) * Math.min(1, TUNE.steerResponse * dt);
+  r.vx += (target - r.vx) * Math.min(1, TUNE.steerResponse * (r.grip ?? 1) * dt);
   r.shove *= Math.exp(-r.shoveFade * dt);
   if (Math.abs(r.shove) < 1) r.shoveFade = 4;
   const outward = TUNE.centrifugal * r.speed * r.speed * curveAt(track, r.z);
@@ -685,7 +709,25 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
     if (r.shove * side > 0) r.shove = 0;
   }
 
-  if (r.leanHeld > TUNE.leanLimit) crash(r, "lowside", race);
+  if (r.leanHeld > TUNE.leanLimit * (slick ? TUNE.slickLean : 1)) crash(r, "lowside", race);
+}
+
+/** The slippery patch under a rider, if any (R9). */
+export function slickAt(track: Track, z: number, x: number): Slick | null {
+  const s = track.slicks;
+  // the patches are in order along the road: find the last one starting before z
+  let lo = 0;
+  let hi = s.length - 1;
+  let at = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid].z <= z) {
+      at = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  const p = at >= 0 ? s[at] : null;
+  return p && z < p.z + p.length && Math.abs(x - p.x) < p.half ? p : null;
 }
 
 /** A coasting riderless bike slows gently; a sliding dropped one quickly. */
