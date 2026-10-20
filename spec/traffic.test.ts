@@ -153,7 +153,8 @@ describe("traffic", () => {
     // at 58-86 km/h, as first set, a car ahead closed at 200 km/h and looked parked
     for (const level of [1, 3, 5]) {
       const r = startRace(makeTrack(level), level, [{ id: 0, name: "h", human: true }], level);
-      for (const c of r.cars) {
+      // a car pulling out of a side road (T5) crosses at a crawl; ledger-rows holds it
+      for (const c of r.cars.filter((c) => !c.cross)) {
         expect(c.speed / KMH).toBeGreaterThanOrEqual(100);
         expect(c.speed / KMH).toBeLessThanOrEqual(150);
         expect(c.kind).not.toBe("police");

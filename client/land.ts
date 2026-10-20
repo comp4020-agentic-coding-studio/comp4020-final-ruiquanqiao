@@ -395,7 +395,8 @@ export function town(track: Track): THREE.Group {
       const depth = 12;
       const mid = z + width / 2;
       const end = segmentAt(track, z + width);
-      if (BIOMES[track.biome[end]] !== "town") {
+      // nor across a side road (T5)
+      if (BIOMES[track.biome[end]] !== "town" || track.crossings.some((c) => c > z - 6 && c < z + width + 6)) {
         z += width;
         continue;
       }

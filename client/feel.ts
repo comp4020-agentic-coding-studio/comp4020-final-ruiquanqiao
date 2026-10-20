@@ -125,7 +125,7 @@ export function react(e: RaceEvent, riders: readonly Rider[], me: number | null)
   } else if (e.kind === "crash") {
     // a square hit on a car, a tree or a rock throws the rider over it; a wall
     // ridden into, like a crate clipped (212.9), puts bike and rider down together
-    if (e.cause === "rearEnd" || e.cause === "headOn" || e.cause === "tree") out.launched = e.rider;
+    if (e.cause === "rearEnd" || e.cause === "headOn" || e.cause === "broadside" || e.cause === "tree") out.launched = e.rider;
   }
   return out;
 }

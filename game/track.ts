@@ -73,6 +73,8 @@ export type Track = {
   cones: Cone[];
   /** police roadblocks, from level 4 (P5) */
   roadblocks: Roadblock[];
+  /** where a side road crosses, in order along the road (T5) */
+  crossings: number[];
 };
 
 // Sections ease in and out of their curve and their climb, so a bend never
@@ -202,7 +204,40 @@ export function bake(name: string, sections: Section[], length: number, seed: nu
     for (let i = 0; i < n; i++) cones.push({ z: z + i * 2.5, x: lane + (rand() - 0.5) * 0.6 });
   }
 
-  return { id, name, length, segments, curve, height, biome, wallL, wallR, water, scenery, slicks, cones, roadblocks: [] };
+  // intersections (T5): a side road across this one every 1200-2000 m through
+  // town, farmland and pine (never the coast or a canyon, between a cliff and
+  // a wall), on a straight with 60 m clear either side, never in the first
+  // 600 m nor the last 300. The shopfronts open for it and nothing stands in it
+  // drawn from a stream of their own, so a longer race (a higher level) has
+  // the same side roads where the shorter one has them
+  const crossings: number[] = [];
+  let q = (seed ^ 0x5eed) >>> 0;
+  const draw = (): number => {
+    q = (q * 1664525 + 1013904223) >>> 0;
+    return q / 2 ** 32;
+  };
+  const crossable = (z: number): boolean => {
+    for (let d = -60; d <= 60; d += SEGMENT) {
+      const i = Math.min(segments - 1, Math.max(0, Math.floor((z + d) / SEGMENT)));
+      const b = BIOMES[biome[i]];
+      if ((b !== "town" && b !== "valley" && b !== "alpine") || Math.abs(curve[i]) > 1 / 900) return false;
+    }
+    return true;
+  };
+  for (let z = 600 + draw() * 600; z < length - 300; ) {
+    if (!crossable(z)) {
+      z += 40;
+      continue;
+    }
+    crossings.push(Math.round(z));
+    z += 1200 + draw() * 800;
+  }
+  for (const c of crossings) {
+    for (let i = Math.floor((c - 6) / SEGMENT); i <= Math.floor((c + 6) / SEGMENT); i++) wallL[i] = wallR[i] = OPEN;
+  }
+  const clear = scenery.filter((s) => !crossings.some((c) => Math.abs(s.z - c) < 9 && Math.abs(s.x) < 60));
+
+  return { id, name, length, segments, curve, height, biome, wallL, wallR, water, scenery: clear, slicks, cones, roadblocks: [], crossings };
 }
 
 export const segmentAt = (track: Track, z: number): number =>
@@ -401,7 +436,8 @@ export const makeTrack = (level: number, road = 0): Track => {
   // stretch, with cones and patches cleared from in front of it (P5)
   if (level >= 4) {
     let z = Math.round(t.length * 0.62);
-    while (z < t.length - 400 && Math.abs(curveAt(t, z)) > 1 / 900) z += 20;
+    // and clear of the side roads (T5), which are the same at every level
+    while (z < t.length - 400 && (Math.abs(curveAt(t, z)) > 1 / 900 || t.crossings.some((c) => Math.abs(c - z) < 250))) z += 20;
     t.roadblocks = [{ z, gap: 1.1, mound: 1.8 }];
     t.cones = t.cones.filter((c) => Math.abs(c.z - z) > 120);
     t.slicks = t.slicks.filter((s) => Math.abs(s.z - z) > 120);

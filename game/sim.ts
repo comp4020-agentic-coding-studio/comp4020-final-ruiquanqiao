@@ -80,6 +80,13 @@ export const TUNE = {
   moundPerSpeed: 0.06,
   /** how high the barricades stand, m; a bike higher than this goes over */
   barrierHeight: 1.1,
+  /** a car in a side road (T5) waits this far out, m, and pulls out so as to
+   * reach the asphalt this many seconds before the first rider coming up
+   * reaches the intersection: it is in the near lanes as the rider gets there.
+   * Across, it waits on the far side this long before it will go back */
+  crossWait: 32,
+  crossLead: 0.6,
+  crossRest: 4,
   /** m either side of a roadblock that no car drives in */
   blockClosed: 150,
   /** a cone ridden over throws the bike up at this, plus this much per m/s of speed (R11) */
@@ -170,7 +177,7 @@ export const TUNE = {
   runSpeed: 6.5, // m/s back to the bike
   // a knockdown by another rider costs the bike nothing (K6); running into
   // the back of traffic is "almost as damaging as a head-on collision" (K7)
-  crashDamage: { tree: 34, wall: 28, lowside: 16, knockdown: 0, rub: 0, rearEnd: 30, headOn: 40 },
+  crashDamage: { tree: 34, wall: 28, lowside: 16, knockdown: 0, rub: 0, rearEnd: 30, headOn: 40, broadside: 36 },
   /** sideways speed into a cliff, wall or rail that crashes rather than
    * scrapes along it, m/s; and how much speed a scrape costs, per second */
   wallCrash: 6,
@@ -249,7 +256,7 @@ export const unpackInput = (n: number): Input => ({
 
 export type Phase = "riding" | "thrown" | "running" | "finished" | "wrecked" | "busted";
 
-export type CrashCause = "tree" | "wall" | "lowside" | "knockdown" | "rub" | "rearEnd" | "headOn";
+export type CrashCause = "tree" | "wall" | "lowside" | "knockdown" | "rub" | "rearEnd" | "headOn" | "broadside";
 
 export type AttackKind = "punch" | "backhand" | "kick";
 
@@ -352,6 +359,8 @@ export type Car = {
   dir: 1 | -1; // +1 travels with the race, -1 towards it
   speed: number; // m/s, always positive
   changeT: number; // seconds until it next thinks about changing lane
+  /** waits in a side road at its z and drives across this one to `lane` on the far side (T5) */
+  cross?: boolean;
 };
 
 export const CAR = { length: 4.6, width: 1.9 };
@@ -571,6 +580,16 @@ function placeTraffic(race: Race, level: number): void {
       changeT: 2 + random(race) * 8,
     });
   }
+  // cross traffic (T5): "in the later levels, there will often be cars coming
+  // from the side roads and crossing your path... learn where they appear".
+  // None at level 1; a car waits at one side road in three at level 2, two in
+  // three at level 3 and every one from level 4, always the same ones, so a
+  // rider can learn them. No random draw: the race's dice stay as they were
+  race.track.crossings.forEach((z, i) => {
+    if (i % 3 >= level - 1) return;
+    const x = (i % 2 ? 1 : -1) * TUNE.crossWait;
+    race.cars.push({ id: id++, kind: kinds[i % kinds.length], z, x, lane: x, dir: 1, speed: 10 + ((i * 7) % 4), changeT: 0, cross: true });
+  });
 }
 
 // ---- one rider's own physics (also what the client predicts) ----
@@ -1301,6 +1320,21 @@ function copInput(race: Race, r: Rider): Input {
 function drive(race: Race): void {
   const L = race.track.length;
   for (const c of race.cars) {
+    if (c.cross) {
+      // waiting in its side road until a rider comes up to the intersection,
+      // then across to the far side, to wait there for the next
+      if (c.x === c.lane) {
+        c.changeT -= DT;
+        const due = (Math.abs(c.x) - ROAD_HALF) / c.speed + TUNE.crossLead;
+        const coming = race.riders.some((r) => !r.cop && r.phase === "riding" && r.speed > 5 && c.z > r.z && (c.z - r.z) / r.speed < due);
+        if (c.changeT <= 0 && coming) c.lane = -c.lane;
+        continue;
+      }
+      const dx = c.lane - c.x;
+      c.x += Math.sign(dx) * Math.min(Math.abs(dx), c.speed * DT);
+      if (c.x === c.lane) c.changeT = TUNE.crossRest;
+      continue;
+    }
     const was = c.z;
     c.z += c.dir * c.speed * DT;
     // the road is shut at a roadblock (P5): no car drives through the
@@ -1337,10 +1371,12 @@ function hitCars(race: Race, r: Rider): void {
   for (const c of race.cars) {
     const dz = c.z - r.z;
     const dx = c.x - r.x;
-    const oz = (CAR.length + BIKE.length) / 2 - Math.abs(dz);
-    const ox = (CAR.width + BIKE.width) / 2 - Math.abs(dx);
+    // a car crossing from a side road lies across the road (T5)
+    const [lz, lx] = c.cross ? [CAR.width, CAR.length] : [CAR.length, CAR.width];
+    const oz = (lz + BIKE.length) / 2 - Math.abs(dz);
+    const ox = (lx + BIKE.width) / 2 - Math.abs(dx);
     if (oz <= 0 || ox <= 0) continue;
-    const closing = r.speed - c.dir * c.speed;
+    const closing = c.cross ? r.speed : r.speed - c.dir * c.speed;
     if (ox < oz * 0.5 || Math.abs(closing) < TUNE.carCrash) {
       // along its side, or barely moving against it: pushed off
       r.x -= Math.sign(dx || 1) * ox;
@@ -1349,12 +1385,12 @@ function hitCars(race: Race, r: Rider): void {
       bump(race, r, c.id, "car", 0.4 + Math.abs(closing) / TUNE.carCrash / 2, c.x);
       continue;
     }
-    r.z = c.z - Math.sign(dz || 1) * ((CAR.length + BIKE.length) / 2);
+    r.z = c.z - Math.sign(dz || 1) * ((lz + BIKE.length) / 2);
     // a rider thrown off over a car carries less forward speed
     r.speed = Math.max(0, Math.min(r.speed, Math.abs(closing)) * 0.5);
-    crash(r, c.dir > 0 ? "rearEnd" : "headOn", race, popAt(closing));
+    crash(r, c.cross ? "broadside" : c.dir > 0 ? "rearEnd" : "headOn", race, popAt(closing));
     // the struck car is knocked on a little, not stopped
-    if (c.dir > 0) c.speed += 2;
+    if (c.dir > 0 && !c.cross) c.speed += 2;
     return;
   }
 }
@@ -1385,6 +1421,14 @@ export function clearLine(race: Race, r: Rider, line: number): number | null {
   const blocked = (x: number): boolean =>
     race.cars.some((c) => {
       const dz = c.z - r.z;
+      if (c.cross) {
+        // a car crossing (T5) is seen once it is out of its side road, and
+        // is where it will be when the bike gets there
+        if (Math.abs(c.x) > SHOULDER + 4 || dz < -1 || r.speed <= 0) return false;
+        const t = Math.max(0, (dz - (CAR.width + BIKE.length) / 2) / r.speed);
+        const at = c.x + Math.sign(c.lane - c.x) * c.speed * t;
+        return t < 3 && Math.abs(at - x) < (CAR.length + BIKE.width) / 2 + 0.6;
+      }
       const closing = r.speed - c.dir * c.speed;
       if (dz < -1 || closing <= 0) return false;
       const t = (dz - (CAR.length + BIKE.length) / 2) / closing;

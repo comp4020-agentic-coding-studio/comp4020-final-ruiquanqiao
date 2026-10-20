@@ -223,7 +223,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     }
     if (e.kind === "wrecked" && e.rider === c.you) banner("Wrecked", 3000);
     // hitting a car flashes the screen white (K3)
-    if (e.kind === "crash" && e.rider === c.you && (e.cause === "rearEnd" || e.cause === "headOn")) flash("#ffffff");
+    if (e.kind === "crash" && e.rider === c.you && (e.cause === "rearEnd" || e.cause === "headOn" || e.cause === "broadside")) flash("#ffffff");
     if (e.kind === "busted" && e.rider === c.you) banner("Busted", 3000);
     // a weapon taken, or lost (C6)
     if (e.kind === "snatch" && e.by === c.you) banner(`Got the ${e.weapon}`, 1500);
@@ -250,7 +250,7 @@ function sound(c: Current, e: Extract<ToClient, { t: "snap" }>["events"][number]
       if (weapon === "club") sfx("club");
     } else sfx(weapon);
   }
-  if (e.kind === "crash" && (e.rider === c.you || near(e.rider))) sfx(e.cause === "rearEnd" || e.cause === "headOn" ? "carCrash" : "crash");
+  if (e.kind === "crash" && (e.rider === c.you || near(e.rider))) sfx(e.cause === "rearEnd" || e.cause === "headOn" || e.cause === "broadside" ? "carCrash" : "crash");
   if (e.kind === "snatch" && (e.by === c.you || e.from === c.you)) sfx("snatch");
   if (e.kind === "busted" && e.rider === c.you) sfx("busted");
   if (e.kind === "finished" && e.rider === c.you) sfx("finish");

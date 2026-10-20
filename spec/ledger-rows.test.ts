@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Readout, drawDash, revs } from "../client/dash.ts";
 import { DT, type Input, KMH, NO_INPUT, type Race, type Rider, TUNE, beginAttack, kickPays, nearest, packInput, slickAt, startRace, step, topSpeed, unpackInput } from "../game/sim.ts";
-import { ROADS, ROAD_HALF, bake, makeTrack } from "../game/track.ts";
+import { ROADS, ROAD_HALF, bake, biomeAt, makeTrack } from "../game/track.ts";
 
 // Ledger rows that had been built for weeks with nothing to prove it, so they
 // still read "planned" with a due crit long past. Each test here is the proof
@@ -13,7 +13,7 @@ const straight = bake("straight", [{ length: 30000, curve: 0, climb: 0 }], 30000
 /** People alone on a dry straight road: no traffic, no cops, no NPCs, nothing on the verge, no slippery patch. */
 function alone(humans = 1): Race {
   const entrants = Array.from({ length: humans }, (_, i) => ({ id: i, name: `h${i}`, human: true }));
-  const race = startRace({ ...straight, scenery: [], slicks: [], cones: [] }, 1, entrants, 1);
+  const race = startRace({ ...straight, scenery: [], slicks: [], cones: [], crossings: [] }, 1, entrants, 1);
   race.cars = [];
   race.riders = race.riders.filter((r) => r.human);
   return race;
@@ -347,6 +347,42 @@ describe("getting off on purpose (M3)", () => {
     Object.assign(r, { z: 500, x: 0, speed: 20 });
     hold(race, { off: true, throttle: true }, 0.5);
     expect(r.phase).toBe("riding");
+  });
+});
+
+describe("cross traffic (T5)", () => {
+  it("waits at the same side roads on every road at every level, none at level 1 and one at every side road from level 4", () => {
+    for (let road = 0; road < ROADS.length; road++) {
+      const low = makeTrack(1, road);
+      expect(low.crossings.length, `road ${road}`).toBeGreaterThan(0);
+      for (const level of [1, 2, 3, 4, 5]) {
+        const t = makeTrack(level, road);
+        // higher levels run further down the same road, past the same side roads
+        expect(t.crossings.slice(0, low.crossings.length - 1)).toEqual(low.crossings.slice(0, -1));
+        for (const z of t.crossings) expect(["town", "valley", "alpine"]).toContain(biomeAt(t, z));
+        const waiting = startRace(t, level, [{ id: 0, name: "h", human: true }], 1).cars.filter((c) => c.cross);
+        if (level === 1) expect(waiting).toEqual([]);
+        if (level >= 4) expect(waiting.map((c) => c.z)).toEqual(t.crossings);
+      }
+    }
+  });
+
+  it("pulls across as a rider comes up, and takes down one who rides on into it, but not one who brakes", () => {
+    function meet(brake: boolean) {
+      const race = alone();
+      race.track = { ...race.track, crossings: [1000] };
+      race.cars = [{ id: 1, kind: "sedan", z: 1000, x: -TUNE.crossWait, lane: -TUNE.crossWait, dir: 1, speed: 11, changeT: 0, cross: true }];
+      const r = rider(race);
+      Object.assign(r, { z: 600, x: 0, speed: topSpeed(r) * 0.9 });
+      while (r.z < 1050 && r.phase === "riding" && race.t < 60) hold(race, brake && r.z > 780 ? { brake: true } : { throttle: true }, DT);
+      return { r, car: race.cars[0], race };
+    }
+    const on = meet(false);
+    expect(on.car.lane).toBe(TUNE.crossWait);
+    expect(on.race.events).toContainEqual(expect.objectContaining({ kind: "crash", rider: 0, cause: "broadside" }));
+    const stopped = meet(true);
+    expect(stopped.r.phase).toBe("riding");
+    expect(stopped.car.x).toBe(TUNE.crossWait);
   });
 });
 

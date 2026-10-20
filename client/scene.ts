@@ -10,7 +10,7 @@ import { type Car, type Rider, TUNE, type Weapon, windupOf } from "../game/sim.t
 import { BIOMES, type Biome, OPEN, ROAD_HALF, SEGMENT, SHOULDER, type Slick, type Track, biomeAt, segmentAt } from "../game/track.ts";
 import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
-import { Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
+import { RIBBON, Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
 import { buildCar } from "./models.ts";
 import { RECOIL, type Reaction, hopLift, wobble } from "./feel.ts";
 import { LIVERIES } from "../game/liveries.ts";
@@ -485,6 +485,8 @@ export class RaceScene {
     return this.atlas !== null;
   }
   private cars = new Map<number, THREE.Group>();
+  /** where each crossing car was last drawn, and which way it faces (T5) */
+  private crossX = new Map<number, { x: number; way: number }>();
   private backdrop: THREE.Mesh;
   private sun: THREE.DirectionalLight;
   private terrain: Terrain | null = null;
@@ -639,6 +641,68 @@ export class RaceScene {
         ramp.rotation.y = m.heading;
         ramp.castShadow = ramp.receiveShadow = true;
         this.world.add(ramp);
+      }
+    }
+    // intersections (T5): a side road out either way over the ground, a white
+    // stop bar across each direction's lanes, and a green light on a pole at
+    // the near corner, as at the original's crossroads (pc-race-napa-02)
+    if (track.crossings.length) {
+      const asphalt = new THREE.MeshStandardMaterial({ color: "#56505e", roughness: 0.95, side: THREE.DoubleSide });
+      const bar = new THREE.MeshStandardMaterial({ color: C.white, roughness: 0.8 });
+      const steel = new THREE.MeshStandardMaterial({ color: "#3a3a40", roughness: 0.6, metalness: 0.4 });
+      const green = new THREE.MeshStandardMaterial({ color: "#30e060", emissive: "#30e060", emissiveIntensity: 1.2 });
+      const dark = new THREE.MeshStandardMaterial({ color: "#202024", roughness: 0.8 });
+      const across = [ROAD_HALF, ...RIBBON.filter((x) => x <= 46)];
+      const rows = [-3.5, 0, 3.5];
+      for (const z of track.crossings) {
+        for (const s of [-1, 1]) {
+          const pos: number[] = [];
+          const index: number[] = [];
+          for (const dz of rows) {
+            for (const x of across) {
+              const f = frameAt(track, z + dz, s * x);
+              pos.push(f.px, f.py + Math.max(-0.05, groundAt(track, z + dz, s * x)) + 0.08, f.pz);
+            }
+          }
+          const n = across.length;
+          for (let r = 0; r < rows.length - 1; r++) {
+            for (let j = 0; j < n - 1; j++) {
+              const a = r * n + j;
+              index.push(a, a + n, a + 1, a + 1, a + n, a + n + 1);
+            }
+          }
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+          g.setIndex(index);
+          g.computeVertexNormals();
+          const road = new THREE.Mesh(g, asphalt);
+          road.receiveShadow = true;
+          this.world.add(road);
+        }
+        // a stop bar across each direction's half, 8 m short of the side road
+        for (const [dz, x] of [[-8, ROAD_HALF / 2], [8, -ROAD_HALF / 2]]) {
+          const f = frameAt(track, z + dz, x);
+          const m = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_HALF - 0.6, 0.5), bar);
+          m.rotation.set(-Math.PI / 2, 0, f.heading);
+          m.position.set(f.px, f.py + 0.025, f.pz);
+          this.world.add(m);
+        }
+        // the light on its pole at the near right corner, each way
+        for (const [dz, x, face] of [[-8, SHOULDER + 1.2, Math.PI], [8, -(SHOULDER + 1.2), 0]]) {
+          const f = frameAt(track, z + dz, x);
+          const g = new THREE.Group();
+          g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 4.2, 8).translate(0, 2.1, 0), steel));
+          g.add(new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.15, 0.32).translate(0, 4.6, 0), dark));
+          for (const [y, m] of [[4.95, dark], [4.6, dark], [4.25, green]] as const) {
+            const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.13, 12), m);
+            lamp.position.set(0, y, 0.17);
+            g.add(lamp);
+          }
+          g.position.set(f.px, f.py, f.pz);
+          g.rotation.y = f.heading + face;
+          g.traverse((o) => (o.castShadow = true));
+          this.world.add(g);
+        }
       }
     }
     // traffic cones across a lane (R11): orange with a white band, on a square foot
@@ -819,6 +883,7 @@ export class RaceScene {
     this.atlas ??= (this.builder ??= new AtlasBuilder(this.renderer)).finish();
     for (const c of this.cars.values()) this.scene.remove(c);
     this.cars.clear();
+    this.crossX.clear();
   }
 
   /**
@@ -981,10 +1046,19 @@ export class RaceScene {
       g.visible = c.z > -1e5;
       if (!g.visible) continue;
       const f = frameAt(track, c.z, c.x);
-      g.position.set(f.px, f.py, f.pz);
+      // a car out in a side road stands on the ground there (T5)
+      g.position.set(f.px, f.py + Math.max(0, groundAt(track, c.z, c.x)), f.pz);
       // knocked by a bike, it slews and rocks for a moment
       const j = this.wobbleOf(this.carJolts, c.id);
-      g.rotation.set(0, f.heading + (c.dir < 0 ? Math.PI : 0) + j, j * 0.5);
+      // one crossing faces the way it last moved, and to begin with the way it will
+      let turn = c.dir < 0 ? Math.PI : 0;
+      if (c.cross) {
+        const was = this.crossX.get(c.id);
+        const way = was === undefined || Math.abs(c.x - was.x) < 1e-3 ? (was?.way ?? -Math.sign(c.x)) : Math.sign(c.x - was.x);
+        this.crossX.set(c.id, { x: c.x, way });
+        turn = way > 0 ? -Math.PI / 2 : Math.PI / 2;
+      }
+      g.rotation.set(0, f.heading + turn + j, j * 0.5);
     }
   }
 
