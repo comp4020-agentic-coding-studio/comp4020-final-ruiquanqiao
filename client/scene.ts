@@ -503,6 +503,8 @@ export class RaceScene {
   private hops = new Map<number, { at: number; size: number }>();
   /** riders flung by a bike, and riders struck by a blow, and since when */
   private flung = new Set<number>();
+  /** the traffic cones (R11), one instance each, so one can be knocked flat */
+  private coneMesh: THREE.InstancedMesh | null = null;
   private struck = new Map<number, { at: number; side: 1 | -1; by: number }>();
 
   /** each person's leathers by rider id, from the race's entry list: the same in everyone's view */
@@ -583,6 +585,29 @@ export class RaceScene {
     const right = new THREE.Mesh(tint(track, strip(track, ROAD_HALF, SHOULDER, 3, () => -0.02, 1)), dirt);
     left.receiveShadow = right.receiveShadow = true;
     this.world.add(road, left, right, slicks(track), ...ribbons(track, this.landMat), town(track));
+    // traffic cones across a lane (R11): orange with a white band, on a square foot
+    this.coneMesh = null;
+    if (track.cones.length) {
+      const g = new THREE.ConeGeometry(0.2, 0.7, 12).translate(0, 0.38, 0);
+      const colours: number[] = [];
+      const pos = g.getAttribute("position");
+      for (let v = 0; v < pos.count; v++) {
+        const y = pos.getY(v);
+        const band = y > 0.36 && y < 0.5;
+        colours.push(...(band ? [0.95, 0.95, 0.95] : [1, 0.36, 0.05]));
+      }
+      g.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
+      const cone = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), track.cones.length);
+      const m4c = new THREE.Matrix4();
+      track.cones.forEach((c, i) => {
+        const f = frameAt(track, c.z, c.x);
+        m4c.compose(new THREE.Vector3(f.px, f.py, f.pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, f.heading, 0)), new THREE.Vector3(1, 1, 1));
+        cone.setMatrixAt(i, m4c);
+      });
+      cone.castShadow = true;
+      this.coneMesh = cone;
+      this.world.add(cone);
+    }
 
     this.terrain = new Terrain(track, this.landMat);
     this.world.add(this.terrain.group);
@@ -802,6 +827,35 @@ export class RaceScene {
     if (r.struck) this.struck.set(r.struck.id, { at: now, side: r.struck.side, by: r.struck.by });
     if (r.car) this.carJolts.set(r.car.id, { at: now, amp: r.car.amp });
     if (r.launched !== null) this.launched.add(r.launched);
+    if (r.cone) this.knockCone(r.cone.z, r.cone.x);
+  }
+
+  /** The cone nearest where one was ridden over goes flat, and stands again after a few seconds (R11). */
+  private knockCone(z: number, x: number): void {
+    const cones = this.track?.cones ?? [];
+    let best = -1;
+    let bestD = 3;
+    cones.forEach((c, i) => {
+      const d = Math.hypot(c.z - z, c.x - x);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    if (best < 0 || !this.coneMesh) return;
+    const m = new THREE.Matrix4();
+    this.coneMesh.getMatrixAt(best, m);
+    const p = new THREE.Vector3().setFromMatrixPosition(m);
+    // over on its side, beside where it stood
+    const flat = new THREE.Matrix4().compose(p.clone().add(new THREE.Vector3(0, -0.05, 0)), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, Math.random() * 6, 0)), new THREE.Vector3(1, 1, 1));
+    this.coneMesh.setMatrixAt(best, flat);
+    this.coneMesh.instanceMatrix.needsUpdate = true;
+    const mesh = this.coneMesh;
+    window.setTimeout(() => {
+      if (this.coneMesh !== mesh) return;
+      mesh.setMatrixAt(best, m);
+      mesh.instanceMatrix.needsUpdate = true;
+    }, 4000);
   }
 
   private wobbleOf(m: Map<number, { at: number; amp: number }>, id: number): number {

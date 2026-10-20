@@ -36,6 +36,9 @@ export type Scenery = { z: number; x: number; kind: "tree" | "pole" | "sign" | "
  */
 export type Slick = { z: number; x: number; length: number; half: number; kind: "oil" | "mud" | "ice" };
 
+/** A traffic cone standing on the asphalt (R11): ridden over, it is a ramp. */
+export type Cone = { z: number; x: number };
+
 export const SLICK_KIND: Record<Biome, Slick["kind"]> = { alpine: "ice", coast: "oil", town: "oil", valley: "mud", canyon: "mud" };
 
 /** No wall on that side: open country, ridden into until a tree stops you. */
@@ -59,6 +62,8 @@ export type Track = {
   scenery: Scenery[];
   /** the slippery patches, in order along the road (R9) */
   slicks: Slick[];
+  /** the traffic cones, in order along the road (R11) */
+  cones: Cone[];
 };
 
 // Sections ease in and out of their curve and their climb, so a bend never
@@ -179,7 +184,16 @@ export function bake(name: string, sections: Section[], length: number, seed: nu
     slicks.push({ z, x: -5.25 + lane * 3.5 + (rand() - 0.5), length: 9 + rand() * 7, half: 1.3 + rand() * 0.6, kind: SLICK_KIND[at(z)] });
   }
 
-  return { id, name, length, segments, curve, height, biome, wallL, wallR, water, scenery, slicks };
+  // a line of cones across one lane every 900-1500 m, as if closing it for
+  // road works: three to five, 2.5 m apart along it, in the middle of the lane
+  const cones: Cone[] = [];
+  for (let z = 700 + rand() * 500; z < length - 300; z += 900 + rand() * 600) {
+    const lane = -5.25 + Math.floor(rand() * 4) * 3.5;
+    const n = 3 + Math.floor(rand() * 3);
+    for (let i = 0; i < n; i++) cones.push({ z: z + i * 2.5, x: lane + (rand() - 0.5) * 0.6 });
+  }
+
+  return { id, name, length, segments, curve, height, biome, wallL, wallR, water, scenery, slicks, cones };
 }
 
 export const segmentAt = (track: Track, z: number): number =>

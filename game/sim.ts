@@ -3,7 +3,7 @@
 // client runs the same code to predict its own rider, and spec/ runs it with
 // scripted keys. Ledger row IDs are given where a rule answers one.
 
-import { OPEN, ROAD_HALF, SHOULDER, type Slick, type Track, curveAt, heightAt, wallAt } from "./track.ts";
+import { type Cone, OPEN, ROAD_HALF, SHOULDER, type Slick, type Track, curveAt, heightAt, wallAt } from "./track.ts";
 
 export const DT = 1 / 60; // one fixed step, whatever the display does
 export const MPH = 0.44704; // m/s
@@ -73,6 +73,9 @@ export const TUNE = {
   slickLean: 0.5,
   /** a crest lifts the bike once following the road would take this share of gravity pulling down (R10) */
   crestLift: 1.3,
+  /** a cone ridden over throws the bike up at this, plus this much per m/s of speed (R11) */
+  coneLift: 1.5,
+  conePerSpeed: 0.035,
   mudDrag: 9,
   /** grip comes back after a patch at this share a second, not all at once */
   gripBack: 2,
@@ -323,7 +326,7 @@ export type RaceEvent =
   /** a rider on foot, or lying in the road, ridden into (C9) */
   | { t: number; kind: "runOver"; by: number; on: number; what: "rider" | "bike" }
   /** bikes touching without anyone coming off: a rub, a shunt, a car or wall glanced (K13) */
-  | { t: number; kind: "bump"; rider: number; other: number; with: "rider" | "car" | "wall"; hard: number; from: number };
+  | { t: number; kind: "bump"; rider: number; other: number; with: "rider" | "car" | "wall" | "cone"; hard: number; from: number };
 
 /** Traffic (T4): same-direction cars in the right lanes, oncoming in the left. */
 export type Car = {
@@ -657,6 +660,15 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
     r.air = 1e-3;
     r.vy = roadV;
   }
+  // a cone ridden over is a ramp, every time (R11): the bike goes up off it
+  if (r.air <= 0 && r.speed > 8) {
+    const c = coneAt(track, r.z, r.x);
+    if (c && race) race.events.push({ t: race.t, kind: "bump", rider: r.id, other: -1, with: "cone", hard: 0.5, from: c.x });
+    if (c) {
+      r.air = 1e-3;
+      r.vy = TUNE.coneLift + TUNE.conePerSpeed * r.speed;
+    }
+  }
   const flying = r.air > 0;
   const slick = slickAt(track, r.z, r.x);
   if (slick && !r.slick) {
@@ -690,6 +702,8 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   if (r.speed < 3) r.build = 0;
 
   // steering and lean (R1, R3)
+  const leanBefore = r.lean;
+  const heldBefore = r.leanHeld;
   const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
   const atSpeed = r.speed >= TUNE.leanFrom * limit;
   if (steer !== 0 && atSpeed) {
@@ -700,6 +714,13 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   }
   const full = Math.abs(r.lean) > 0.97 && Math.sign(r.lean) === steer;
   r.leanHeld = full ? r.leanHeld + dt : 0;
+  if (flying) {
+    // in the air the bars lean nothing: the bike comes down as it took off.
+    // Before this the lean kept building on a held bar while the bike flew,
+    // and it landed past the limit and went down a second after a cone (R11)
+    r.lean = leanBefore;
+    r.leanHeld = heldBefore;
+  }
 
   const speedFrac = Math.min(1, r.speed / top);
   const rate = TUNE.steerSlow + (TUNE.steerFast - TUNE.steerSlow) * speedFrac;
@@ -734,6 +755,20 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   }
 
   if (r.leanHeld > TUNE.leanLimit * (slick ? TUNE.slickLean : 1)) crash(r, "lowside", race);
+}
+
+/** A cone under a bike's front wheel, if any (R11). */
+export function coneAt(track: Track, z: number, x: number): Cone | null {
+  const s = track.cones;
+  let lo = 0;
+  let hi = s.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid].z < z - 0.6) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  for (let i = lo; i < s.length && s[i].z <= z + 0.6; i++) if (Math.abs(s[i].x - x) < 0.55) return s[i];
+  return null;
 }
 
 /** The slippery patch under a rider, if any (R9). */

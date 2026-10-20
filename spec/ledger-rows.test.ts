@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Readout, drawDash, revs } from "../client/dash.ts";
 import { DT, type Input, KMH, NO_INPUT, type Race, type Rider, TUNE, beginAttack, kickPays, nearest, packInput, slickAt, startRace, step, topSpeed, unpackInput } from "../game/sim.ts";
-import { ROADS, bake, makeTrack } from "../game/track.ts";
+import { ROADS, ROAD_HALF, bake, makeTrack } from "../game/track.ts";
 
 // Ledger rows that had been built for weeks with nothing to prove it, so they
 // still read "planned" with a due crit long past. Each test here is the proof
@@ -13,7 +13,7 @@ const straight = bake("straight", [{ length: 30000, curve: 0, climb: 0 }], 30000
 /** People alone on a dry straight road: no traffic, no cops, no NPCs, nothing on the verge, no slippery patch. */
 function alone(humans = 1): Race {
   const entrants = Array.from({ length: humans }, (_, i) => ({ id: i, name: `h${i}`, human: true }));
-  const race = startRace({ ...straight, scenery: [], slicks: [] }, 1, entrants, 1);
+  const race = startRace({ ...straight, scenery: [], slicks: [], cones: [] }, 1, entrants, 1);
   race.cars = [];
   race.riders = race.riders.filter((r) => r.human);
   return race;
@@ -284,5 +284,41 @@ describe("crests (R10)", () => {
 
   it("does not steer in the air: the bike carries on as it left", () => {
     expect(Math.abs(hump(1, { left: true }).drift - hump(1).drift)).toBeLessThan(0.05);
+  });
+});
+
+describe("traffic cones (R11)", () => {
+  function cones(frac: number, x = 0) {
+    const race = alone();
+    race.track = { ...race.track, cones: [{ z: 1000, x: 0 }, { z: 1002.5, x: 0 }, { z: 1005, x: 0 }] };
+    const r = rider(race);
+    Object.assign(r, { z: 980, x, speed: topSpeed(r) * frac });
+    let peak = 0;
+    while (r.z < 1100) {
+      hold(race, { throttle: true }, DT);
+      peak = Math.max(peak, r.air);
+    }
+    return { peak, phase: r.phase, bumps: race.events.filter((e) => e.kind === "bump" && e.with === "cone").length };
+  }
+
+  it("throws a bike that rides over one into the air, higher the faster, and it lands riding", () => {
+    const slow = cones(0.3);
+    const fast = cones(1);
+    expect(slow.peak).toBeGreaterThan(0.2);
+    expect(fast.peak).toBeGreaterThan(slow.peak);
+    expect(fast.phase).toBe("riding");
+    // the first cone launches it, and it flies over the rest of the line
+    expect(fast.bumps).toBe(1);
+    // a bike beside the line never leaves the road
+    expect(cones(1, 1.5).peak).toBe(0);
+  });
+
+  it("stands a line of cones across a lane on every road, in the same place every race", () => {
+    for (let road = 0; road < ROADS.length; road++) {
+      const a = makeTrack(1, road);
+      expect(makeTrack(1, road).cones).toEqual(a.cones);
+      expect(a.cones.length).toBeGreaterThanOrEqual(15);
+      for (const c of a.cones) expect(Math.abs(c.x)).toBeLessThan(ROAD_HALF - 1);
+    }
   });
 });

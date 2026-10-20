@@ -52,6 +52,8 @@ export type Reaction = {
   struck: { id: number; side: 1 | -1; by: number } | null;
   /** a rider flung by a bike, carried on beside it through the air (C9) */
   flung: number | null;
+  /** a cone ridden over, where it stood: knocked flat for a moment (R11) */
+  cone?: { z: number; x: number };
 };
 
 /**
@@ -97,6 +99,11 @@ export function react(e: RaceEvent, riders: readonly Rider[], me: number | null)
       out.car = { id: e.other, amp: 0.06 + 0.06 * hard };
       const g = heard(r);
       if (g > 0) out.sound = { kind: "carBump", gain: g * (0.5 + 0.5 * hard) };
+    } else if (e.with === "cone") {
+      // a cone ridden over: a plastic knock, and the cone kicked away (R11)
+      out.cone = { z: r.z, x: e.from };
+      const g = heard(r);
+      if (g > 0) out.sound = { kind: "rideOver", gain: g * 0.45 };
     } else {
       // a wall: tilted off it, and the long scrape
       out.tilt.push({ id: r.id, amp: (0.2 + 0.3 * hard) * away(r.x, e.from) });
