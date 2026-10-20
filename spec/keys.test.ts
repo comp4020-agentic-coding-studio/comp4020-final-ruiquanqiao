@@ -37,3 +37,8 @@ describe("remapping the controls (R16)", () => {
     expect(keyName("ShiftLeft")).toBe("Shift Left");
   });
 });
+
+it("puts getting off the bike (M3) on L, out of the way of the riding keys", () => {
+  expect(DEFAULT_KEYS.off).toBe("KeyL");
+  expect(actionOf(DEFAULT_KEYS, "KeyL")).toBe("off");
+});

@@ -71,6 +71,8 @@ export const TUNE = {
   slickGrip: { oil: 0.08, ice: 0.05, mud: 0.25 },
   slickKick: { oil: 6, ice: 7, mud: 3.5 },
   slickLean: 0.5,
+  /** the fastest a rider may get off the bike, m/s (M3): about 20 km/h */
+  offBelow: 5.5,
   /** a crest lifts the bike once following the road would take this share of gravity pulling down (R10) */
   crestLift: 1.3,
   /** a cone ridden over throws the bike up at this, plus this much per m/s of speed (R11) */
@@ -219,12 +221,14 @@ export type Input = {
   right: boolean;
   hand: boolean;
   foot: boolean;
+  /** get off the bike (M3) */
+  off: boolean;
 };
 
-export const NO_INPUT: Input = { throttle: false, brake: false, left: false, right: false, hand: false, foot: false };
+export const NO_INPUT: Input = { throttle: false, brake: false, left: false, right: false, hand: false, foot: false, off: false };
 
 export const packInput = (i: Input): number =>
-  (+i.throttle) | (+i.brake << 1) | (+i.left << 2) | (+i.right << 3) | (+i.hand << 4) | (+i.foot << 5);
+  (+i.throttle) | (+i.brake << 1) | (+i.left << 2) | (+i.right << 3) | (+i.hand << 4) | (+i.foot << 5) | (+i.off << 6);
 
 export const unpackInput = (n: number): Input => ({
   throttle: !!(n & 1),
@@ -233,6 +237,7 @@ export const unpackInput = (n: number): Input => ({
   right: !!(n & 8),
   hand: !!(n & 16),
   foot: !!(n & 32),
+  off: !!(n & 64),
 });
 
 export type Phase = "riding" | "thrown" | "running" | "finished" | "wrecked" | "busted";
@@ -322,6 +327,8 @@ export type RaceEvent =
   | { t: number; kind: "busted"; rider: number; cop: number }
   | { t: number; kind: "snatch"; by: number; from: number; weapon: Weapon }
   | { t: number; kind: "wrecked"; rider: number }
+  /** got off the bike on purpose (M3) */
+  | { t: number; kind: "dismount"; rider: number }
   | { t: number; kind: "finished"; rider: number; place: number }
   /** a rider on foot, or lying in the road, ridden into (C9) */
   | { t: number; kind: "runOver"; by: number; on: number; what: "rider" | "bike" }
@@ -633,9 +640,35 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
       setPhase(r, "riding");
       return;
     }
+    // still holding the key that got them off: standing beside the bike (M3)
+    if (input.off) {
+      r.speed = 0;
+      return;
+    }
     r.z += (dz / d) * TUNE.runSpeed * dt;
     r.x += ((dx / d) * TUNE.runSpeed + steer * 2) * dt;
     r.speed = 0;
+    return;
+  }
+
+  // getting off on purpose (M3): only near a stop, the bike stood beside the
+  // road side of the rider, and back on by walking to it as after a fall; a
+  // cop alongside busts a rider off the bike either way (P1)
+  if (input.off && r.speed < TUNE.offBelow && r.air <= 0) {
+    const side = r.x > 0 ? -1 : 1;
+    r.bikeZ = r.z;
+    // first 1.6 m: under the 1.2 m a rider climbs back on from, after one
+    // step's walk, so a tap was off and on again inside 0.06 s, never seen
+    r.bikeX = r.x + side * 2.4;
+    r.bikeSpeed = 0;
+    r.speed = 0;
+    r.vx = 0;
+    r.lean = 0;
+    r.leanHeld = 0;
+    r.build = 0;
+    r.attack = null;
+    setPhase(r, "running");
+    if (race) race.events.push({ t: race.t, kind: "dismount", rider: r.id });
     return;
   }
 

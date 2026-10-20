@@ -77,7 +77,7 @@ describe("riding", () => {
   });
 
   it("carries every action a player has, keys and touch alike, through the wire and back (R15)", () => {
-    const keys: (keyof Input)[] = ["throttle", "brake", "left", "right", "hand", "foot"];
+    const keys: (keyof Input)[] = ["throttle", "brake", "left", "right", "hand", "foot", "off"];
     expect(Object.keys(NO_INPUT).sort()).toEqual([...keys].sort());
     for (let n = 0; n < 1 << keys.length; n++) {
       const input = Object.fromEntries(keys.map((k, i) => [k, (n & (1 << i)) !== 0])) as Input;
@@ -320,5 +320,32 @@ describe("traffic cones (R11)", () => {
       expect(a.cones.length).toBeGreaterThanOrEqual(15);
       for (const c of a.cones) expect(Math.abs(c.x)).toBeLessThan(ROAD_HALF - 1);
     }
+  });
+});
+
+describe("getting off on purpose (M3)", () => {
+  it("lets a rider near a stop get off, the bike stood beside them, and walk back on with stamina full", () => {
+    const race = alone();
+    const r = rider(race);
+    Object.assign(r, { z: 500, x: 2, speed: 3, stamina: 30 });
+    hold(race, { off: true }, DT);
+    expect(r.phase).toBe("running");
+    expect(race.events).toContainEqual(expect.objectContaining({ kind: "dismount", rider: 0 }));
+    expect(Math.abs(r.bikeX - r.x)).toBeGreaterThan(2);
+    // standing there while the key is held
+    hold(race, { off: true }, 1);
+    expect(r.phase).toBe("running");
+    // back to it by the run, as after a fall (M2), and stamina full (C8)
+    for (let i = 0; i < 600 && r.phase !== "riding"; i++) hold(race, { left: true }, DT);
+    expect(r.phase).toBe("riding");
+    expect(r.stamina).toBe(100);
+  });
+
+  it("does nothing at speed", () => {
+    const race = alone();
+    const r = rider(race);
+    Object.assign(r, { z: 500, x: 0, speed: 20 });
+    hold(race, { off: true, throttle: true }, 0.5);
+    expect(r.phase).toBe("riding");
   });
 });

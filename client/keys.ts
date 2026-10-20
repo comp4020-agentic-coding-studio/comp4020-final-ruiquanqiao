@@ -14,11 +14,12 @@ export const ACTIONS: { action: Action; label: string }[] = [
   { action: "right", label: "Steer right" },
   { action: "hand", label: "Punch, or a weapon" },
   { action: "foot", label: "Kick" },
+  { action: "off", label: "Get off the bike" },
 ];
 
 export type Bindings = Record<Action, string>;
 
-export const DEFAULT_KEYS: Bindings = { throttle: "KeyW", brake: "KeyS", left: "KeyA", right: "KeyD", hand: "KeyJ", foot: "KeyK" };
+export const DEFAULT_KEYS: Bindings = { throttle: "KeyW", brake: "KeyS", left: "KeyA", right: "KeyD", hand: "KeyJ", foot: "KeyK", off: "KeyL" };
 
 const ARROWS: Record<string, Action> = { ArrowUp: "throttle", ArrowDown: "brake", ArrowLeft: "left", ArrowRight: "right" };
 

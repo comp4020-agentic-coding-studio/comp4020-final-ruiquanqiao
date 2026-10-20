@@ -870,12 +870,12 @@ function showKeys(): void {
     list.append(li);
   }
   const k = (a: Action): string => keyName(bindings[a]);
-  $("#keys-line").textContent = `${k("throttle")} ride · ${k("brake")} brake · ${k("left")} ${k("right")} steer · ${k("hand")} hand · ${k("foot")} foot`;
+  $("#keys-line").textContent = `${k("throttle")} ride · ${k("brake")} brake · ${k("left")} ${k("right")} steer · ${k("hand")} hand · ${k("foot")} foot · ${k("off")} off`;
   // the touch buttons carry the keyboard letter too
   for (const b of document.querySelectorAll<HTMLElement>("#touch button[data-key]")) {
     const a = b.dataset.key as Action;
     const letter = b.firstChild;
-    if ((a === "hand" || a === "foot" || a === "brake" || a === "throttle") && letter?.nodeType === Node.TEXT_NODE) letter.textContent = keyName(bindings[a]);
+    if ((a === "hand" || a === "foot" || a === "brake" || a === "throttle" || a === "off") && letter?.nodeType === Node.TEXT_NODE) letter.textContent = keyName(bindings[a]);
   }
 }
 $("#keys-reset").addEventListener("click", () => {
