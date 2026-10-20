@@ -1,11 +1,10 @@
 # Knuckle Road
 
 Fifteen motorbikes on one ridge road, and you can punch and kick whoever is
-riding beside you. Knuckle Road remakes the arcade mode of *Road Rash*, EA's
-1994 game in its 1996 Windows port, the version known in China as 暴力摩托 and
-the one I played, as a race shared by whoever is on the road right now. Press
-**Race with NPCs** and accept the match. W rides, A and D steer, J punches, K
-kicks; a phone has the same keys on screen.
+riding beside you. Knuckle Road remakes the arcade mode of *Road Rash* (EA,
+1996 Windows port), known in China as 暴力摩托 and the one I played, as a race
+shared by whoever is on the road now. Press **Race with NPCs** and accept. W
+rides, A and D steer, J punches, K kicks; a phone has the keys on screen.
 
 ## What good means here
 
@@ -13,9 +12,8 @@ kicks; a phone has the same keys on screen.
 story and replace its mechanics; Neill Hoch (2020) calls that nostalgia
 rather than reproduction. I keep the mechanics. My first plan, written from
 memory, left out the police, both weapons and weapon snatching, so every
-mechanic of the original now has a row in [the ledger](docs/ledger.md), with
-a source from the manuals and guides and a decision: copied, adapted with a
-reason, or left out with one. The original is sold nowhere today, like most
+mechanic now has a row in [the ledger](docs/ledger.md) with a source and a
+decision: copied, adapted or left out, each with a reason. The original is sold nowhere today, like most
 games of its age (Video Game History Foundation, 2023).
 
 **Your bike answers your keys.** Bernier (2001) put it plainly: who is
@@ -29,9 +27,8 @@ server says a rider is, not quite where you saw them.
 **More fun with the person in the next chair.** Wilson (2012) designs games
 that are "confrontational" on purpose, because they make play festive in a
 room. Road Rash already is one. A room holds eight people, each in leathers no
-one else there wears; NPCs fill only the empty seats, so one visitor
-still gets the original's full grid, and each person who joins takes an NPC's
-place. Everyone starts on one GO, anyone can watch at `/live`, and whoever
+one else there wears; NPCs fill only the empty seats, so one visitor still
+gets the full grid. Everyone starts on one GO, anyone can watch at `/live`, and whoever
 knocks you off is named the next time you share a road.
 
 **Small on purpose.** Shirky (2004) wrote software for "dozens of users", and
@@ -46,13 +43,13 @@ ranks everyone who has raced.
 |---|---|
 | Every mechanic has a sourced decision, none left overdue | `spec/ledger.test.ts` |
 | A steer in one browser shows in another within a second | `spec/realtime.test.ts` |
-| Other bikes are drawn as they really moved, however late snapshots come | `spec/netview.test.ts`, replaying arrivals recorded from the live server |
+| Other bikes are drawn as they really moved, however late snapshots come | `spec/netview.test.ts`, on arrivals recorded live |
 | No one can steer another person's bike; a room holds eight | `spec/lobby.test.ts` |
 | A qualification, the leaderboard and the log survive a restart | `spec/persistence.test.ts` |
 | Every page passes axe, and every link here opens | `spec/a11y.test.ts`, `spec/readme.test.ts` |
-| It looks like the original | Judged frame beside frame against 137 screenshots; each Look row names the commit that records it |
-| It handles like the original | Judged by riding it, then pinned as numbers measured off a recorded race in `spec/feel.test.ts` |
-| It holds up over a bad network | Ridden through 300 ms with 3% loss and 8 scripted people at once; the numbers are in the commits |
+| It looks like the original | Judged frame beside frame against 137 screenshots, each judgement in a commit |
+| It handles like the original | Judged by riding, then pinned as numbers in `spec/feel.test.ts` |
+| It holds up over a bad network | Ridden at 300 ms with 3% loss and with 8 scripted people; numbers in the commits |
 
 ## What I left out
 
