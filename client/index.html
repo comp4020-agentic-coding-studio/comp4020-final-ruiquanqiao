@@ -93,7 +93,7 @@
 
   <!-- every race on the road, to spectate (N11) -->
   <section id="live" aria-labelledby="live-head">
-    <h2 id="live-head">On the road now</h2>
+    <h1 id="live-head">On the road now</h1>
     <p class="hint">Every race running, and who is in it. Watch any of them from behind a rider of your choice.</p>
     <ol id="rooms"></ol>
     <p id="rooms-none" class="hint">No one is racing right now. Queue up on the Race page and you will be the first.</p>
@@ -101,9 +101,9 @@
 
   <!-- everyone who has raced, by points (N12) -->
   <section id="leaders" aria-labelledby="leaders-head">
-    <h2 id="leaders-head">Leaderboard</h2>
+    <h1 id="leaders-head">Leaderboard</h1>
     <p class="hint">Everyone who has raced. A finish scores by its place across the line, NPCs included in the count: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1. Wrecked, busted or leaving scores nothing.</p>
-    <div class="table-wrap">
+    <div class="table-wrap" tabindex="0">
       <table id="leaderboard">
         <thead><tr><th scope="col">#</th><th scope="col">Rider</th><th scope="col">Points</th><th scope="col">Races</th><th scope="col">Wins</th><th scope="col">Podiums</th><th scope="col" title="Road and level boards qualified on">Boards</th></tr></thead>
         <tbody></tbody>
@@ -116,7 +116,7 @@
   <section id="loading" aria-labelledby="loading-head">
     <header>
       <p class="kicker" id="loading-mode"></p>
-      <h2 id="loading-head"></h2>
+      <h2 id="loading-head">Loading the race</h2>
       <p id="loading-line"></p>
     </header>
     <ol id="loading-cards"></ol>
@@ -131,7 +131,7 @@
       <p id="position" class="sr" aria-live="polite"></p>
       <div id="banner" aria-live="assertive"></div>
       <div id="count" aria-live="assertive" hidden></div>
-      <button id="quit" aria-label="Leave the race">Esc<small>leave</small></button>
+      <button id="quit" aria-label="Esc leave the race">Esc <small>leave</small></button>
       <p id="ping" title="Round trip to the server" hidden></p>
       <div id="spectate">
         <button id="spec-prev" aria-label="Watch the rider before">◀</button>
@@ -162,9 +162,9 @@
 
   <section id="result" aria-labelledby="ending">
     <div class="panel">
-      <h2 id="ending"></h2>
+      <h2 id="ending">Race over</h2>
       <p id="ending-line"></p>
-      <table id="standings"><thead><tr><th scope="col">#</th><th scope="col">Rider</th><th scope="col">Time</th><th scope="col"></th></tr></thead><tbody></tbody></table>
+      <table id="standings"><thead><tr><th scope="col">#</th><th scope="col">Rider</th><th scope="col">Time</th><th scope="col">Note</th></tr></thead><tbody></tbody></table>
       <button id="again">Back to the board</button>
       <button id="again-live" hidden>Back to live races</button>
     </div>
