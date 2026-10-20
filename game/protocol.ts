@@ -61,6 +61,8 @@ export type RiderState = [
   air: number,
   vy: number,
   tilt: number,
+  /** the riders this one is after: the one it is fighting, and any that hit it this race (O4) */
+  after: number[],
 ];
 
 /** A grudge between two people in a race (O3), by their bikes in it: `holder` was knocked off by `against`, `n` times across every race, this one included. */
@@ -118,7 +120,8 @@ export type Room = { race: number; mode: Mode; level: number; track: number; tim
 export function encodeRider(r: Rider): RiderState {
   const a = r.attack ? `${r.attack.kind}:${r.attack.side}:${r.attack.t.toFixed(3)}` : "";
   const q = (n: number, d = 2): number => Math.round(n * 10 ** d) / 10 ** d;
-  return [r.id, q(r.z), q(r.x), q(r.speed), q(r.lean), q(r.build, 3), q(r.stamina, 1), q(r.damage, 1), r.phase, q(r.phaseT, 3), q(r.bikeZ), q(r.bikeX), a, r.place, r.weapon ?? "", q(r.air), q(r.vy), Number.isFinite(r.tilt) ? q(r.tilt, 4) : 0];
+  const after = [...new Set([...(r.foe >= 0 ? [r.foe] : []), ...Object.keys(r.grudge).filter((k) => r.grudge[Number(k)] > 0).map(Number)])];
+  return [r.id, q(r.z), q(r.x), q(r.speed), q(r.lean), q(r.build, 3), q(r.stamina, 1), q(r.damage, 1), r.phase, q(r.phaseT, 3), q(r.bikeZ), q(r.bikeX), a, r.place, r.weapon ?? "", q(r.air), q(r.vy), Number.isFinite(r.tilt) ? q(r.tilt, 4) : 0, after];
 }
 
 /** Write a wire state onto a rider, leaving what the wire does not carry. */
@@ -129,6 +132,8 @@ export function applyRider(r: Rider, s: RiderState): void {
   r.air = s[15] ?? 0;
   r.vy = s[16] ?? 0;
   r.tilt = s[17] ?? 0;
+  // all a browser needs of a grudge is whom it is against (O4)
+  r.grudge = Object.fromEntries((s[18] ?? []).map((id) => [id, 1]));
   if (s[12]) {
     const [kind, side, t] = s[12].split(":");
     r.attack = { kind: kind as "punch" | "backhand" | "kick", side: Number(side) as -1 | 1, t: Number(t), target: -1, landed: false };

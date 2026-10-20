@@ -4,7 +4,9 @@ import { afterAll, describe, expect, it } from "vitest";
 import { type Entry, LOAD_MIN, type ToClient } from "../game/protocol.ts";
 import { NO_INPUT, type Race, beginAttack, startRace, step } from "../game/sim.ts";
 import { bake } from "../game/track.ts";
-import { addFeud, feudLine, peopleRows } from "../client/people.ts";
+import { addFeud, feudLine, moodOf, peopleRows } from "../client/people.ts";
+import { drawDash } from "../client/dash.ts";
+import { applyRider, encodeRider } from "../game/protocol.ts";
 import { openDb } from "../server/db.ts";
 import { type Conn, Lobby } from "../server/lobby.ts";
 
@@ -177,5 +179,73 @@ describe("grudges between people, across races (O3)", () => {
     const rows = peopleRows(field(entrants), entrants, 0, feuds);
     expect(rows.find((r) => r.name === "Mika")).toMatchObject({ onYou: 2, byYou: 1 });
     expect(rows.find((r) => r.name === "Ana")).toMatchObject({ onYou: 0, byYou: 0 });
+  });
+});
+
+describe("the closest opponent's mood, on their stamina wedge (O4)", () => {
+  const entrants: Entry[] = [
+    { id: 0, name: "Ana", human: true },
+    { id: 1, name: "Mika", human: true },
+    { id: 2, name: "Dex Carbine", human: false },
+  ];
+
+  it("reads red for an NPC you hit, carried to the browser in the snapshot, and yellow otherwise", () => {
+    const server = field(entrants);
+    const dex = server.riders.find((r) => r.id === 2)!;
+    const ana = server.riders.find((r) => r.id === 0)!;
+    Object.assign(ana, { z: 500, x: 0, speed: 30 });
+    Object.assign(dex, { z: 500, x: 1, speed: 30 });
+    // what a browser has of Dex before and after Ana's punch lands
+    const seen = field(entrants).riders.find((r) => r.id === 2)!;
+    applyRider(seen, encodeRider(dex));
+    expect(moodOf(seen, 0, [])).toBe("neutral");
+    beginAttack(server, ana, "hand");
+    for (let i = 0; i < 12; i++) step(server, new Map([[0, NO_INPUT], [1, NO_INPUT]]));
+    expect(server.events).toContainEqual(expect.objectContaining({ kind: "hit", by: 0, on: 2 }));
+    applyRider(seen, encodeRider(dex));
+    expect(moodOf(seen, 0, [])).toBe("after");
+    // and only at the one who hit it
+    expect(moodOf(seen, 1, [])).toBe("neutral");
+  });
+
+  it("reads red for an NPC fighting you, though you never hit it", () => {
+    const server = field(entrants);
+    const dex = server.riders.find((r) => r.id === 2)!;
+    dex.foe = 1;
+    const seen = field(entrants).riders.find((r) => r.id === 2)!;
+    applyRider(seen, encodeRider(dex));
+    expect(moodOf(seen, 1, [])).toBe("after");
+    expect(moodOf(seen, 0, [])).toBe("neutral");
+  });
+
+  it("reads red for a person you have knocked off, in this race or an earlier one, and not the other way round", () => {
+    const race = field(entrants);
+    const mika = race.riders.find((r) => r.id === 1)!;
+    const feuds = [{ holder: 1, against: 0, n: 1 }];
+    expect(moodOf(mika, 0, feuds)).toBe("after");
+    expect(moodOf(race.riders.find((r) => r.id === 0)!, 1, feuds)).toBe("neutral");
+  });
+
+  it("paints the opponent's wedge all red when they are after you, yellow when neutral, and the player's own graded", () => {
+    const fills = (mood: "after" | "neutral"): string[] => {
+      const got: string[] = [];
+      const gradient = { addColorStop: () => {} };
+      const ctx = new Proxy({} as Record<string, unknown>, {
+        get: (_, k) => (k === "measureText" ? (t: string) => ({ width: t.length * 8 }) : k === "createLinearGradient" || k === "createRadialGradient" ? () => gradient : () => {}),
+        set: (_, k, v) => {
+          if (k === "fillStyle" && typeof v === "string" && v.startsWith("hsl")) got.push(v);
+          return true;
+        },
+      }) as unknown as CanvasRenderingContext2D;
+      drawDash(ctx, 1920, 1080, { name: "Ana", kmh: 200, rpm: 0.5, position: 2, km: 1, damage: 1, stamina: 1, opponent: { name: "Dex", stamina: 1, gap: 2, mood } });
+      return got;
+    };
+    const after = fills("after");
+    const neutral = fills("neutral");
+    // ten segments each: the player's graded red to green, then the opponent's
+    expect(after).toHaveLength(20);
+    expect(new Set(after.slice(0, 10)).size).toBe(10);
+    expect(after.slice(10).every((f) => f.startsWith("hsl(0,"))).toBe(true);
+    expect(neutral.slice(10).every((f) => f.startsWith("hsl(50,"))).toBe(true);
   });
 });

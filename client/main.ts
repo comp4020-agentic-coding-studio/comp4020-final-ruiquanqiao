@@ -8,7 +8,7 @@ import { drawDash, revs } from "./dash.ts";
 import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { LIVERIES } from "../game/liveries.ts";
 import { react } from "./feel.ts";
-import { addFeud, feudLine, peopleRows } from "./people.ts";
+import { addFeud, feudLine, moodOf, peopleRows } from "./people.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
 import { Handover, Prediction, Timeline } from "./netview.ts";
@@ -1180,11 +1180,11 @@ function hud(c: Current, id = c.you): void {
     km: Math.max(0, r.z) / 1000, // an odometer, never a progress bar (T3); km, as the dial is
     damage: r.damage / 100,
     stamina: r.stamina / 100,
-    opponent: o ? { name: o.name, stamina: o.stamina / 100, gap: o.z - r.z } : null,
+    opponent: o ? { name: o.name, stamina: o.stamina / 100, gap: o.z - r.z, mood: moodOf(o, r.id, c.feuds) } : null,
   });
   people(c, id);
   // the same facts for a screen reader, spoken only when they change
-  const said = `Position ${position} of ${c.race.riders.filter((x) => !x.cop).length}`;
+  const said = `Position ${position} of ${c.race.riders.filter((x) => !x.cop).length}${o && moodOf(o, r.id, c.feuds) === "after" ? `, ${o.name} is after you` : ""}`;
   if (said !== lastSaid) {
     $("#position").textContent = said;
     lastSaid = said;

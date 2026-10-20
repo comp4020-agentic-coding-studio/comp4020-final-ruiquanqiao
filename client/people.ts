@@ -4,7 +4,8 @@
 // hold it without a page.
 
 import type { Entry, Feud } from "../game/protocol.ts";
-import { type Race, standings } from "../game/sim.ts";
+import { type Race, type Rider, standings } from "../game/sim.ts";
+import type { Mood } from "./dash.ts";
 
 export type PersonRow = {
   id: number;
@@ -51,6 +52,16 @@ export function feudLine(onYou: number, byYou: number): string {
   if (onYou) return `Knocked you off ${times(onYou)}`;
   if (byYou) return `You knocked them off ${times(byYou)}`;
   return "";
+}
+
+/**
+ * Whether a rider is after the one watching (O4): an NPC that is fighting
+ * them or was hit by them this race (O5), or a person who has been knocked
+ * off by them, in this race or an earlier one (O3).
+ */
+export function moodOf(o: Rider, you: number, feuds: Feud[]): Mood {
+  if (o.human) return feuds.some((f) => f.holder === o.id && f.against === you && f.n > 0) ? "after" : "neutral";
+  return (o.grudge[you] ?? 0) > 0 ? "after" : "neutral";
 }
 
 /** One knockdown seen in a race, added to the tally the screen keeps (O3). Only between people. */

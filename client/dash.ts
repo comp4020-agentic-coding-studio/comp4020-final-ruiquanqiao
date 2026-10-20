@@ -16,7 +16,8 @@ export type Readout = {
   km: number;
   damage: number; // 0..1 left
   stamina: number; // 0..1
-  opponent: { name: string; stamina: number; gap: number } | null; // gap in metres, + ahead
+  /** gap in metres, + ahead; `mood` colours their stamina wedge (O4): red when they are after you */
+  opponent: { name: string; stamina: number; gap: number; mood?: Mood } | null;
 };
 
 /**
@@ -25,6 +26,17 @@ export type Readout = {
  * carries it the last part of the way.
  */
 export const revs = (speed: number, cap: number, build: number): number => 0.15 + 0.8 * Math.min(1, (speed / cap) * (0.8 + 0.2 * build));
+
+/**
+ * The closest opponent's attitude to you, shown as the colour of their
+ * stamina wedge (ledger O4, from the Sega CD manual): red "coming after you",
+ * yellow neutral, fighting for a place. The manual's green, "won't rumble
+ * unless you strike first", has no rider here to describe: every rider fights
+ * for the place it is level with (O5), and nothing can say a person won't.
+ */
+export type Mood = "after" | "neutral";
+
+export const MOOD_HUE: Record<Mood, number> = { after: 0, neutral: 50 };
 
 const FONT = "Oswald, 'Arial Narrow', Impact, sans-serif";
 
@@ -94,7 +106,7 @@ export function drawDash(ctx: CanvasRenderingContext2D, w: number, h: number, d:
 
   if (d.opponent) {
     text(ctx, fit(ctx, d.opponent.name, W * 0.17, H * 0.05), X(0.925), Y(0.985), H * 0.05, "#fff", "right");
-    wedge(ctx, X(0.765), Y(0.87), W * 0.05, d.opponent.stamina, true);
+    wedge(ctx, X(0.765), Y(0.87), W * 0.05, d.opponent.stamina, true, d.opponent.mood ? MOOD_HUE[d.opponent.mood] : undefined);
     // distance in km: red and up when they are ahead, green and down behind
     const ahead = d.opponent.gap >= 0;
     const km = Math.abs(d.opponent.gap) / 1000;
@@ -144,8 +156,8 @@ function dial(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, 
   ctx.restore();
 }
 
-/** A quarter-arc meter graded green at the top through yellow to red. */
-function wedge(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, value: number, mirror: boolean): void {
+/** A quarter-arc meter graded green at the top through yellow to red, or all of one hue when given one (O4). */
+function wedge(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, value: number, mirror: boolean, hueAll?: number): void {
   ctx.save();
   ctx.translate(cx, cy);
   if (mirror) ctx.scale(-1, 1);
@@ -159,7 +171,7 @@ function wedge(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number,
     ctx.arc(0, r, r, a0, a1);
     ctx.arc(0, r, r * 0.55, a1, a0, true);
     ctx.closePath();
-    const hue = (i / (steps - 1)) * 120;
+    const hue = hueAll ?? (i / (steps - 1)) * 120;
     ctx.fillStyle = on ? `hsl(${hue}, 85%, 48%)` : "rgba(40,40,40,0.9)";
     ctx.fill();
   }
