@@ -38,6 +38,28 @@ it("does not qualify a rider who only placed", () => {
   db.close();
 });
 
+it("takes every qualification on the level from a rider wrecked or busted in it, and keeps the other levels (S5)", () => {
+  const db = openDb(join(dir, "revoke.db"));
+  const rider = db.rider("token-revoked");
+  const other = db.rider("token-bystander");
+  const win = (level: number, track: string, who = rider) => db.finishRace(db.startRace("ai", level, track), level, track, [{ id: who.id, name: who.name, human: true, place: 1, outcome: "qualified", time: 180 }]);
+  win(2, "Ridge Road");
+  win(2, "Gold Town");
+  win(3, "Ridge Road");
+  win(2, "Ridge Road", other);
+  expect(db.qualified(rider.id)).toHaveLength(3);
+  db.finishRace(db.startRace("ai", 2, "Coast Road"), 2, "Coast Road", [{ id: rider.id, name: rider.name, human: true, place: 9, outcome: "wrecked", time: null }]);
+  expect(db.qualified(rider.id)).toEqual([{ level: 3, track: "Ridge Road" }]);
+  db.finishRace(db.startRace("ai", 3, "Coast Road"), 3, "Coast Road", [{ id: rider.id, name: rider.name, human: true, place: 9, outcome: "busted", time: null }]);
+  expect(db.qualified(rider.id)).toEqual([]);
+  // leaving, running out of time and a stopped race take nothing; nor does anyone else's wreck
+  win(2, "Ridge Road");
+  for (const outcome of ["quit", "unfinished", "placed"] as const) db.finishRace(db.startRace("ai", 2, "Gold Town"), 2, "Gold Town", [{ id: rider.id, name: rider.name, human: true, place: 9, outcome, time: null }]);
+  expect(db.qualified(rider.id)).toEqual([{ level: 2, track: "Ridge Road" }]);
+  expect(db.qualified(other.id)).toEqual([{ level: 2, track: "Ridge Road" }]);
+  db.close();
+});
+
 it("ranks everyone who has raced by points for their finishes, wins and podiums, and lists no NPC (N12)", () => {
   const db = openDb(join(dir, "leaders.db"));
   const mika = db.rider("token-mika");
@@ -57,7 +79,8 @@ it("ranks everyone who has raced by points for their finishes, wins and podiums,
   ]);
   expect(db.leaderboard()).toEqual([
     { rank: 1, id: juno.id, name: "Juno", points: 10 + 25, races: 2, wins: 1, podiums: 1, boards: 1 },
-    { rank: 2, id: mika.id, name: "Mika", points: 18, races: 2, wins: 0, podiums: 1, boards: 1 },
+    // her wreck at level 1 took the board she won there (S5); the points stay
+    { rank: 2, id: mika.id, name: "Mika", points: 18, races: 2, wins: 0, podiums: 1, boards: 0 },
   ]);
   db.close();
 });

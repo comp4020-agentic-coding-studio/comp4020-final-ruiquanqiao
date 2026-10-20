@@ -770,6 +770,8 @@ $("#quit-yes").addEventListener("click", quitRace);
 const ordinal = (n: number): string => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
 
 function result(standings: Standing[], quals: { level: number; track: string }[]): void {
+  // what a wreck or a bust took off the board (S5)
+  const lost = qualified.filter((q) => !quals.some((x) => x.level === q.level && x.track === q.track));
   qualified = quals;
   askQuit(false);
   clearQueue();
@@ -786,8 +788,9 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
     aborted: ["Race stopped", "The server restarted mid-race. It counts for nobody; the page reconnects by itself."],
   };
   const [head, line] = lines[outcome];
+  const revoked = lost.length === 0 ? "" : ` It costs you every qualification on level ${c.level}: ${lost.map((q) => q.track).join(", ")}.`;
   $("#ending").textContent = head;
-  $("#ending-line").textContent = line;
+  $("#ending-line").textContent = line + revoked;
   $("#result").dataset.outcome = outcome;
   $("#again").hidden = false;
   $("#again-live").hidden = true;

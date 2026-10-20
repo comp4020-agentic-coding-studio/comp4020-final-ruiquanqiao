@@ -90,6 +90,7 @@ export function openDb(file: string) {
     endRace: db.prepare("UPDATE races SET ended_at = ? WHERE id = ?"),
     insertResult: db.prepare("INSERT INTO results (race_id, rider_id, name, place, outcome, time_ms) VALUES (?, ?, ?, ?, ?, ?)"),
     qualify: db.prepare("INSERT OR IGNORE INTO qualifications (rider_id, level, track, race_id, at) VALUES (?, ?, ?, ?, ?)"),
+    revoke: db.prepare("DELETE FROM qualifications WHERE rider_id = ? AND level = ?"),
     qualified: db.prepare("SELECT level, track FROM qualifications WHERE rider_id = ? ORDER BY level, track"),
     grudge: db.prepare("INSERT INTO grudges (holder, against, n, race_id, at) VALUES (?, ?, 1, ?, ?) ON CONFLICT (holder, against) DO UPDATE SET n = n + 1, race_id = excluded.race_id, at = excluded.at"),
     grudges: db.prepare("SELECT holder, against, n FROM grudges WHERE holder IN (SELECT value FROM json_each(?)) AND against IN (SELECT value FROM json_each(?))"),
@@ -134,13 +135,18 @@ export function openDb(file: string) {
     startRace(mode: string, level: number, track: string): number {
       return Number(q.insertRace.run(mode, level, track, Date.now()).lastInsertRowid);
     },
-    /** Results for everyone; a qualification for every human in the top three (S4). */
+    /**
+     * Results for everyone; a qualification for every human in the top three
+     * (S4), and every qualification on the level taken from a human wrecked
+     * or busted in it (S5).
+     */
     finishRace(race: number, level: number, track: string, standings: Standing[]): void {
       db.exec("BEGIN");
       try {
         for (const s of standings) {
           q.insertResult.run(race, s.human ? s.id : null, s.name, s.place, s.outcome, s.time === null ? null : Math.round(s.time * 1000));
           if (s.human && s.outcome === "qualified") q.qualify.run(s.id, level, track, race, Date.now());
+          if (s.human && (s.outcome === "wrecked" || s.outcome === "busted")) q.revoke.run(s.id, level);
         }
         q.endRace.run(Date.now(), race);
         db.exec("COMMIT");
