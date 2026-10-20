@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LIVERIES, liveryOf } from "../game/liveries.ts";
-import { CHECK_WAIT, LOAD_MAX, LOAD_MIN, ROOM, type Standing, type ToClient } from "../game/protocol.ts";
+import { CHECK_WAIT, LOAD_MAX, LOAD_MIN, ROOM, SAYINGS, SAY_GAP, type Standing, type ToClient } from "../game/protocol.ts";
 import { type Conn, Lobby } from "../server/lobby.ts";
 import { TUNE, unpackInput } from "../game/sim.ts";
 
@@ -597,5 +597,60 @@ describe("what a person may change", () => {
     l.decline(stranger, 14);
     expect(live.quit.size).toBe(0);
     expect(live.conns.size).toBe(2);
+  });
+});
+
+describe("the race's chat (N7)", () => {
+  const chats = (c: Fake) => c.inbox.filter((m) => m.t === "chat") as Extract<ToClient, { t: "chat" }>[];
+
+  it("sends a canned line to everyone racing and watching, from the bike that said it, one every second and a half", () => {
+    const { l } = lobby();
+    const a = conn(1);
+    const b = conn(2);
+    l.join(a, "human", 1, 0);
+    l.join(b, "human", 1, 1);
+    const t = go(l, 11);
+    const live = [...l.races.values()][0];
+    const watcher = conn(3);
+    l.watch(watcher, live.id);
+    l.say(a, 2, t);
+    for (const c of [a, b, watcher]) expect(chats(c)).toEqual([{ t: "chat", race: live.id, from: a.local, say: 2 }]);
+    expect(SAYINGS[2]).toBe("You'll pay for that.");
+    // too soon, no such line, not racing: nothing goes out
+    l.say(a, 3, t + 1);
+    l.say(b, 99, t + 1);
+    l.say(b, -1, t + 1);
+    l.say(conn(4), 0, t + 1);
+    expect(chats(b)).toHaveLength(1);
+    l.say(a, 3, t + SAY_GAP);
+    expect(chats(b).at(-1)).toMatchObject({ from: a.local, say: 3 });
+  });
+
+  it("posts a person wrecked, busted or leaving, and no NPC", () => {
+    const { l } = lobby();
+    const a = conn(1);
+    const b = conn(2);
+    l.join(a, "ai", 1, 0);
+    l.join(b, "ai", 1, 1);
+    const t = go(l, 5);
+    const live = [...l.races.values()][0];
+    const npc = live.entrants.find((e) => !e.human)!.id;
+    live.race.events.push({ t: 1, kind: "wrecked", rider: b.local }, { t: 1, kind: "busted", rider: npc, cop: 99 }, { t: 1, kind: "busted", rider: a.local, cop: 99 });
+    l.tick(t + 0.1);
+    expect(chats(a).map((m) => [m.from, m.status])).toEqual([
+      [b.local, "wrecked"],
+      [a.local, "busted"],
+    ]);
+  });
+
+  it("posts a person who leaves mid-race to the others", () => {
+    const { l } = lobby();
+    const a = conn(1);
+    const b = conn(2);
+    l.join(a, "human", 1, 0);
+    l.join(b, "human", 1, 1);
+    go(l, 11);
+    l.quit(a);
+    expect(chats(b)).toEqual([expect.objectContaining({ from: a.local, status: "left" })]);
   });
 });

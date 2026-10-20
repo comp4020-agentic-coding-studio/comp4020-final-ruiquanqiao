@@ -8,7 +8,7 @@
 // start, with each person's countdown shortened by half their round trip so
 // GO lands at the same moment in every browser.
 
-import { CHECK_WAIT, type Entry, type Feud, type Room, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
+import { CHECK_WAIT, type Entry, type Feud, type Room, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SAYINGS, SAY_GAP, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, TUNE, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { LIVERIES } from "../game/liveries.ts";
 import { NET, Samples, cleanJump, cleanReport, ms } from "../game/net.ts";
@@ -32,6 +32,8 @@ export type Conn = {
   watching?: number | null;
   /** round trip to this browser, s: the shortest seen while loading */
   rtt?: number;
+  /** when this person last said something in a race (N7), s */
+  saidAt?: number;
 };
 
 /** One person's network over one race (N14), kept by bike so it outlives their connection. */
@@ -411,10 +413,27 @@ export class Lobby {
       const r = live.race.riders.find((x) => x.id === conn.local);
       if (r && r.phase !== "finished") r.phase = "wrecked";
       live.conns.delete(conn.local);
+      if (r && r.phase !== "finished") this.chat(live, { t: "chat", race: live.id, from: conn.local, status: "left" });
       this.log({ ev: "quit", who: who(conn), race: live.id });
       this.netLine(live, conn.local);
     }
     conn.race = null;
+  }
+
+  /** One of the canned lines, to everyone racing or watching the race (N7). */
+  say(conn: Conn, line: number, now: number): void {
+    const live = conn.race;
+    if (!live || live.ended) return this.reject(conn, "say", "not racing");
+    if (!Number.isInteger(line) || line < 0 || line >= SAYINGS.length) return this.reject(conn, "say", "no such line", { line: String(line).slice(0, 10) });
+    if (conn.saidAt !== undefined && now - conn.saidAt < SAY_GAP) return this.reject(conn, "say", "too soon");
+    conn.saidAt = now;
+    this.chat(live, { t: "chat", race: live.id, from: conn.local, say: line });
+    this.log({ ev: "say", who: who(conn), race: live.id, line: SAYINGS[line] });
+  }
+
+  private chat(live: Live, msg: Extract<ToClient, { t: "chat" }>): void {
+    for (const c of live.conns.values()) c.send(msg);
+    for (const c of live.watchers) c.send(msg);
   }
 
   input(conn: Conn, seq: number, keys: number): void {
@@ -703,6 +722,8 @@ export class Lobby {
         const line = e.kind === "bump" ? null : this.named(live, e as unknown as Record<string, unknown> & { kind: string; t: number });
         if (line) this.log(line);
         if (e.kind === "crash" && e.by !== undefined) this.feud(live, e.rider, e.by);
+        // a person wrecked or busted is posted to the chat, as in the original (N7)
+        if ((e.kind === "wrecked" || e.kind === "busted") && live.riders.has(e.rider) && !live.quit.has(e.rider)) this.chat(live, { t: "chat", race: live.id, from: e.rider, status: e.kind });
       }
       const events = live.race.events.slice(live.sent);
       live.sent = live.race.events.length;

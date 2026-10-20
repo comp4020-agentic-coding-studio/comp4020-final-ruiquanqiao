@@ -205,6 +205,7 @@ wss.on("connection", (ws, req) => {
     else if (msg.t === "watch") lobby.watch(conn, Number(msg.race));
     else if (msg.t === "unwatch") lobby.unwatch(conn);
     else if (msg.t === "in") lobby.input(conn, Number(msg.seq), Number(msg.keys));
+    else if (msg.t === "say") lobby.say(conn, Number(msg.line), now);
     else if (msg.t === "name" && typeof msg.name === "string") {
       const name = msg.name.replace(/\s+/g, " ").trim().slice(0, 20);
       if (!name) lobby.reject(conn, "name", "empty");

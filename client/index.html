@@ -134,6 +134,10 @@
       <button id="quit" aria-label="Esc leave the race">Esc <small>leave</small></button>
       <p id="ping" title="Round trip to the server" hidden></p>
       <ol id="people" aria-label="People in this race, by place" hidden></ol>
+      <!-- the race's chat: canned lines and what happened to each person (N7) -->
+      <ol id="chat" aria-label="Race chat" aria-live="polite"></ol>
+      <button id="say" aria-expanded="false" aria-controls="sayings">Say <small>F1–F8</small></button>
+      <ol id="sayings" aria-label="Say" hidden></ol>
       <div id="spectate">
         <button id="spec-prev" aria-label="Watch the rider before">◀</button>
         <p><small>Watching</small> <b id="spec-who"></b></p>

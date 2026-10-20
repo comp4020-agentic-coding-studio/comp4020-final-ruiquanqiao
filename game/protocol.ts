@@ -19,6 +19,15 @@ export const CHECK_WAIT = 10;
 export const LOAD_MIN = 2;
 export const LOAD_MAX = 20;
 
+/**
+ * The canned lines a racer can send (N7), on F1 to F8 or the Say button,
+ * written by me. Free text is left out: an open public site would need a
+ * moderator, and it has none.
+ */
+export const SAYINGS = ["Coming through!", "Nice one.", "You'll pay for that.", "See you at the line.", "Cop ahead!", "Sorry!", "Too slow.", "Good race."] as const;
+/** seconds between one person's lines, so the box cannot be flooded */
+export const SAY_GAP = 1.5;
+
 export type ToServer =
   | { t: "queue"; mode: Mode; level: number; track?: number; ai?: number }
   | { t: "leave" }
@@ -38,7 +47,9 @@ export type ToServer =
   | ({ t: "jump" } & JumpReport)
   /** spectate a race in progress, or stop (N11) */
   | { t: "watch"; race: number }
-  | { t: "unwatch" };
+  | { t: "unwatch" }
+  /** one of SAYINGS, by index, to everyone in one's race (N7) */
+  | { t: "say"; line: number };
 
 /** One rider as the wire carries it: just what drawing and the HUD need. */
 export type RiderState = [
@@ -105,6 +116,8 @@ export type ToClient =
   | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; cars: CarState[]; events: RaceEvent[] }
   /** `aborted` says why, when the server stopped the race rather than the race ending */
   | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[]; aborted?: string }
+  /** a line in the race's chat (N7): something a person said, by bike, or what happened to them */
+  | { t: "chat"; race: number; from: number; say?: number; status?: "wrecked" | "busted" | "left" }
   /** every room on the road, once a second, to everyone not racing (N11) */
   | { t: "live"; races: Room[] };
 

@@ -3,7 +3,7 @@
 // server runs, so the bike answers the keys at once, and draws everyone else
 // a tenth of a second in the past, between two snapshots.
 
-import { type CarState, type Entry, type Feud, type Leader, type Mode, type RiderState, type Room, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
+import { type CarState, type Entry, type Feud, type Leader, type Mode, type RiderState, type Room, SAYINGS, SAY_GAP, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
 import { drawDash, revs } from "./dash.ts";
 import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { LIVERIES } from "../game/liveries.ts";
@@ -99,6 +99,7 @@ function begin(msg: Extract<ToClient, { t: "start" }>): void {
   current = { id: msg.race, level: msg.level, race, you: msg.you, timeline: new Timeline(adaptiveDelay), prediction: new Prediction(), steps: 0, ended: false, go, counted: -1, drawFrom: null, net: new NetWatch(), handover: new Handover(), lastSnap: performance.now() / 1000, entrants: msg.entrants, feuds: (msg.feuds ?? []).map((f) => ({ ...f })) };
   peopleShown = "";
   showPing(null);
+  $("#chat").replaceChildren();
   if (msg.you !== null) {
     show("race");
     askQuit(false);
@@ -286,6 +287,7 @@ function onMessage(msg: ToClient): void {
     }
   }
   else if (msg.t === "live") onLive(msg);
+  else if (msg.t === "chat") onChat(msg);
   else if (msg.t === "start") begin(msg);
   else if (msg.t === "snap") onSnap(msg);
   else if (msg.t === "end") {
@@ -865,6 +867,18 @@ function setKey(k: keyof Input, down: boolean): void {
 let musicOn = true;
 
 addEventListener("keydown", (e) => {
+  // F1 to F8 say one of the canned lines (N7), as in the original
+  const f = /^F([1-8])$/.exec(e.code);
+  if (f && app.dataset.screen === "race") {
+    e.preventDefault();
+    if (!e.repeat) say(Number(f[1]) - 1);
+    return;
+  }
+  if (e.code === "Escape" && !sayings.hasAttribute("hidden")) {
+    e.preventDefault();
+    openSayings(false);
+    return;
+  }
   if (e.code === "KeyM" && document.activeElement?.tagName !== "INPUT") {
     musicOn = !musicOn;
     setMusic(musicOn);
@@ -1229,6 +1243,61 @@ function people(c: Current, id: number | null): void {
     }
     el.append(li);
   }
+}
+
+// ---- the race's chat (N7) ----
+
+const sayings = $("#sayings");
+SAYINGS.forEach((line, i) => {
+  const li = document.createElement("li");
+  const b = document.createElement("button");
+  const k = document.createElement("kbd");
+  k.textContent = `F${i + 1}`;
+  b.append(k, line);
+  b.addEventListener("click", () => {
+    say(i);
+    openSayings(false);
+  });
+  li.append(b);
+  sayings.append(li);
+});
+function openSayings(open: boolean): void {
+  sayings.hidden = !open;
+  $("#say").setAttribute("aria-expanded", String(open));
+  if (open) sayings.querySelector("button")?.focus();
+}
+$("#say").addEventListener("click", () => openSayings(sayings.hasAttribute("hidden")));
+
+let saidAt = -Infinity;
+function say(line: number): void {
+  const now = performance.now() / 1000;
+  // the server takes one line every SAY_GAP s; a quicker one is not sent
+  if (now - saidAt < SAY_GAP || !current || current.you === null) return;
+  saidAt = now;
+  send({ t: "say", line });
+}
+
+const STATUS: Record<"wrecked" | "busted" | "left", string> = { wrecked: "is wrecked", busted: "is busted", left: "left the race" };
+
+/** A line in the chat box: the newest four are kept, and each fades after eight seconds. */
+function onChat(msg: Extract<ToClient, { t: "chat" }>): void {
+  const c = current;
+  if (!c || c.id !== msg.race) return;
+  const name = c.entrants.find((e) => e.id === msg.from)?.name ?? "Someone";
+  const li = document.createElement("li");
+  const who = document.createElement("b");
+  who.textContent = name;
+  if (msg.status) {
+    li.className = "status";
+    li.append(who, ` ${STATUS[msg.status]}`);
+  } else if (msg.say !== undefined && SAYINGS[msg.say]) {
+    li.append(who, `: ${SAYINGS[msg.say]}`);
+  } else return;
+  const box = $("#chat");
+  box.append(li);
+  while (box.children.length > 4) box.firstElementChild!.remove();
+  window.setTimeout(() => li.classList.add("old"), 8000);
+  window.setTimeout(() => li.remove(), 8700);
 }
 
 // ---- debugging and tuning handle (CLAUDE.md: read state, don't screenshot it) ----

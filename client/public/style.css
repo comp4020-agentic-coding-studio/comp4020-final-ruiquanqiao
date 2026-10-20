@@ -134,6 +134,29 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 #people .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #people .feud { color: var(--dim); font-variant-numeric: tabular-nums; font-size: 0.75rem; }
 #people li.grudge .feud { color: var(--hot); font-weight: bold; }
+/* the race's chat (N7): newest at the bottom, top right under the ping */
+#chat {
+  position: absolute; top: calc(max(0.6rem, env(safe-area-inset-top)) + 2.4rem); right: max(0.6rem, env(safe-area-inset-right));
+  list-style: none; margin: 0; padding: 0; width: min(17rem, 46vw); pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; font-size: 0.85rem; line-height: 1.25;
+}
+#chat li { padding: 0.2rem 0.5rem; border-radius: 4px; background: rgb(18 15 21 / 0.78); text-align: right; transition: opacity 0.6s; }
+#chat li.old { opacity: 0; }
+#chat li b { color: var(--gold); }
+#chat li.status { color: var(--dim); font-style: italic; }
+#say {
+  position: absolute; top: max(0.6rem, env(safe-area-inset-top)); left: calc(max(0.6rem, env(safe-area-inset-left)) + 4.4rem);
+  padding: 0.3em 0.7em; font-size: 0.85rem; font-weight: bold; line-height: 1.1; background: rgb(18 15 21 / 0.7);
+}
+#say small { display: block; font-size: 0.7rem; font-weight: normal; color: var(--dim); }
+#sayings {
+  position: absolute; top: calc(max(0.6rem, env(safe-area-inset-top)) + 2.9rem); left: calc(max(0.6rem, env(safe-area-inset-left)) + 4.4rem); z-index: 2;
+  list-style: none; margin: 0; padding: 0.3rem; background: var(--panel); border: 2px solid var(--edge); border-radius: 6px;
+}
+#sayings[hidden], #app[data-screen="watch"] #say, #app[data-screen="watch"] #sayings { display: none; }
+#sayings button { display: block; width: 100%; text-align: left; margin: 0.1rem 0; padding: 0.35em 0.6em; font-size: 0.9rem; }
+#sayings kbd { color: var(--dim); font-size: 0.75rem; margin-right: 0.4rem; font-family: inherit; }
+@media (pointer: coarse), (max-width: 700px) { #say small, #sayings kbd { display: none; } }
 #loading-cards .feud { grid-column: 2; color: var(--hot); font-size: 0.85rem; font-weight: bold; }
 #rooms .who .ping { color: var(--dim); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 #quit-ask {
