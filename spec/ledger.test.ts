@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -8,6 +9,14 @@ import { describe, expect, it } from "vitest";
 
 const ledger = readFileSync("docs/ledger.md", "utf8");
 const [body, sourcesPart] = ledger.split(/^## Sources$/m);
+
+/** When each crit is due: its cutoff, and the project's deadline for the rest. */
+const DUE: Record<string, string> = {
+  C8: "2026-10-06T12:00:00+11:00",
+  C9: "2026-10-12T12:00:00+11:00",
+  C10: "2026-10-19T12:00:00+11:00",
+  final: "2026-11-09T12:00:00+11:00",
+};
 
 type Row = { id: string; mechanic: string; source: string; status: string; treatment: string; due: string };
 
@@ -69,12 +78,32 @@ describe("the Road Rash ledger", () => {
 
   it("gives every planned row the crit it is due by", () => {
     for (const row of rows.filter((r) => r.status === "planned")) {
-      expect(["C8", "C9", "C10", "final"], row.id).toContain(row.due);
+      expect(Object.keys(DUE), row.id).toContain(row.due);
     }
   });
 
-  it("points every built row at a spec test that exists", () => {
+  // A due crit that has gone by with the row still planned is the ledger and
+  // the code disagreeing, which CLAUDE.md forbids. It happened: on 20 Oct 35
+  // rows still read planned for C8 or C9, built weeks before, and the README
+  // said every mechanic had a decision. Each due date is that crit's cutoff,
+  // and the final one the project's deadline, in Canberra time.
+  it("has no planned row left past the cutoff it was due by", () => {
+    const now = Date.now();
+    const late = rows.filter((r) => r.status === "planned" && Date.parse(DUE[r.due] ?? "") <= now).map((r) => `${r.id} (${r.due})`);
+    expect(late, "build these, or omit them with the reason").toEqual([]);
+  });
+
+  // Some of a look can only be judged by a person, frame beside frame with the
+  // original (CLAUDE.md, "Compare frame beside frame"). Such a row names the
+  // commit whose message records that comparison, and the commit must exist.
+  it("points every built row at a spec test that exists, or at the commit where it was judged", () => {
     for (const row of rows.filter((r) => r.status === "built")) {
+      const judged = row.due.match(/^judged: ([0-9a-f]{7,40})$/);
+      if (judged) {
+        expect(row.id, `${row.id}: only a Look row can be judged rather than tested`).toMatch(/^V\d+$/);
+        expect(() => execFileSync("git", ["cat-file", "-e", `${judged[1]}^{commit}`]), `${row.id}: no commit ${judged[1]}`).not.toThrow();
+        continue;
+      }
       const match = row.due.match(/^`?(spec\/[\w./-]+\.test\.ts) › (.+?)`?$/);
       expect(match, `${row.id} must name its proof as "spec/file.test.ts › test name"`).not.toBeNull();
       const [, file, name] = match!;

@@ -19,6 +19,13 @@ export type Readout = {
   opponent: { name: string; stamina: number; gap: number } | null; // gap in metres, + ahead
 };
 
+/**
+ * Where the rev counter's needle sits, 0..1 of the dial. There are no gears
+ * (R4): it climbs with speed towards the bike's cap, and the build-up (R17)
+ * carries it the last part of the way.
+ */
+export const revs = (speed: number, cap: number, build: number): number => 0.15 + 0.8 * Math.min(1, (speed / cap) * (0.8 + 0.2 * build));
+
 const FONT = "Oswald, 'Arial Narrow', Impact, sans-serif";
 
 export function drawDash(ctx: CanvasRenderingContext2D, w: number, h: number, d: Readout): number {

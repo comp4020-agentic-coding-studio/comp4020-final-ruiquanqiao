@@ -4,7 +4,7 @@
 // a tenth of a second in the past, between two snapshots.
 
 import { type CarState, type Entry, type Leader, type Mode, type RiderState, type Room, type Standing, type ToClient, type ToServer, applyRider } from "../game/protocol.ts";
-import { drawDash } from "./dash.ts";
+import { drawDash, revs } from "./dash.ts";
 import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { LIVERIES } from "../game/liveries.ts";
 import { react } from "./feel.ts";
@@ -1156,8 +1156,7 @@ function hud(c: Current, id = c.you): void {
   dashCover = drawDash(dashCtx, dash.width, dash.height, {
     name: r.name,
     kmh: r.speed / KMH,
-    // no gears (R4): the needle climbs with speed and the build-up (R17)
-    rpm: 0.15 + 0.8 * Math.min(1, (r.speed / cap(r)) * (0.8 + 0.2 * r.build)),
+    rpm: revs(r.speed, cap(r), r.build),
     position,
     km: Math.max(0, r.z) / 1000, // an odometer, never a progress bar (T3); km, as the dial is
     damage: r.damage / 100,
