@@ -1312,7 +1312,7 @@ window.__rash = {
     const c = current;
     const r = c?.race.riders.find((x) => x.id === c.you);
     return c && r
-      ? { race: c.id, you: c.you, t: c.race.t, kmh: r.speed / KMH, mph: r.speed / MPH, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, stamina: r.stamina, damage: r.damage, weapon: r.weapon, threat: windingAt(c.race, r)?.id ?? null }
+      ? { race: c.id, you: c.you, t: c.race.t, kmh: r.speed / KMH, mph: r.speed / MPH, x: r.x, z: r.z, lean: r.lean, build: r.build, phase: r.phase, air: r.air, stamina: r.stamina, damage: r.damage, weapon: r.weapon, threat: windingAt(c.race, r)?.id ?? null }
       : { screen: app.dataset.screen, queued };
   },
   press: (k: keyof Input, down: boolean) => setKey(k, down),

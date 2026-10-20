@@ -71,6 +71,8 @@ export const TUNE = {
   slickGrip: { oil: 0.08, ice: 0.05, mud: 0.25 },
   slickKick: { oil: 6, ice: 7, mud: 3.5 },
   slickLean: 0.5,
+  /** a crest lifts the bike once following the road would take this share of gravity pulling down (R10) */
+  crestLift: 1.3,
   mudDrag: 9,
   /** grip comes back after a patch at this share a second, not all at once */
   gripBack: 2,
@@ -638,6 +640,24 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   const top = topSpeed(r);
   const limit = cap(r);
   const offRoad = Math.abs(r.x) > ROAD_HALF;
+  // over a crest (R10): where the road falls away faster than gravity can
+  // pull the bike down after it, the bike leaves it, and flies on at the
+  // climb it had until it meets the road again. `air` is how far above the
+  // road it is, `vy` its own upward speed; a rider thrown off uses the same
+  // two, and nothing else of the riding reads them
+  const roadV = r.speed * slopeAt(track, r.z);
+  if (r.air > 0) {
+    r.vy -= TUNE.gravity * dt;
+    r.air += r.vy * dt - (heightAt(track, r.z + r.speed * dt) - heightAt(track, r.z));
+    if (r.air <= 0) {
+      r.air = 0;
+      r.vy = 0;
+    }
+  } else if (r.speed > 0 && roadV - r.speed * slopeAt(track, r.z + r.speed * dt) > TUNE.gravity * dt * TUNE.crestLift) {
+    r.air = 1e-3;
+    r.vy = roadV;
+  }
+  const flying = r.air > 0;
   const slick = slickAt(track, r.z, r.x);
   if (slick && !r.slick) {
     // in onto it: the back steps out the way the bike was already moving
@@ -649,7 +669,10 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   if (slick?.kind === "mud" && r.speed > 15) r.speed -= TUNE.mudDrag * dt;
 
   const ground = Math.abs(r.x) > SHOULDER ? TUNE.offRoadSpeed : offRoad ? TUNE.shoulderSpeed : Infinity;
-  if (input.brake) {
+  if (flying) {
+    // a wheel in the air drives nothing and brakes nothing
+    r.speed -= 0.0004 * r.speed * r.speed * dt;
+  } else if (input.brake) {
     r.speed -= TUNE.brake * dt;
   } else if (input.throttle) {
     // off the asphalt the throttle pulls only up to what the ground allows
@@ -681,7 +704,8 @@ export function ride(r: Rider, input: Input, track: Track, dt = DT, race: Race |
   const speedFrac = Math.min(1, r.speed / top);
   const rate = TUNE.steerSlow + (TUNE.steerFast - TUNE.steerSlow) * speedFrac;
   const target = r.speed < 0.5 ? 0 : steer * rate * (1 + TUNE.leanTurn * Math.abs(r.lean));
-  r.vx += (target - r.vx) * Math.min(1, TUNE.steerResponse * (r.grip ?? 1) * dt);
+  // and in the air the bars turn nothing: the bike carries on as it left
+  if (!flying) r.vx += (target - r.vx) * Math.min(1, TUNE.steerResponse * (r.grip ?? 1) * dt);
   r.shove *= Math.exp(-r.shoveFade * dt);
   if (Math.abs(r.shove) < 1) r.shoveFade = 4;
   const outward = TUNE.centrifugal * r.speed * r.speed * curveAt(track, r.z);
@@ -1018,7 +1042,8 @@ function runOver(race: Race): void {
 /** Bikes do not pass through each other; a faster bike behind pushes (R7). */
 function contact(race: Race): void {
   // front to back, so a last sweep can settle a nose-to-tail line in one go
-  const riding = race.riders.filter((r) => r.phase === "riding").sort((p, q) => q.z - p.z);
+  // a bike flying a crest well clear of the others' heads passes over them (R10)
+  const riding = race.riders.filter((r) => r.phase === "riding" && r.air < 1).sort((p, q) => q.z - p.z);
   // several passes: pushing one pair apart can push one of them into a third.
   // Four were enough until riders started duelling; six bikes packed into a
   // fight were left 3 cm inside each other, and eight clear them
@@ -1189,7 +1214,8 @@ function drive(race: Race): void {
  * thrown clear (K3, K7).
  */
 function hitCars(race: Race, r: Rider): void {
-  if (r.phase !== "riding") return;
+  // over a crest higher than a roof, a car passes underneath (R10)
+  if (r.phase !== "riding" || r.air > 1.5) return;
   for (const c of race.cars) {
     const dz = c.z - r.z;
     const dx = c.x - r.x;

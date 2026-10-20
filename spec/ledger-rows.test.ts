@@ -249,3 +249,40 @@ describe("slippery patches (R9)", () => {
     expect(makeTrack(1, 0).slicks.some((s) => s.kind === "ice")).toBe(true);
   });
 });
+
+describe("crests (R10)", () => {
+  /** A rider holding a share of top speed over Orchard Valley's first hump; `air` keys are held only once off the ground. */
+  function hump(frac: number, air: Partial<Input> = {}) {
+    const race = startRace({ ...makeTrack(1, 2), scenery: [], slicks: [] }, 1, [{ id: 0, name: "h", human: true }], 1);
+    race.cars = [];
+    race.riders = race.riders.filter((r) => r.human);
+    const r = rider(race);
+    const want = topSpeed(r) * frac;
+    Object.assign(r, { z: 2600, x: 3.5, speed: want });
+    let peak = 0;
+    let airborne = 0;
+    let xUp = 0;
+    let xDown = 0;
+    while (r.z < 3100) {
+      const was = r.air > 0;
+      hold(race, { throttle: r.speed < want, ...(was ? air : {}) }, DT);
+      if (r.air > 0 && !was && xDown === 0) xUp = r.x;
+      if (was && r.air <= 0 && xDown === 0) xDown = r.x;
+      if (r.air > 0) airborne += DT;
+      peak = Math.max(peak, r.air);
+    }
+    return { peak, airborne, phase: r.phase, drift: xDown - xUp };
+  }
+
+  it("throws a bike flat out into the air over a hump, lands it riding, and keeps a slower one on the road", () => {
+    const fast = hump(1);
+    expect(fast.peak).toBeGreaterThan(2);
+    expect(fast.airborne).toBeGreaterThan(1);
+    expect(fast.phase).toBe("riding");
+    expect(hump(0.6).peak).toBeLessThan(0.05);
+  });
+
+  it("does not steer in the air: the bike carries on as it left", () => {
+    expect(Math.abs(hump(1, { left: true }).drift - hump(1).drift)).toBeLessThan(0.05);
+  });
+});

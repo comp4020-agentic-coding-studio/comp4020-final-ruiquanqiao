@@ -841,9 +841,12 @@ export class RaceScene {
     const x = this.camX;
     const eye = frameAt(track, z - 6.0, x);
     const look = frameAt(track, z + 14, x);
-    this.camera.position.set(eye.px, eye.py + 1.95, eye.pz);
+    // over a crest the camera flies with the bike, and the road drops out of
+    // the picture, as the original's "you lose sight of the ground" (R10)
+    const flight = mine.phase === "riding" ? mine.air : 0;
+    this.camera.position.set(eye.px, eye.py + 1.95 + flight, eye.pz);
     // aim below the horizon so the rider sits above the dashboard (V2, V7)
-    this.camera.lookAt(look.px, look.py + 0.55 - dashTop * 1.2, look.pz);
+    this.camera.lookAt(look.px, look.py + 0.55 - dashTop * 1.2 + flight, look.pz);
     this.backdrop.position.set(this.camera.position.x, this.camera.position.y + 380 - 40, this.camera.position.z);
     this.terrain?.update(this.camera.position.x, this.camera.position.z);
     this.sea?.position.set(this.camera.position.x, track.water ?? 0, this.camera.position.z);
@@ -966,7 +969,8 @@ export class RaceScene {
     const age = hit ? now - hit.at : 99;
     if (hit && age > RECOIL) this.struck.delete(r.id);
     const frame = hit && age <= RECOIL && !r.attack ? `recoil.${hit.side > 0 ? "R" : "L"}` : frameFor(r);
-    this.stand(track, a.rider, frame, r.z, r.x, lift, r.lean + this.wobbleOf(this.jolts, r.id));
+    // over a crest the bike and rider fly as one (R10)
+    this.stand(track, a.rider, frame, r.z, r.x, lift + r.air, r.lean + this.wobbleOf(this.jolts, r.id));
     shadowAt(a.shadow, r.z, r.x, 0.9, 2.3);
   }
 
