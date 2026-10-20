@@ -1,115 +1,96 @@
 # Process overview
 
 Knuckle Road remakes the arcade mode of *Road Rash* (the 1996 Windows port I
-played) as a race shared by everyone on the road at once. This is how it stands
-at crit 10: a race several people find, join, ride and fight in together, told
-apart on screen and in the server's logs, and what the agent was held to on the
-way.
+played) as a race shared by everyone on the road at once. This is how the
+project stands at submission, and how the harness behind it was built: which
+corrections landed as rules and checks, and how I knew each result was right
+before accepting it.
 
-## The choice of game, and what "good" had to mean
+## What "good" had to mean
 
-I came in wanting to build a video-translation tool, a single-user batch job
-that fails two of the brief's three fixed requirements, so I dropped it. A
-motorbike race where you can hit the rider beside you won instead: being next
-to another person is the whole point, and one person with two windows can
-still see whether two bikes agree. That left a harder problem than the
-network: what counts as a faithful remake. An agent asked to "remake Road
-Rash" produces the median racing game, which is what I got at first.
+I first wanted a video-translation tool, which fails two of the three fixed
+requirements. A race where you can hit the rider beside you won instead,
+because being next to another person is the whole game: Wilson's
+confrontational games for a room describe what Road Rash already was. The
+harder question was fidelity. An agent asked to "remake Road Rash" builds the
+median racing game, and Neill Hoch's point about remakes keeping the story
+while replacing the mechanics names the trap. I took the opposite position,
+keeping the mechanics and rebuilding the rest, and that position runs through
+the README, `CLAUDE.md` and `spec/`.
 
-## Moment 1: replacing my memory with a ledger
+## Moment 1: a record instead of my memory
 
-The first plan described the game from an impression and left out the police,
-both weapons, and snatching a weapon mid-swing. Catching every omission by hand
-would have made me the error detector for the whole project. So instead of
-adding the police, I had the agent research the game from six manuals, five
-GameFAQs guides and Chinese player accounts, and turn every mechanic into a row
-of `docs/ledger.md` with a source and a treatment: copied, adapted with the
-reason, or left out with the reason
-([`8d029d5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/8d029d5)).
-`spec/ledger.test.ts` holds the table to its own rules, and a row marked built
-must name a spec test that exists; I broke two rows on purpose to see it bite.
-The same gap came back as whole categories nobody had asked about, like what
-happens when bikes touch, which became a Contact section sourced from frame
-sheets of PC playthroughs
-([`e5481b1`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/e5481b1)).
-Later the ledger overruled the agent's own design: an NPC picked a person to
-fight 37 times as readily as another NPC, and the sources say riders fight
-"over position", nothing singling out the player. That became row O5, held by
-four specs that fail on the old rules
-([`d21f170`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d21f170)).
+The first plan left out the police, both weapons and weapon snatching. Adding
+them by hand would have made me the error detector for the whole project. So
+I had the agent research six manuals and five guides into
+[`docs/ledger.md`](docs/ledger.md): every mechanic with a source and a
+decision, held by `spec/ledger.test.ts`, which I checked by breaking two rows
+on purpose ([`8d029d5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/8d029d5)). The ledger later overruled the agent's
+own design: an NPC picked a person to fight 37 times as readily as another
+NPC, against sources saying riders fight "over position" ([`d21f170`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d21f170)).
+Then the ledger itself went stale. On 20 October, 35 rows still read
+"planned" for crits long past, while the README said every mechanic had a
+decision, because the test checked each row's form but not its date. An
+audit against the code found 22 built and 21 never started. The fix was a
+check, not a tidy-up: the test now fails on any planned row past its cutoff.
+It failed on 9, and fourteen built rows gained the tests they had lacked
+([`c83a137`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/c83a137)). That failure is the subject of my research note.
 
 ## Moment 2: the rules as numbers before any picture
 
-`game/sim.ts` is the whole race as pure functions with one fixed 1/60 s step:
-no window, no socket, no clock. The server runs it for real, the browser runs
-the same `ride()` to predict its own rider, and `scripts/ride.ts` and
-`scripts/lap.ts` run it with scripted keys and print what the bike did
-([`3f79d37`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/3f79d37)).
-Feel is judged by riding, then settled by counting. Nitro read as cheating when
-I rode it, and played twenty times over, 47 of 77 passes on a flat-out player
-were an NPC burst 35 km/h over the bike's top speed. Rationing it and drawing a
-flame were both dropped; the fair rule was that no one has it, and a spec holds
-every rider on the same bike on all 25 road and level pairs
-([`bc121fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/bc121fa)).
+`game/sim.ts` is the whole race as pure functions with one fixed 1/60 s step.
+The server runs it, the browser runs the same `ride()` for its own rider, and
+scripts replay it with scripted keys ([`3f79d37`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/3f79d37)). Feel is judged
+by riding and then settled by counting. Nitro read as cheating when I rode
+it, and over twenty races 47 of 77 passes on a flat-out player were an NPC
+burst past the bike's top speed. Rationing it and drawing a flame were both
+dropped. The fair rule was that no one has it, held by a spec across all 25
+road and level pairs ([`bc121fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/bc121fa)).
 
-## Moment 3: real-time, measured from the live server
+## Moment 3: real-time, measured rather than designed
 
-The race is server-authoritative over one WebSocket per tab
-([`472172f`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/472172f)),
-and who is believed when two screens disagree is written down in
-[`docs/decisions/0001-whose-word-counts.md`](docs/decisions/0001-whose-word-counts.md).
-What made it work was measuring, not the design. Overtaking, the bike ahead
-jerked. `scripts/netprobe.ts` recorded 400 snapshot arrivals on the live
-server, 49 ms apart at the median but up to 111 ms, and `spec/netview.test.ts`
-replays a race delivered exactly that late: 451 frames in 17,362 drew a bike
-off its real movement, and none once snapshots were placed by the race time
-they carry
-([`d4e2ab2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d4e2ab2)).
-Later the whole field seemed to shake. Recorded frame by frame, the others
-moved 2 cm a frame and my own bike 57 cm; drawn between its steps, it went to
-0.4 cm
-([`519f145`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/519f145)).
-By the picture alone I would have smoothed the wrong bikes. The same habit
-started races together: matches are now accepted, then loaded on one screen,
-and each person's countdown is shortened by half their round trip. Averaged,
-a browser on the same machine read 147 ms while it built its scene, the page
-answering late rather than the network, so it takes the shortest round trip,
-as NTP does; two browsers then showed GO 1 ms apart
-([`4ccbb14`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/4ccbb14)).
+The server owns the race over one WebSocket per tab
+([decision 1](docs/decisions/0001-whose-word-counts.md)). What made it work
+was measurement. Overtaking, the bike ahead jerked. Snapshot arrivals
+recorded on the live server, replayed in `spec/netview.test.ts`, showed 451
+frames in 17,362 drawn off a bike's real movement, and none once snapshots
+were placed by the race time they carry ([`d4e2ab2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d4e2ab2)). Through a
+300 ms, 3%-loss proxy, a fixed tenth of a second left 44–78% of frames
+drawn by guesswork, against 4–6% once the delay followed the connection
+([`cb5b158`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cb5b158)). The crit 10 test ran eight multi-user scenarios
+against the deployed app. A restart mid-race left both pages with no ending
+and the log with no `race_end` ([`f38c010`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/f38c010)); every race now ends
+as "stopped" for everyone in it ([`cd00bef`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cd00bef)).
 
-## Moment 4: telling people apart, for the person reading the logs
+## Moment 4: checking what a marker meets
 
-The server had logged since the first deploy, and I had counted that as done
-until I tailed the live app the way the crit makes me narrate it. A line read
-`{"ev":"connect","rider":2}`, and blows were logged by each bike's number in
-that race, with fifteen NPCs fighting each other burying the two people I
-would be talking about. Now every line names a person as `Ana#60`, the start
-of a race maps each bike to its person, events no person is part of are left
-out, and every line is also kept in the database, because Fly's buffer empties
-on a restart
-([`d4259f3`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d4259f3)).
-A two-browser rehearsal read back as connect, rename, queue, two accepts, a
-start naming both bikes, a crash and two quits. What each person may change was
-already checked on the server, but only in the code; writing it down in
-[`docs/decisions/0002-who-may-do-what.md`](docs/decisions/0002-who-may-do-what.md)
-made me find what it leaves open, one person racing several bikes from several
-tabs, and say so.
+Before submitting I tested the app as a marker arrives at it. Four of the
+README's five links downloaded files instead of opening pages, and the fifth
+was a 404; a spec now crawls every link from `/readme/` ([`c7d4fa2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/c7d4fa2)).
+axe found empty headings and a mislabelled button, failing three of five
+pages and ten checks in Chrome ([`5e0e632`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/5e0e632)). In a browser with no GPU, loading froze for
+64 s. A CPU profile put 85% of it in one canvas fill under a 4,096-point clip,
+not in the sprite atlas I had suspected. Fixed and diffed against the old
+canvas pixel by pixel, loading took 3 s ([`51f6986`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/51f6986)).
 
-## Stack and trade-offs
+## The stack, and what it costs
 
-One Node 24 process, no framework. Node runs the TypeScript server by stripping
-types, so only the browser bundle is built, and `node:sqlite` on the Fly volume
-means the image compiles nothing native. Real-time is WebSockets rather than
-server-sent events because input flows the other way sixty times a second. The
-renderer is WebGL with three.js, since a scanline road could only fake the
-original's cliffs; riders are pre-rendered sprites, as the original's were,
-from a puppet built in code, at the cost of an atlas built in the lobby a few
-frames at a time. Nothing from EA's game ships.
+One Node 24 process with no framework, WebSockets, SQLite on the Fly volume
+and three.js. The options and costs are in
+[decision 3](docs/decisions/0003-the-stack.md). The deciding fact was that the
+simulation must run identically on the server and in the browser, which rules
+out a second language. WebSockets beat server-sent events because keys flow
+upward sixty times a second. The costs are real. `node:sqlite` blocks the
+tick, and a 570 ms write stall was cured only by `synchronous = NORMAL`
+([`82ae6e7`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/82ae6e7)). Two machines split one person into two riders, so
+the app stays on one; and what it still leaves open, one person racing from
+several tabs, is written down in [decision 2](docs/decisions/0002-who-may-do-what.md).
 
 ## How the agent was directed
 
-Research went to background subagents with a written brief and a file to fill,
-read before anything was built from it. Every claim about look or feel is
-checked on the real thing: probes for numbers, and the deployed game played in
-headless Chrome at both marking viewports. When a measurement of mine turned
-out wrong, the next commit says so.
+Research went to background agents with a written brief and a file to fill,
+and I read that file before anything was built from it. Every claim about
+look or feel is checked on the real thing: probes for numbers, and the
+deployed game played in Chrome at both marking viewports. A correction goes
+into `CLAUDE.md` or `spec/` rather than into the next prompt, and when one of
+my measurements turned out wrong, the next commit says so.
