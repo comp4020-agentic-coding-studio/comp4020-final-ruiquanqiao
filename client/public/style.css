@@ -93,6 +93,8 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
   color: var(--gold); text-shadow: 3px 3px 0 #000; pointer-events: none;
 }
 
+/* the picture darkened over the count (V16) */
+#veil { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
 /* the count on the grid: big white figures in the road ahead (V16) */
 #count {
   position: absolute; top: 30%; left: 0; right: 0; text-align: center;

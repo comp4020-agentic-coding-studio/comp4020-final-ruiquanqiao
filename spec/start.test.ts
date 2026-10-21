@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DT, NO_INPUT, TUNE, startRace, step } from "../game/sim.ts";
 import { makeTrack } from "../game/track.ts";
+import { startShade } from "../client/feel.ts";
 
 // The start (O1, V16). People were put on the back row behind every AI
 // rider, up to 24 m from the front, and the race went at the instant it was
@@ -27,6 +28,13 @@ describe("the start", () => {
     step(race, new Map([[0, { ...NO_INPUT, throttle: true }]]));
     expect(me.speed).toBeGreaterThan(0);
     expect(me.speed).toBe(ai.speed);
+  });
+
+  it("darkens the picture to about 60% through the count and lifts it within half a second of the go", () => {
+    for (const left of [3, 2, 0.5, 0.01]) expect(1 - startShade(left)).toBeCloseTo(0.6, 2);
+    expect(startShade(-0.2)).toBeGreaterThan(0);
+    expect(startShade(-0.2)).toBeLessThan(0.4);
+    expect(startShade(-0.5)).toBe(0);
   });
 
   it("puts people anywhere on the grid, not always behind the AI riders", () => {

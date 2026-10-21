@@ -34,6 +34,17 @@ export function hopLift(age: number, size = 1): number {
   return age < 0 || age > HOP ? 0 : Math.sin((age / HOP) * Math.PI) * 0.6 * size;
 }
 
+/**
+ * How dark the picture is `left` seconds before the go (V16): held at about
+ * 60% brightness through the count, as the original's pre-race picture
+ * (docs/road-rash-visuals.md), and lifted over the 0.4 s after the go.
+ * Returns the opacity of a black veil over the road, 0 to 0.4.
+ */
+export function startShade(left: number): number {
+  if (left > 0) return 0.4;
+  return Math.max(0, 0.4 * (1 + left / 0.4));
+}
+
 /** s a struck rider shows the frame of being hit */
 export const RECOIL = 0.28;
 

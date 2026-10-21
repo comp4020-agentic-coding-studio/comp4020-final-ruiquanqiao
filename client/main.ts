@@ -7,7 +7,7 @@ import { type CarState, type Entry, type Feud, type Leader, type Mode, type Ride
 import { drawDash, revs } from "./dash.ts";
 import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } from "./audio.ts";
 import { LIVERIES } from "../game/liveries.ts";
-import { react } from "./feel.ts";
+import { react, startShade } from "./feel.ts";
 import { addFeud, feudLine, moodOf, peopleRows } from "./people.ts";
 import { schmooze } from "./schmooze.ts";
 import { ACTIONS, type Action, DEFAULT_KEYS, actionOf, keyName, loadKeys, rebind } from "./keys.ts";
@@ -1224,6 +1224,8 @@ function frame(): void {
       const lead = c.race.riders.filter((r) => !r.cop).sort((p, q) => q.z - p.z)[0];
       watchScene.draw(c.race.riders, lead.id, 0, c.race.cars, c.race.walkers, now - c.go);
     }
+    // the picture darkened over the count, and back at the go (V16)
+    if (c.you !== null || c.id === spectating) $("#veil").style.opacity = String(startShade(c.go - now));
     if (hitFlash > 0) {
       hitFlash = Math.max(0, hitFlash - dt * 4);
       $("#flash").style.opacity = String(hitFlash * 0.45);
