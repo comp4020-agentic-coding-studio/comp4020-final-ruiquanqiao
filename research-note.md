@@ -2,11 +2,11 @@
 
 *Critical research note, COMP8020*
 
-When a coding agent gets something wrong, the default response is to tell it
-more: another line in `CLAUDE.md` or `AGENTS.md`. I argue that this works on
-the wrong bottleneck. Agents now largely do what their instruction files say.
-What they cannot do is notice what nobody told them. Good agentic practice
-therefore moves the human's knowledge of what to build out of prose the agent
+When a coding agent gets something wrong, the usual response is to tell it
+more, with another line in `CLAUDE.md` or `AGENTS.md`. I did this too for most
+of the semester, and I now think it works on the wrong bottleneck. Agents
+largely do what their instruction files say; what they cannot do is notice
+what nobody told them. Good agentic practice therefore moves the human's knowledge of what to build out of prose the agent
 is asked to follow and into a record the build checks: each requirement with
 its source and a decision, held to the code by a test that fails when the two
 disagree. I scope this to domain-heavy work, where the agent's prior is a
@@ -71,16 +71,17 @@ only from 66% to 54%. The answer to gamed checks is checks that make gaming
 visible and costly, since an instruction has even less force.
 
 Naur (1985) objects from the other side: a program's theory "could not
-conceivably be expressed". A record is not the theory but its checkable
-residue, and an agent, which carries no theory between sessions, needs that
-residue more than Naur's programmers did. Then there is cost: Böckeler (2025)
+conceivably be expressed". I accept that a record holds only the part of the
+theory that can be checked, but an agent carries no theory at all from one
+session to the next, so it needs that part more than Naur's programmers did. Then there is cost: Böckeler (2025)
 found spec-driven tools "a sledgehammer to crack a nut". Hence the scope; and
 her complaint is about specifications to be read, not records the build checks.
 
-Instructions remain the right tool for conventions an agent cannot infer.
-A harness, though, should be judged by what it catches. What the
-human brings that no agent can is knowing what the thing should be, and good
-practice writes that down where a machine will notice when it stops being true.
+Instructions remain the right tool for conventions an agent cannot infer,
+such as which package manager to use. But if the agent cannot know what the
+thing should be, then that knowledge has to come from the human, and a line
+of prose will not tell anyone when the code stops matching it. A record that
+the build checks will.
 
 ## References
 
