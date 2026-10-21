@@ -21,7 +21,7 @@ the README, `CLAUDE.md` and `spec/`.
 ## Moment 1: a record instead of my memory
 
 The first plan left out the police, both weapons and weapon snatching. Adding
-them by hand would have made me the error detector for the whole project. So
+them by hand would have made me the error detector for every mechanic. So
 I had the agent research six manuals and five guides into
 [`docs/ledger.md`](docs/ledger.md): every mechanic with a source and a
 decision, held by `spec/ledger.test.ts`, which I checked by breaking two rows
@@ -31,14 +31,14 @@ NPC, against sources saying riders fight "over position" ([`d21f170`](https://gi
 Then the ledger itself went stale. On 20 October, 35 rows still read
 "planned" for crits long past, while the README said every mechanic had a
 decision, because the test checked each row's form but not its date. An
-audit against the code found 22 built and 21 never started. The fix was a
-check, not a tidy-up: the test now fails on any planned row past its cutoff.
+audit against the code found 22 built and 21 never started. I changed the
+check before touching a row: the test now fails on any planned row past its cutoff.
 It failed on 9, and fourteen built rows gained the tests they had lacked
 ([`c83a137`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/c83a137)). That failure is the subject of my research note.
 
 ## Moment 2: the rules as numbers before any picture
 
-`game/sim.ts` is the whole race as pure functions with one fixed 1/60 s step.
+`game/sim.ts` is the race as pure functions with one fixed 1/60 s step.
 The server runs it, the browser runs the same `ride()` for its own rider, and
 scripts replay it with scripted keys ([`3f79d37`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/3f79d37)). Feel is judged
 by riding and then settled by counting. Nitro read as cheating when I rode
@@ -46,12 +46,19 @@ it, and over twenty races 47 of 77 passes on a flat-out player were an NPC
 burst past the bike's top speed. Rationing it and drawing a flame were both
 dropped. The fair rule was that no one has it, held by a spec across all 25
 road and level pairs ([`bc121fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/bc121fa)).
+Counting settled the start as well. One of the ledger's sources remembers
+knocking the flagger down "every start", but my first flagger walked off
+the road at the go, and in the spec no bike off the front row at full
+throttle ever reached him. He now stands a second past the go, and over 30
+level 3 races on five roads he went flying in all 30 ([`468ae1b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/468ae1b)).
+Riding into people cost nobody a finish: 425 of 450 riders finished, against
+407 with nobody on foot, a gap I put down to seed-to-seed noise.
 
-## Moment 3: real-time, measured rather than designed
+## Moment 3: real-time, by measurement
 
 The server owns the race over one WebSocket per tab
-([decision 1](docs/decisions/0001-whose-word-counts.md)). What made it work
-was measurement. Overtaking, the bike ahead jerked. Snapshot arrivals
+([decision 1](docs/decisions/0001-whose-word-counts.md)). Getting it smooth
+took measurement. When I overtook, the bike ahead jerked. Snapshot arrivals
 recorded on the live server, replayed in `spec/netview.test.ts`, showed 451
 frames in 17,362 drawn off a bike's real movement, and none once snapshots
 were placed by the race time they carry ([`d4e2ab2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d4e2ab2)). Through a
@@ -80,7 +87,7 @@ and three.js. The options and costs are in
 [decision 3](docs/decisions/0003-the-stack.md). The deciding fact was that the
 simulation must run identically on the server and in the browser, which rules
 out a second language. WebSockets beat server-sent events because keys flow
-upward sixty times a second. The costs are real. `node:sqlite` blocks the
+upward sixty times a second. `node:sqlite` blocks the
 tick, and a 570 ms write stall was cured only by `synchronous = NORMAL`
 ([`82ae6e7`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/82ae6e7)). Two machines split one person into two riders, so
 the app stays on one; and what it still leaves open, one person racing from
@@ -90,7 +97,7 @@ several tabs, is written down in [decision 2](docs/decisions/0002-who-may-do-wha
 
 Research went to background agents with a written brief and a file to fill,
 and I read that file before anything was built from it. Every claim about
-look or feel is checked on the real thing: probes for numbers, and the
+look or feel is checked on the running game: probes for numbers, and the
 deployed game played in Chrome at both marking viewports. A correction goes
-into `CLAUDE.md` or `spec/` rather than into the next prompt, and when one of
+into `CLAUDE.md` or `spec/`, where the next session will meet it, and when one of
 my measurements turned out wrong, the next commit says so.
