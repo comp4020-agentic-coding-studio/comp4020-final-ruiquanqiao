@@ -494,7 +494,10 @@ export class Lobby {
     // a room takes the first eight; the rest start the wait for the next
     const members = pool.members.slice(0, ROOM);
     pool.members = pool.members.slice(ROOM);
-    pool.startsAt = pool.members.length === 0 ? null : now + POOL_WAIT[mode];
+    // a full room left behind goes on the next tick, as the first did; it
+    // used to wait the pool's five seconds, so the tenth room of a crowd
+    // queueing at once started 45 s after the first
+    pool.startsAt = pool.members.length === 0 ? null : pool.members.length >= ROOM ? now : now + POOL_WAIT[mode];
     for (const c of members) c.pool = null;
     const m: Match = { id: ++this.matchIds, mode, members, phase: "check", accepted: new Set(), deadline: now + CHECK_WAIT, since: now, level: 1, road: 0, seed: 0, entrants: [], progress: new Map(), gone: new Set(), feuds: [] };
     this.matches.set(m.id, m);

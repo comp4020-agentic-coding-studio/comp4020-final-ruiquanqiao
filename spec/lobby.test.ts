@@ -255,6 +255,15 @@ describe("a room (N1)", () => {
     expect(people[ROOM].pool).toBe("ai");
     expect(started(people[ROOM]).every((m) => m.you === null)).toBe(true);
   });
+
+  it("starts every full room of a crowd that queues at once together, not one every five seconds", () => {
+    const { l } = lobby();
+    const people = Array.from({ length: ROOM * 10 }, (_, i) => conn(i + 1));
+    people.forEach((c) => l.join(c, "ai", 1, 0));
+    for (let now = 0; now < 0.1; now += 1 / 120) l.tick(now);
+    expect(people.every((c) => c.match)).toBe(true);
+    expect(new Set(people.map((c) => c.match!.id)).size).toBe(10);
+  });
 });
 
 const of = <T extends ToClient["t"]>(c: Fake, t: T) => c.inbox.filter((m) => m.t === t) as Extract<ToClient, { t: T }>[];
