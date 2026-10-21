@@ -10,6 +10,7 @@ import { LIVERIES } from "../game/liveries.ts";
 import { react, startShade } from "./feel.ts";
 import { addFeud, feudLine, moodOf, peopleRows } from "./people.ts";
 import { schmooze } from "./schmooze.ts";
+import { TAGLINES, postcard } from "./postcard.ts";
 import { ACTIONS, type Action, DEFAULT_KEYS, actionOf, keyName, loadKeys, rebind } from "./keys.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, walkInto, windingAt, windupOf } from "../game/sim.ts";
@@ -740,6 +741,19 @@ aiCount.addEventListener("input", () => {
   showAi();
   localStorage.setItem("aiRiders", aiCount.value);
 });
+
+/** The bulletin board shows the road picked, at the level picked (V18). */
+function corkboard(): void {
+  const level = Number(document.querySelector<HTMLInputElement>('input[name="level"]:checked')?.value ?? 1);
+  const road = Number(document.querySelector<HTMLInputElement>('input[name="road"]:checked')?.value ?? 0);
+  const t = makeTrack(level, road);
+  $("#cork-road").textContent = t.name;
+  $("#cork-line").textContent = TAGLINES[road] ?? "";
+  $("#cork-length").textContent = `Length: ${(t.length / 1000).toFixed(1)} km`;
+  $("#cork-card").innerHTML = postcard(t);
+}
+for (const i of document.querySelectorAll<HTMLInputElement>('input[name="road"], input[name="level"]')) i.addEventListener("change", corkboard);
+corkboard();
 
 for (const b of document.querySelectorAll<HTMLButtonElement>(".queue button")) {
   b.addEventListener("click", () => {

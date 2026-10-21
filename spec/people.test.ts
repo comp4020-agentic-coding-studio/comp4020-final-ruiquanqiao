@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type Entry, LOAD_MIN, type ToClient } from "../game/protocol.ts";
 import { NO_INPUT, type Race, beginAttack, startRace, step } from "../game/sim.ts";
-import { bake, makeTrack } from "../game/track.ts";
+import { ROADS, bake, makeTrack } from "../game/track.ts";
+import { TAGLINES, postcard } from "../client/postcard.ts";
 import { schmooze, tips } from "../client/schmooze.ts";
 import { addFeud, feudLine, moodOf, peopleRows } from "../client/people.ts";
 import { drawDash } from "../client/dash.ts";
@@ -276,5 +277,18 @@ describe("talk on the grid (O7)", () => {
     expect(schmooze(track, 4, field, 0, [], 7).every((l) => !l.cold)).toBe(true);
     expect(schmooze(track, 4, field, 0, [], 7)).toEqual(schmooze(track, 4, field, 0, [], 7));
     expect(tips(makeTrack(1, 0), 1).join(" ")).not.toContain("Roadblock");
+  });
+});
+
+describe("the bulletin board (V18)", () => {
+  it("pins a postcard of each road's own country, bent the way it first bends, and names its length", () => {
+    const cards = ROADS.map((_, i) => postcard(makeTrack(1, i)));
+    // five roads, five different cards, each with the road's name for a screen reader
+    expect(new Set(cards).size).toBe(5);
+    ROADS.forEach((r, i) => expect(cards[i]).toContain(`aria-label="Postcard: ${r.name}"`));
+    // the coast road has the sea on it, and the pine road its snow line
+    expect(cards[1]).toContain("#2f6aa8");
+    expect(cards[0]).toContain('stroke="#f4f4f4"');
+    expect(TAGLINES).toHaveLength(ROADS.length);
   });
 });
