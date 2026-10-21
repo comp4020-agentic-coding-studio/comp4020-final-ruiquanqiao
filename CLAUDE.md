@@ -14,7 +14,7 @@ their own browsers.
   sources in the ledger (or new ones, added to its Sources table), add the row,
   and only then write code.
 - **This rule exists because the first plan left out the police, the weapons
-  and weapon snatching** — it described the game from a general impression, and
+  and weapon snatching**. It described the game from a general impression, and
   every missing detail had to be caught by hand. The ledger makes the gaps
   visible in one table instead.
 - **When a row is built, flip it to `built` and name its proof** as
@@ -69,8 +69,8 @@ their own browsers.
   position, lean and build-up over time. The preview pane throttles
   `requestAnimationFrame` to about 1fps when it is not on screen, so timing is
   never measured through it.
-- **Write a feel down as a number once it is right** — seconds from the grid to
-  top speed, how far one second of full steer moves the bike across the road —
+- **Write a feel down as a number once it is right** (seconds from the grid to
+  top speed, how far one second of full steer moves the bike across the road)
   and put it in `spec/`, so a later change that loses it goes red. The commit
   says what was ridden, what felt wrong, and the numbers before and after.
 
@@ -113,6 +113,10 @@ their own browsers.
 - Both marking viewports, 1920x1080 and 390x844, are checked with
   `scripts/shoot.ts` before a visual change ships. A phone gets every action
   as a button.
+- A change to a screen or to the keys is run through
+  `node scripts/rough.ts <url>`: a race reached and ridden with the keyboard
+  alone, and resized mid-race between both marking viewports and back. The
+  marking band asks for both, and neither had been tried until 21 Oct.
 - Loading is timed in Chrome without a GPU as well as with one: a 64 s
   freeze on the loading screen was invisible on this machine's GPU.
 

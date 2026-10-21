@@ -54,6 +54,7 @@ raced.
 | It looks like the original | Judged frame beside frame against 137 screenshots, each judgement in a commit |
 | It handles like the original | Judged by riding, then pinned as numbers in `spec/feel.test.ts` |
 | It holds up over a bad network | Ridden at 300 ms with 3% loss and with 8 scripted people; numbers in the commits |
+| It works from the keyboard alone, and survives a resize mid-race | `scripts/rough.ts`, run on the deployed app; results in the commit |
 
 ## What I left out
 
