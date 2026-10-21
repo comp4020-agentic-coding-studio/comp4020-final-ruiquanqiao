@@ -93,6 +93,8 @@ export type Live = {
   steps: number;
   sent: number; // events already sent
   ended: boolean;
+  /** race time the last person finished, wrecked or was busted, or -1 */
+  doneAt: number;
   timeLimit: number; // s
   /** each person's network, by bike (N14) */
   net: Map<number, PersonNet>;
@@ -119,6 +121,9 @@ export type Logger = (event: Record<string, unknown>) => void;
 
 /** A person as the logs name them: the name they ride under, and the rider number behind it, so two people who share a name are still two. */
 export const who = (c: Pick<Conn, "name" | "rider">): string => `${c.name}#${c.rider}`;
+
+/** s a race carries on after its last person is done, before the result (V14) */
+export const FINISH_HOLD = 2.5;
 
 /** The ids a race event names a rider by, which the log replaces with who they are. */
 const ROLES = ["by", "on", "rider", "from", "other", "cop"] as const;
@@ -593,6 +598,7 @@ export class Lobby {
       steps: 0,
       sent: 0,
       ended: false,
+      doneAt: -1,
       timeLimit: track.length / 30 + 90,
       net: new Map(),
       feuds: m.feuds.map((f) => ({ ...f })),
@@ -736,7 +742,11 @@ export class Lobby {
     }
 
     const everyoneGone = live.conns.size === 0;
-    if (humansDone(live.race) || everyoneGone || live.race.t > live.timeLimit) this.finish(live, now);
+    // the race runs on a moment after the last person is done, so the winner
+    // is seen over the line with both arms up (V14) before the result screen
+    if (humansDone(live.race) && live.doneAt < 0) live.doneAt = live.race.t;
+    const settled = live.doneAt >= 0 && live.race.t - live.doneAt >= FINISH_HOLD;
+    if (settled || everyoneGone || live.race.t > live.timeLimit) this.finish(live, now);
   }
 
   /**

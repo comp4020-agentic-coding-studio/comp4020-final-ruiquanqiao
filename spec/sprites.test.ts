@@ -150,6 +150,22 @@ describe("which drawn direction a bike is shown from", () => {
   });
 });
 
+describe("the finish (V14)", () => {
+  it("has the winner cross the line sitting up with both arms raised, and anyone placed after ride on as they were", () => {
+    const r = rider();
+    r.phase = "finished";
+    r.place = 1;
+    expect(frameFor(r)).toBe("armsUp");
+    r.place = 2;
+    expect(frameFor(r)).toBe("ride.R");
+    // the fist above the helmet and out to the side of it (measure reads one
+    // side, in helmet widths from its centre); the pose is the same both sides
+    const m = measure("armsUp");
+    expect(m.hand[1]).toBeGreaterThan(0.5);
+    expect(m.hand[0]).toBeGreaterThan(0.5);
+  });
+});
+
 describe("how finely the frames are drawn", () => {
   it("draws every tile at 224 px on a desktop GPU, in pages inside 4096 px and no more memory than one RGBA page", () => {
     // at 96 and then 128 px a rider near the camera showed texels 5-6 screen

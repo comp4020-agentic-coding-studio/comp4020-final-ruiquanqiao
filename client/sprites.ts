@@ -183,6 +183,9 @@ const OFF: Record<string, Pose> = {
   run1: run(0.25),
   run2: run(0.5),
   run3: run(0.75),
+  // the winner over the line (V14): sat up straight, both fists high and
+  // wide in a V above the helmet (pc-race-city-finish-arms-up-01)
+  armsUp: ride({ pitch: -0.05, handR: [-0.5, 1.9, 0.05], handL: [0.5, 1.9, 0.05], elbowR: [-1, 1.5, -0.3], elbowL: [1, 1.5, -0.3] }),
   // people on foot (T6): standing, and the flagger with the chequered flag up
   // over the grid and swung across it (H3)
   stand: { ...stood(), handR: [-0.24, 0.6, 0.02], handL: [0.24, 0.6, 0.02] },
@@ -937,6 +940,8 @@ export class RiderSprite {
  * and sweeps between them rather than cutting.
  */
 export function frameFor(r: Rider): string {
+  // across the line first: arms up while the bike coasts on (V14)
+  if (r.phase === "finished" && r.place === 1) return "armsUp";
   const a = r.attack;
   if (!a) return r.weapon === "club" ? "rideClub.R" : r.weapon === "chain" ? "rideChain.R" : "ride.R";
   const side = a.side > 0 ? "R" : "L";

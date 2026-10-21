@@ -477,5 +477,6 @@ describe("police roadblocks (P5)", () => {
         for (const c of race.cars) expect(Math.abs(c.z - b.z), `road ${road}`).toBeGreaterThanOrEqual(150);
       }
     }
-  });
+    // five 90 s races: near the 5 s default beside the rest of the suite
+  }, 20_000);
 });

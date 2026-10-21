@@ -271,5 +271,6 @@ describe("a level is a field more ready to fight", () => {
     const [low, high] = [temperOf(1), temperOf(5)];
     expect(high.perAlongside).toBeGreaterThan(low.perAlongside * 1.25);
     expect(high.amongAI).toBeGreaterThan(low.amongAI * 1.25);
-  });
+    // twenty 90 s races: 3.2 s alone, past the 5 s default beside the rest of the suite
+  }, 20_000);
 });

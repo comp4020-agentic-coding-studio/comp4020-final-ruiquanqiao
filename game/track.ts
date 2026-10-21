@@ -94,8 +94,16 @@ const WALLS: Record<Biome, [number, number]> = {
   canyon: [SHOULDER + 2.5, SHOULDER + 2.5],
 };
 
+/**
+ * Road past the finish line, m. The race ends at `length`, but bikes coast
+ * on over the line and the camera follows: with the road stopping there, the
+ * camera came to rest on the line looking straight down at the chequered
+ * band, and the winner's arms-up (V14) was never seen.
+ */
+export const RUNOFF = 400;
+
 export function bake(name: string, sections: Section[], length: number, seed: number, id = 0): Track {
-  const segments = Math.ceil(length / SEGMENT);
+  const segments = Math.ceil((length + RUNOFF) / SEGMENT);
   const curve = new Float64Array(segments);
   const height = new Float64Array(segments + 1);
   const biome = new Uint8Array(segments);
@@ -183,6 +191,9 @@ export function bake(name: string, sections: Section[], length: number, seed: nu
     const k = curve[Math.min(segments - 1, Math.floor(z / SEGMENT))];
     if (Math.abs(k) > 1 / 450) put(z, -Math.sign(k) * (SHOULDER + 0.9), "sign");
   }
+  // the run-off past the line (RUNOFF) carries on the roadside of the last
+  // stretch before it, copied rather than drawn, so no draw before the line moves
+  for (const k of scenery.filter((q) => q.z > length - RUNOFF && q.z < length)) scenery.push({ ...k, z: k.z + RUNOFF });
   scenery.sort((a, b) => a.z - b.z);
 
   // a patch every 450 to 850 m, in one of the four lanes, never in the first
@@ -244,7 +255,7 @@ export const segmentAt = (track: Track, z: number): number =>
   Math.min(track.segments - 1, Math.max(0, Math.floor(z / SEGMENT)));
 
 export function heightAt(track: Track, z: number): number {
-  const zc = Math.min(track.length, Math.max(0, z));
+  const zc = Math.min(track.segments * SEGMENT, Math.max(0, z));
   const i = Math.min(track.segments - 1, Math.floor(zc / SEGMENT));
   const t = zc / SEGMENT - i;
   return track.height[i] + (track.height[i + 1] - track.height[i]) * t;

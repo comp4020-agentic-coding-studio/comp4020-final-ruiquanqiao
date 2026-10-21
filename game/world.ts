@@ -52,7 +52,7 @@ export function centreline(track: Track): Centreline {
 /** Where road coordinate (z, x) is in the world, with the road's frame there. */
 export function frameAt(track: Track, z: number, x = 0): Frame {
   const c = centreline(track);
-  const zc = Math.min(track.length, Math.max(-50, z));
+  const zc = Math.min(track.segments * SEGMENT, Math.max(-50, z));
   // before the start the road runs straight back
   if (zc < 0) {
     const h = c.heading[0];

@@ -18,7 +18,13 @@ const REACH = { z: (2.1 + 0.6) / 2, x: (0.8 + 0.6) / 2 };
 export function knockWalker(walkers: Walker[], t: number, z: number, x: number, speed: number): Walker | null {
   if (speed < 3) return null;
   for (const w of walkers) {
-    if (Math.abs(w.z - z) > 80) continue;
+    // nobody walks further along the road than their span, nor across it:
+    // only someone within reach of the bike is worth working out (a race
+    // step checks every bike against every walker, and walkerAt for all of
+    // them made a step 1.8 times as long)
+    const along = w.kind === "stroller" ? w.span : 0;
+    if (z < w.z - REACH.z - 1 || z > w.z + along + REACH.z + 1) continue;
+    if (w.kind !== "flagger" && Math.abs(x) > Math.abs(w.x) + REACH.x && w.kind === "stroller") continue;
     if (w.down >= 0 && t - w.down < DOWN_FOR) continue;
     const p = walkerAt(w, t);
     if (Math.abs(p.z - z) > REACH.z || Math.abs(p.x - x) > REACH.x) continue;
