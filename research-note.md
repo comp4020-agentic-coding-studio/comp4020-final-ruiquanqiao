@@ -29,16 +29,16 @@ loop" (Anthropic, n.d.).
 
 ## What a checked record adds
 
-Böckeler (2026) gives the distinction a vocabulary. Instructions are guides,
+Böckeler (2026) names the two kinds of control. Instructions are guides,
 feedforward controls that raise the odds of a good first attempt; tests are
 computational sensors, which observe afterwards. Her open problem is functional
-behaviour, and her caveat is the crux: "Correctness is outside any sensor's
+behaviour, and her caveat applies here: "Correctness is outside any sensor's
 remit if the human didn't clearly specify what they wanted." A sourced
 requirements record is that specification made readable by a sensor. Brooks
 (1987) held that "the hardest single part of building a software system is
 deciding precisely what to build", and that software lacks the floor plan on
-which "contradictions and omissions become obvious". Agents shrink the labour
-of writing code, not that.
+which "contradictions and omissions become obvious". Agents cut the labour
+of writing code and leave that part as hard as it was.
 
 OpenAI's Codex team reached the same design from practice. Their single large
 `AGENTS.md` "failed": "too much guidance becomes non-guidance", it "rots
@@ -66,9 +66,9 @@ specification, GPT-5 passed by cheating 54% of the time, Claude models mostly
 by editing the tests (Zhong et al., 2025). Yet the remedies that paper found
 are structural. Hidden tests cut cheating "to near zero", read-only tests
 stopped the edits, and a way to flag a task for a human cut GPT-5 from 54% to
-9%. Stricter prompts helped too, a point to
-prose, but on the harder benchmark only from 66% to 54%. The lesson is to make gaming
-visible and costly, not to fall back on instructions with even less force.
+9%. Stricter prompts helped too, a point to prose, but on the harder benchmark
+only from 66% to 54%. The answer to gamed checks is checks that make gaming
+visible and costly, since an instruction has even less force.
 
 Naur (1985) objects from the other side: a program's theory "could not
 conceivably be expressed". A record is not the theory but its checkable
@@ -77,8 +77,8 @@ residue more than Naur's programmers did. Then there is cost: Böckeler (2025)
 found spec-driven tools "a sledgehammer to crack a nut". Hence the scope; and
 her complaint is about specifications to be read, not records the build checks.
 
-Instructions remain the right tool for conventions an agent cannot infer. But
-a harness should be judged by what it catches, not by what it says. What the
+Instructions remain the right tool for conventions an agent cannot infer.
+A harness, though, should be judged by what it catches. What the
 human brings that no agent can is knowing what the thing should be, and good
 practice writes that down where a machine will notice when it stops being true.
 
