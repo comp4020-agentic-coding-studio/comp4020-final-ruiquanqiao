@@ -204,6 +204,17 @@ describe("the instrument panel", () => {
   });
 });
 
+describe("the dashboard away (H2)", () => {
+  it("draws nothing at all once F10 has put it away, and leaves the camera nothing to look over", () => {
+    const readout: Readout = { name: "Ana", kmh: 212, rpm: 0.6, position: 4, km: 1.23, damage: 0.5, stamina: 0.8, opponent: null };
+    const shown = recorder();
+    expect(drawDash(shown.ctx, 1920, 1080, readout)).toBeGreaterThan(0);
+    const away = recorder();
+    expect(drawDash(away.ctx, 1920, 1080, { ...readout, hidden: true })).toBe(0);
+    expect(away.said).toEqual([]);
+  });
+});
+
 describe("slippery patches (R9)", () => {
   /** One rider at 95% of top speed heading over a single patch on a straight. */
   function over(kind: "oil" | "mud" | "ice" | null, steer: boolean): { drift: number; lost: number; phase: string } {

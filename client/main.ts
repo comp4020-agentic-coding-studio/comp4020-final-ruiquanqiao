@@ -946,6 +946,12 @@ addEventListener("keydown", (e) => {
     openSayings(false);
     return;
   }
+  // F10 puts the dashboard away and brings it back (H2), as in the original
+  if (e.code === "F10" && (app.dataset.screen === "race" || app.dataset.screen === "watch")) {
+    e.preventDefault();
+    if (!e.repeat) toggleDash();
+    return;
+  }
   if (e.code === "KeyM" && document.activeElement?.tagName !== "INPUT") {
     musicOn = !musicOn;
     setMusic(musicOn);
@@ -1019,6 +1025,16 @@ const watchScene = new RaceScene(watch);
 // the riders' frames are drawn in the lobby, once the page is up, not on the grid
 setTimeout(() => roadScene.prepare(), 200);
 let dashCover = 0;
+/** the dashboard put away with F10 or its button (H2), kept by this browser */
+let dashHidden = localStorage.getItem("dash") === "off";
+function toggleDash(): void {
+  dashHidden = !dashHidden;
+  localStorage.setItem("dash", dashHidden ? "off" : "on");
+  $("#dash-toggle").setAttribute("aria-pressed", String(dashHidden));
+  banner(dashHidden ? "Dashboard off" : "Dashboard on", 900);
+}
+$("#dash-toggle").setAttribute("aria-pressed", String(dashHidden));
+$("#dash-toggle").addEventListener("click", toggleDash);
 
 function resize(): void {
   const stage = $("#stage").getBoundingClientRect();
@@ -1273,6 +1289,7 @@ function hud(c: Current, id = c.you): void {
     damage: r.damage / 100,
     stamina: r.stamina / 100,
     opponent: o ? { name: o.name, stamina: o.stamina / 100, gap: o.z - r.z, mood: moodOf(o, r.id, c.feuds) } : null,
+    hidden: dashHidden,
   });
   people(c, id);
   // the same facts for a screen reader, spoken only when they change

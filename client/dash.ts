@@ -18,6 +18,8 @@ export type Readout = {
   stamina: number; // 0..1
   /** gap in metres, + ahead; `mood` colours their stamina wedge (O4): red when they are after you */
   opponent: { name: string; stamina: number; gap: number; mood?: Mood } | null;
+  /** put away with F10 (H2): nothing is drawn, and the road takes the whole screen */
+  hidden?: boolean;
 };
 
 /**
@@ -42,6 +44,8 @@ const FONT = "Oswald, 'Arial Narrow', Impact, sans-serif";
 
 export function drawDash(ctx: CanvasRenderingContext2D, w: number, h: number, d: Readout): number {
   ctx.clearRect(0, 0, w, h);
+  // F10 (H2): no panel, and nothing for the camera to look over
+  if (d.hidden) return 0;
   const W = Math.min(w, (h * 4) / 3); // the 4:3 frame's width
   const H = (W * 3) / 4;
   const ox = (w - W) / 2;

@@ -156,6 +156,12 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
   padding: 0.3em 0.7em; font-size: 0.85rem; font-weight: bold; line-height: 1.1; background: rgb(18 15 21 / 0.7);
 }
 #say small { display: block; font-size: 0.7rem; font-weight: normal; color: var(--dim); }
+#dash-toggle {
+  position: absolute; top: max(0.6rem, env(safe-area-inset-top)); left: calc(max(0.6rem, env(safe-area-inset-left)) + 8.6rem);
+  padding: 0.3em 0.7em; font-size: 0.85rem; font-weight: bold; line-height: 1.1; background: rgb(18 15 21 / 0.7);
+}
+#dash-toggle small { display: block; font-size: 0.7rem; font-weight: normal; color: var(--dim); }
+#dash-toggle[aria-pressed="true"] { border-color: var(--gold); }
 #sayings {
   position: absolute; top: calc(max(0.6rem, env(safe-area-inset-top)) + 2.9rem); left: calc(max(0.6rem, env(safe-area-inset-left)) + 4.4rem); z-index: 2;
   list-style: none; margin: 0; padding: 0.3rem; background: var(--panel); border: 2px solid var(--edge); border-radius: 6px;
@@ -163,7 +169,7 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 #sayings[hidden], #app[data-screen="watch"] #say, #app[data-screen="watch"] #sayings { display: none; }
 #sayings button { display: block; width: 100%; text-align: left; margin: 0.1rem 0; padding: 0.35em 0.6em; font-size: 0.9rem; }
 #sayings kbd { color: var(--dim); font-size: 0.75rem; margin-right: 0.4rem; font-family: inherit; }
-@media (pointer: coarse), (max-width: 700px) { #say small, #sayings kbd { display: none; } }
+@media (pointer: coarse), (max-width: 700px) { #say small, #dash-toggle small, #sayings kbd { display: none; } }
 #loading-cards .feud { grid-column: 2; color: var(--hot); font-size: 0.85rem; font-weight: bold; }
 #rooms .who .ping { color: var(--dim); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 #quit-ask {
