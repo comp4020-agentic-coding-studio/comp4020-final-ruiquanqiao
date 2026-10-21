@@ -18,6 +18,8 @@ export type Conn = {
   rider: number; // riders.id in the database
   name: string;
   send(msg: ToClient): void;
+  /** the same, already serialised: a snapshot is turned into text once for everyone in its race */
+  sendText?(text: string): void;
   pool: Mode | null;
   level: number;
   road: number; // the road this connection voted for (N4)
@@ -737,8 +739,13 @@ export class Lobby {
       // only the cars near someone; the rest are nowhere a camera is
       const near = (z: number): boolean => live.race.riders.some((r) => !r.cop && Math.abs(r.z - z) < 1300);
       const cars = live.race.cars.filter((c) => near(c.z)).map(encodeCar);
-      for (const c of live.conns.values()) c.send({ t: "snap", race: live.id, time: live.race.t, ack: c.seq, riders, cars, events });
-      for (const c of live.watchers) c.send({ t: "snap", race: live.id, time: live.race.t, ack: 0, riders, cars, events });
+      // serialised once, with only each person's ack spliced in: stringifying
+      // the same snapshot for every connection was a sixth of the server's CPU
+      // with 48 people in six full races, and sending it most of the rest
+      const [head, tail] = snapText(live.id, live.race.t, riders, cars, events);
+      const out = (c: Conn, ack: number): void => (c.sendText ? c.sendText(head + ack + tail) : c.send({ t: "snap", race: live.id, time: live.race.t, ack, riders, cars, events }));
+      for (const c of live.conns.values()) out(c, c.seq);
+      for (const c of live.watchers) out(c, 0);
     }
 
     const everyoneGone = live.conns.size === 0;
@@ -843,4 +850,13 @@ export class Lobby {
     for (const c of live.watchers) c.send({ t: "end", race: live.id, standings: result, qualified: [], ...(aborted ? { aborted } : {}) });
     void now;
   }
+}
+
+/**
+ * A snapshot as text, split around its ack: the same as JSON.stringify of
+ * { t: "snap", race, time, ack, riders, cars, events } once the ack is put
+ * between the two halves.
+ */
+export function snapText(race: number, time: number, riders: unknown, cars: unknown, events: unknown): [string, string] {
+  return [`{"t":"snap","race":${JSON.stringify(race)},"time":${JSON.stringify(time)},"ack":`, `,"riders":${JSON.stringify(riders)},"cars":${JSON.stringify(cars)},"events":${JSON.stringify(events)}}`];
 }

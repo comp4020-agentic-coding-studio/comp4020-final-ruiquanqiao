@@ -191,3 +191,25 @@ describe("what a browser sees (N14)", () => {
     expect(s.jitter()).toBe(1);
   });
 });
+
+describe("a snapshot serialised once for its whole race (N14)", () => {
+  it("is the same text, byte for byte, as each person's snapshot stringified on its own", () => {
+    const { l, ana, ben, t } = racing();
+    const texts = new Map<Fake, string[]>([[ana, []], [ben, []]]);
+    for (const c of [ana, ben]) c.sendText = (s) => void texts.get(c)!.push(s);
+    l.input(ana, 5, 1);
+    for (let now = t; now < t + 2; now += 1 / 120) l.tick(now);
+    for (const c of [ana, ben]) {
+      const got = texts.get(c)!;
+      expect(got.length).toBeGreaterThan(30);
+      for (const s of got) {
+        const m = JSON.parse(s);
+        expect(m.t).toBe("snap");
+        expect(s).toBe(JSON.stringify({ t: "snap", race: m.race, time: m.time, ack: m.ack, riders: m.riders, cars: m.cars, events: m.events }));
+      }
+    }
+    // each one carries its own ack
+    expect(JSON.parse(texts.get(ana)!.at(-1)!).ack).toBe(5);
+    expect(JSON.parse(texts.get(ben)!.at(-1)!).ack).toBe(0);
+  });
+});

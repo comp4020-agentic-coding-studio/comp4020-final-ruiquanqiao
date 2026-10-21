@@ -53,7 +53,9 @@ async function bot(n: number): Promise<Bot> {
     const raw = String(e.data);
     const m = JSON.parse(raw);
     const now = performance.now();
-    if (m.t === "hello") send({ t: "name", name: `Load ${n}` });
+    // once: the server answers a name with a fresh hello, and answering every
+    // hello with the name again looped the two forever (2026-10-21)
+    if (m.t === "hello" && m.you.name !== `Load ${n}`) send({ t: "name", name: `Load ${n}` });
     if (m.t === "found") send({ t: "accept" });
     if (m.t === "loading") send({ t: "progress", p: 1 });
     if (m.t === "ping") {

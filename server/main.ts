@@ -173,6 +173,9 @@ wss.on("connection", (ws, req) => {
     send: (msg: ToClient) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
     },
+    sendText: (text: string) => {
+      if (ws.readyState === ws.OPEN) ws.send(text);
+    },
     pool: null,
     level: 1,
     road: 0,
