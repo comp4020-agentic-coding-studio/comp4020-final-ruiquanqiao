@@ -25,5 +25,5 @@ and both were rules I had let the agent write without asking who they
 favoured. I want to be the developer who notices when a system treats
 people differently, can say by exactly how much, and writes the fair rule down
 where a test holds it: the same bike for everyone, a person and an AI rider
-picked alike. With several people in one race, fairness is not polish; it is
-the product.
+picked alike. With several people in one race, an unfair rule is something
+every one of them notices, so it cannot be left for later.

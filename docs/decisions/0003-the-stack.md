@@ -69,21 +69,21 @@ ride it as numbers (3f79d37).
 
 ## What it costs
 
-- **One process, one machine.** Nothing is shared between machines.
+- One process, one machine. Nothing is shared between machines.
   Scaled to two for the crit 10 test, two people queuing together were never
   matched, and one cookie became two riders, since each machine had its own
   database (f38c010). The app stays on one machine, and a room of eight is the
   scale it is built for.
-- **`node:sqlite` is synchronous.** A write blocks the race tick. The first
+- `node:sqlite` is synchronous. A write blocks the race tick. The first
   log write after a quiet spell once took 570 ms under SQLite's default
   `synchronous = FULL` and stalled every race; under `NORMAL` it takes 0 ms,
   at the cost of the last commits before a power cut (82ae6e7).
-- **A machine that stops when idle.** Nothing a returning rider expects may
+- A machine that stops when idle. Nothing a returning rider expects may
   live only in memory, and a restart ends every race in progress. It ends them
   as "stopped" for everyone in them, and says so on the page (cd00bef).
-- **three.js is 580 KB of the 690 KB bundle**, and the riders' sprite atlas
+- three.js is 580 KB of the 690 KB bundle, and the riders' sprite atlas
   is drawn in the browser on arrival rather than shipped. That takes about 5 s
   with a GPU and 17 s without one, so it starts on the board, before anyone
   queues.
-- **Type-stripping is not compiling.** The server runs whatever the files say,
+- Type-stripping is not compiling. The server runs whatever the files say,
   so `pnpm check` runs `tsc --noEmit` before every test, and CI runs the same.

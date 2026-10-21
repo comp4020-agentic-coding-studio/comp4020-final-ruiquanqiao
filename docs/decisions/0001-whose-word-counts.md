@@ -51,29 +51,29 @@ AI rider by the same rules because both are just riders in the server's race.
 
 ## What it costs
 
-- **The rider you punch is where the server says, not quite where you see
-  them.** Most of the time the two are centimetres apart. A bike stopped dead
+- The rider you punch is where the server says, not quite where you see
+  them. Most of the time the two are centimetres apart. A bike stopped dead
   by a collision loses 50 m/s in two steps, which nothing drawn from the past
   can foresee; it is drawn up to 3.5 m off for a moment, and
   `spec/netview.test.ts` holds that under 4 m rather than pretending it is
   zero.
-- **Two copies of the rules have to agree.** The browser's prediction is only
+- Two copies of the rules have to agree. The browser's prediction is only
   right if it runs exactly the server's rules, so `game/sim.ts` is pure and
   deterministic, with no clock, no window and no socket, and every random draw
   comes from the race's seed. A rule that touched the DOM or `Math.random()`
   would quietly break prediction.
-- **Your own bike gets corrected.** When the server disagrees, one's own bike
+- Your own bike gets corrected. When the server disagrees, one's own bike
   is pulled back to it. The first version did that 30% of the way in one
   frame, against a history that still held the uncorrected path, so one error
   was corrected over and over: a 0.94 m jolt of the whole picture. The
   correction is now spread over the next steps, and at worst moves 0.06 m in a
   frame.
-- **Anything decided by timing has to allow for the network.** A weapon can be
+- Anything decided by timing has to allow for the network. A weapon can be
   snatched in the last 0.12 s of its 0.36 s draw-back. The window had to be
   worked back from how late a draw-back reaches someone's screen (snapshot
   spacing plus interpolation plus half a round trip) and how late their key
   then reaches the server, not picked by feel.
-- **Contact you cause is felt twice over.** One's own rubs, shunts and
+- Contact you cause is felt twice over. One's own rubs, shunts and
   run-overs are felt as they are predicted, so they land on the keypress, and
   the server then confirms them; the client has to recognise the confirmation
   and not play it again.

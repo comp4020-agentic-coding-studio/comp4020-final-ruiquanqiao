@@ -96,10 +96,10 @@ already allows.
 
 ## What it costs
 
-- **A person is only as lasting as their cookie.** Clearing it, or opening
+- A person is only as lasting as their cookie. Clearing it, or opening
   another browser or device, is a new rider, with none of the old one's
   qualifications or points, and there is no way to get them back.
-- **Nothing proves a name.** Anyone can ride as anyone; the rider number in
+- Nothing proves a name. Anyone can ride as anyone; the rider number in
   the log is the only thing that tells two of them apart.
 
 ## The strongest case against it
