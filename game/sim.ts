@@ -4,6 +4,7 @@
 // scripted keys. Ledger row IDs are given where a rule answers one.
 
 import { type Cone, OPEN, ROAD_HALF, type Roadblock, SHOULDER, type Slick, type Track, curveAt, heightAt, wallAt } from "./track.ts";
+import { type Walker, knockWalker, placeWalkers } from "./walkers.ts";
 
 export const DT = 1 / 60; // one fixed step, whatever the display does
 export const MPH = 0.44704; // m/s
@@ -345,7 +346,7 @@ export type RaceEvent =
   | { t: number; kind: "dismount"; rider: number }
   | { t: number; kind: "finished"; rider: number; place: number }
   /** a rider on foot, or lying in the road, ridden into (C9) */
-  | { t: number; kind: "runOver"; by: number; on: number; what: "rider" | "bike" }
+  | { t: number; kind: "runOver"; by: number; on: number; what: "rider" | "bike" | "walker" }
   /** bikes touching without anyone coming off: a rub, a shunt, a car or wall glanced (K13) */
   | { t: number; kind: "bump"; rider: number; other: number; with: "rider" | "car" | "wall" | "cone"; hard: number; from: number };
 
@@ -374,6 +375,8 @@ export type Race = {
   events: RaceEvent[];
   rng: number;
   finishers: number;
+  /** people on foot: the flagger and the pedestrians (T6, H3) */
+  walkers: Walker[];
 };
 
 export const topSpeed = (r: Rider): number => r.bike.topKmh * KMH * (1 + (180 - r.lbs) / 3000);
@@ -419,7 +422,7 @@ export function startRace(track: Track, level: number, entrants: Entrant[], seed
     const j = Math.floor(draw() * (i + 1));
     [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
   }
-  const race: Race = { track, t: -countdown, riders: [], cars: [], events: [], rng: seed >>> 0 || 1, finishers: 0 };
+  const race: Race = { track, t: -countdown, riders: [], cars: [], events: [], rng: seed >>> 0 || 1, finishers: 0, walkers: placeWalkers(track, entrants.length) };
   ordered.forEach((e, i) => {
     const row = Math.floor(i / 3);
     const col = (i % 3) - 1;
@@ -1158,6 +1161,24 @@ function runOver(race: Race): void {
   }
 }
 
+/**
+ * A bike ridden into someone on foot in the road (T6, H3): they go flying,
+ * and like a cone (R11) they throw the bike up, so it rides on over them.
+ * The browser does the same for its own bike, at once (client/main.ts).
+ */
+export function walkInto(race: Pick<Race, "walkers" | "t" | "events">, r: Rider): Walker | null {
+  if (r.phase !== "riding" || r.air > 0.5) return null;
+  const w = knockWalker(race.walkers, race.t, r.z, r.x, r.speed);
+  if (!w) return null;
+  if (r.air <= 0) {
+    r.air = 1e-3;
+    r.vy = TUNE.coneLift + TUNE.conePerSpeed * r.speed;
+  }
+  r.speed *= 0.92;
+  race.events.push({ t: race.t, kind: "runOver", by: r.id, on: w.id, what: "walker" });
+  return w;
+}
+
 /** Bikes do not pass through each other; a faster bike behind pushes (R7). */
 function contact(race: Race): void {
   // front to back, so a last sweep can settle a nose-to-tail line in one go
@@ -1668,6 +1689,7 @@ export function step(race: Race, inputs: Map<number, Input>): void {
   for (const r of race.riders) hitCars(race, r);
   contact(race);
   runOver(race);
+  for (const r of race.riders) if (!r.cop) walkInto(race, r);
   shakeOff(race);
   busts(race);
   for (const r of race.riders) {

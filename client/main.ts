@@ -11,8 +11,9 @@ import { react } from "./feel.ts";
 import { addFeud, feudLine, moodOf, peopleRows } from "./people.ts";
 import { ACTIONS, type Action, DEFAULT_KEYS, actionOf, keyName, loadKeys, rebind } from "./keys.ts";
 import { RaceScene } from "./scene.ts";
-import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, windingAt, windupOf } from "../game/sim.ts";
+import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, walkInto, windingAt, windupOf } from "../game/sim.ts";
 import { Handover, Prediction, Timeline } from "./netview.ts";
+import { walkerAt } from "../game/walkers.ts";
 import { NetWatch, pingLabel } from "./netwatch.ts";
 import { NET, type NetReport } from "../game/net.ts";
 import { ROADS, type Track, makeTrack } from "../game/track.ts";
@@ -150,6 +151,16 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     if (heard.length > 300) heard.shift();
     // a rub of one's own was already felt as it was predicted
     if (e.kind === "bump" && e.with === "rider" && (e.rider === c.you || e.other === c.you) && now - localBump < 0.5) continue;
+    // someone on foot knocked flying (T6): the server's word on when, for everyone
+    if (e.kind === "runOver" && e.what === "walker") {
+      const w = c.race.walkers.find((x) => x.id === e.on);
+      const by = c.race.riders.find((x) => x.id === e.by);
+      if (w && by && (w.down < 0 || Math.abs(w.down - e.t) > 0.5)) {
+        w.down = -1;
+        const p = walkerAt(w, e.t);
+        Object.assign(w, { down: e.t, hit: { z: p.z, x: p.x }, hitSpeed: Math.min(by.speed * 1.1, by.speed + 6), side: p.x >= by.x ? 1 : -1 });
+      }
+    }
     if (e.kind === "runOver" && e.by === c.you && ranOver.has(e.what === "bike" ? -1 - e.on : e.on)) continue;
     const felt = react(e, c.race.riders, c.you);
     (c.you === null && c.id !== spectating ? watchScene : roadScene).feel(felt);
@@ -1034,6 +1045,14 @@ function keepOff(c: Current, r: Rider, now: number): void {
     roadScene.feel(felt);
     if (felt.sound) sfx(felt.sound.kind, felt.sound.gain);
   }
+  // and over someone on foot (T6): they go flying and the bike goes up, here at once
+  const hit = now >= c.go ? walkInto({ walkers: c.race.walkers, t: now - c.go, events: [] }, r) : null;
+  if (hit) {
+    ranOver.set(hit.id, now);
+    const felt = react({ t: now - c.go, kind: "runOver", by: r.id, on: hit.id, what: "walker" }, c.race.riders, c.you);
+    roadScene.feel(felt);
+    if (felt.sound) sfx(felt.sound.kind, felt.sound.gain);
+  }
   for (const [id, at] of ranOver) if (now - at > 1) ranOver.delete(id);
   for (const o of c.race.riders) {
     if (o === r || o.phase !== "riding") continue;
@@ -1155,7 +1174,7 @@ function frame(): void {
         own.z += c.handover.off.z;
         own.x += c.handover.off.x;
       }
-      roadScene.draw(c.race.riders, c.you, dashCover / Math.max(1, dash.height), c.race.cars);
+      roadScene.draw(c.race.riders, c.you, dashCover / Math.max(1, dash.height), c.race.cars, c.race.walkers, now - c.go);
       if (own) drawnSelf = { z: own.z, x: own.x };
       if (own && real) {
         own.z = real.z;
@@ -1168,14 +1187,14 @@ function frame(): void {
       // spectating, full screen, behind whoever was picked, with their dash
       const r = c.race.riders.find((x) => x.id === follow);
       if (r) {
-        roadScene.draw(c.race.riders, follow, dashCover / Math.max(1, dash.height), c.race.cars);
+        roadScene.draw(c.race.riders, follow, dashCover / Math.max(1, dash.height), c.race.cars, c.race.walkers, now - c.go);
         hud(c, follow);
         updateAudio({ speed: r.speed, top: topSpeed(r), throttle: false, riding: r.phase === "riding" });
       }
     } else if (!$("#watch").hidden) {
       // watching: ride along behind whoever is leading
       const lead = c.race.riders.filter((r) => !r.cop).sort((p, q) => q.z - p.z)[0];
-      watchScene.draw(c.race.riders, lead.id, 0, c.race.cars);
+      watchScene.draw(c.race.riders, lead.id, 0, c.race.cars, c.race.walkers, now - c.go);
     }
     if (hitFlash > 0) {
       hitFlash = Math.max(0, hitFlash - dt * 4);

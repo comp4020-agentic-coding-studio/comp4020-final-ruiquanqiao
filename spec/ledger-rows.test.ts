@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type Readout, drawDash, revs } from "../client/dash.ts";
 import { DT, type Input, KMH, NO_INPUT, type Race, type Rider, TUNE, beginAttack, kickPays, nearest, packInput, slickAt, startRace, step, topSpeed, unpackInput } from "../game/sim.ts";
 import { ROADS, ROAD_HALF, bake, biomeAt, makeTrack } from "../game/track.ts";
+import { walkerAt } from "../game/walkers.ts";
 
 // Ledger rows that had been built for weeks with nothing to prove it, so they
 // still read "planned" with a due crit long past. Each test here is the proof
@@ -16,6 +17,7 @@ function alone(humans = 1): Race {
   const race = startRace({ ...straight, scenery: [], slicks: [], cones: [], crossings: [] }, 1, entrants, 1);
   race.cars = [];
   race.riders = race.riders.filter((r) => r.human);
+  race.walkers = [];
   return race;
 }
 const rider = (race: Race, id = 0): Rider => race.riders.find((r) => r.id === id)!;
@@ -383,6 +385,47 @@ describe("cross traffic (T5)", () => {
     const stopped = meet(true);
     expect(stopped.r.phase).toBe("riding");
     expect(stopped.car.x).toBe(TUNE.crossWait);
+  });
+});
+
+describe("people on foot (T6, H3)", () => {
+  it("puts a flagger in front of the grid who waves it off and can be run over, and pedestrians in town and at the side roads", () => {
+    for (let road = 0; road < ROADS.length; road++) {
+      const t = makeTrack(1, road);
+      const race = startRace(t, 1, Array.from({ length: 15 }, (_, i) => ({ id: i, name: `r${i}`, human: false })), 1, 3);
+      const flagger = race.walkers.find((w) => w.kind === "flagger")!;
+      const front = Math.max(...race.riders.filter((r) => !r.cop).map((r) => r.z));
+      expect(flagger.z - front).toBeGreaterThan(3);
+      expect(walkerAt(flagger, -1).state).toBe("flag");
+      expect(race.walkers.filter((w) => w.kind === "crosser").length).toBeGreaterThanOrEqual(2 * t.crossings.length);
+    }
+    // ridden straight up the middle off the line, the flagger goes flying
+    const race = startRace({ ...straight, scenery: [], slicks: [], cones: [], crossings: [] }, 1, [{ id: 0, name: "h", human: true }], 1, 3);
+    race.cars = [];
+    race.riders = race.riders.filter((r) => r.human);
+    Object.assign(rider(race), { x: 0 });
+    hold(race, {}, 3);
+    hold(race, { throttle: true }, 3);
+    expect(race.events).toContainEqual(expect.objectContaining({ kind: "runOver", by: 0, what: "walker" }));
+    expect(rider(race).phase).toBe("riding");
+  });
+
+  it("is a ramp: a bike that rides into someone throws them flying, goes up over them and lands riding (R11)", () => {
+    const race = alone();
+    race.walkers = [{ id: 9001, kind: "crosser", z: 1000, x: 0, span: 0.001, wait: 1000, phase: 0, look: 0, down: -1, hitSpeed: 0, side: 1 }];
+    const r = rider(race);
+    Object.assign(r, { z: 900, x: 0, speed: topSpeed(r) * 0.9 });
+    let peak = 0;
+    while (r.z < 1100) {
+      hold(race, { throttle: true }, DT);
+      peak = Math.max(peak, r.air);
+    }
+    expect(race.walkers[0].down).toBeGreaterThan(0);
+    expect(peak).toBeGreaterThan(0.3);
+    expect(r.phase).toBe("riding");
+    const p = walkerAt(race.walkers[0], race.walkers[0].down + 0.3);
+    expect(p.state).toBe("thrown");
+    expect(p.z).toBeGreaterThan(1005);
   });
 });
 

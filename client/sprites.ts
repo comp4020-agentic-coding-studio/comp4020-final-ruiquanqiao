@@ -52,7 +52,7 @@ type Pose = {
   kneeR?: V;
   kneeL?: V;
   /** a weapon in the right hand, pointing along this direction */
-  weapon?: { kind: "club" | "chain"; dir: V };
+  weapon?: { kind: "club" | "chain" | "flag"; dir: V };
   bike: boolean;
   /** off the bike: the whole body turned (x pitch, z roll) and raised */
   body?: { rx: number; rz: number; lift: number };
@@ -156,6 +156,24 @@ const run = (phase: number): Pose => {
   };
 };
 
+/** On foot, standing still, arms at the sides. */
+function stood(): Pose {
+  return {
+    pelvis: [0, 0.95, 0],
+    pitch: 0.02,
+    roll: 0,
+    handR: [-0.24, 0.6, 0.02],
+    handL: [0.24, 0.6, 0.02],
+    elbowR: [-0.4, 0.9, -0.5],
+    elbowL: [0.4, 0.9, -0.5],
+    footR: [-0.13, 0.08, 0.02],
+    footL: [0.13, 0.08, -0.02],
+    kneeR: [-0.15, 0.6, 1],
+    kneeL: [0.15, 0.6, 1],
+    bike: false,
+  };
+}
+
 const OFF: Record<string, Pose> = {
   tumble0: spread(-0.3, 0, 1.0),
   tumble1: spread(1.2, 2.1, 1.0),
@@ -165,6 +183,13 @@ const OFF: Record<string, Pose> = {
   run1: run(0.25),
   run2: run(0.5),
   run3: run(0.75),
+  // people on foot (T6): standing, and the flagger with the chequered flag up
+  // over the grid and swung across it (H3)
+  stand: { ...stood(), handR: [-0.24, 0.6, 0.02], handL: [0.24, 0.6, 0.02] },
+  // held up at about head height and swung across: higher, the flag ran off
+  // the top of the 2.8 m tile and only its stick was drawn
+  flag0: { ...stood(), handR: [-0.45, 1.5, 0.15], elbowR: [-0.8, 1.3, -0.2], weapon: { kind: "flag", dir: [-0.85, 0.5, 0.1] } },
+  flag1: { ...stood(), handR: [-0.15, 1.55, 0.15], elbowR: [-0.8, 1.3, -0.2], weapon: { kind: "flag", dir: [0.3, 0.95, 0.1] } },
 };
 
 /** The same pose done with the other side of the body. */
@@ -344,7 +369,7 @@ class Puppet {
   bike: THREE.Group;
   private mats = new Map<string, THREE.Material>();
   private parts: Record<string, Part> = {};
-  private weapons: Record<"club" | "chain", THREE.Object3D>;
+  private weapons: Record<"club" | "chain" | "flag", THREE.Object3D>;
   private flesh: THREE.Mesh;
   /** joints, for measuring a pose against the recording */
   private joints: Record<string, THREE.Vector3> = {};
@@ -386,10 +411,25 @@ class Puppet {
     const club = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.022, 0.75, 10).translate(0, 0.33, 0), wood);
     const chainPts = Array.from({ length: 12 }, (_, i) => new THREE.Vector3(Math.sin(i * 0.5) * 0.04, i * 0.07, 0));
     const chain = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(chainPts), 40, 0.018, 6), steel);
-    this.weapons = { club, chain };
+    // the flagger's chequered flag on its stick (H3): black and white squares,
+    // which the atlas keeps as they are, untinted
+    const flag = new THREE.Group();
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.6, 8).translate(0, 0.3, 0), wood);
+    stick.userData.part = PART.wood;
+    flag.add(stick);
+    const sq = new THREE.BoxGeometry(0.11, 0.11, 0.01);
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 3; j++) {
+        const m = new THREE.Mesh(sq, this.mat((i + j) % 2 ? "#141414" : "#f4f4f4", 0.7, 0));
+        m.position.set(0.075 + i * 0.11, 0.56 - j * 0.11, 0);
+        m.userData.part = PART.fixed;
+        flag.add(m);
+      }
+    }
+    this.weapons = { club, chain, flag };
     club.userData.part = PART.wood;
     chain.userData.part = PART.fixed;
-    this.body.add(club, chain);
+    this.body.add(club, chain, flag);
   }
 
   private mat(colour: string, roughness: number, metalness: number): THREE.Material {

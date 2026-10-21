@@ -16,7 +16,8 @@ describe("contact between bikes", () => {
     let overlaps = 0;
     for (let i = 0; i < 60 * 90; i++) {
       step(race, new Map([[0, { ...NO_INPUT, throttle: true }]]));
-      const riding = race.riders.filter((r) => r.phase === "riding");
+      // a bike flying a crest or a ramp over 1 m up passes over the others (R10), as contact() has it
+      const riding = race.riders.filter((r) => r.phase === "riding" && r.air < 1);
       for (let a = 0; a < riding.length; a++) {
         for (let b = a + 1; b < riding.length; b++) {
           const dz = Math.abs(riding[a].z - riding[b].z);

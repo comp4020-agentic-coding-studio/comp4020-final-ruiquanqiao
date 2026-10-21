@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { type Car, type Rider, TUNE, type Weapon, windupOf } from "../game/sim.ts";
+import { type Walker, walkerAt } from "../game/walkers.ts";
 import { BIOMES, type Biome, OPEN, ROAD_HALF, SEGMENT, SHOULDER, type Slick, type Track, biomeAt, segmentAt } from "../game/track.ts";
 import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
@@ -454,6 +455,20 @@ const LEATHERS: [string, string, string][] = [
  * company (M2), and a shadow under each. */
 type Actor = { rider: RiderSprite; bike: RiderSprite; shadow: THREE.Mesh; bikeShadow: THREE.Mesh };
 
+/**
+ * People on foot (T6): trousers, shirt and hair, in the main, trim and helmet
+ * tints. The flagger wears a road crew's orange vest and yellow hard hat (H3).
+ */
+const FOLK: Look[] = [
+  { main: "#2a3550", trim: "#d8d0c0", helmet: "#2a1c12", paint: "#000", paintTrim: "#000" },
+  { main: "#3c3c40", trim: "#a83040", helmet: "#141414", paint: "#000", paintTrim: "#000" },
+  { main: "#6a5a40", trim: "#3a6a9a", helmet: "#8a5a2a", paint: "#000", paintTrim: "#000" },
+  { main: "#1e2a3a", trim: "#e8c84a", helmet: "#d8c078", paint: "#000", paintTrim: "#000" },
+  { main: "#4a2a2a", trim: "#f0f0ec", helmet: "#5a3a20", paint: "#000", paintTrim: "#000" },
+  { main: "#2a4a2a", trim: "#c86a2a", helmet: "#202020", paint: "#000", paintTrim: "#000" },
+];
+const FLAGGER: Look = { main: "#2a3a5a", trim: "#f07818", helmet: "#e8c018", paint: "#000", paintTrim: "#000" };
+
 /** A soft dark ellipse for under a bike, as the original casts one. */
 
 const shadowMaterial = (() => {
@@ -485,6 +500,8 @@ export class RaceScene {
     return this.atlas !== null;
   }
   private cars = new Map<number, THREE.Group>();
+  /** people on foot, drawn as riders are, in their own clothes (T6) */
+  private walkers = new Map<number, { sprite: RiderSprite; shadow: THREE.Mesh }>();
   /** where each crossing car was last drawn, and which way it faces (T5) */
   private crossX = new Map<number, { x: number; way: number }>();
   private backdrop: THREE.Mesh;
@@ -879,6 +896,8 @@ export class RaceScene {
 
     for (const a of this.riders.values()) this.scene.remove(a.rider.mesh, a.bike.mesh, a.shadow, a.bikeShadow);
     this.riders.clear();
+    for (const w of this.walkers.values()) this.scene.remove(w.sprite.mesh, w.shadow);
+    this.walkers.clear();
     // every rider's frames, drawn once: finished now if the lobby did not get there
     this.atlas ??= (this.builder ??= new AtlasBuilder(this.renderer)).finish();
     for (const c of this.cars.values()) this.scene.remove(c);
@@ -988,7 +1007,7 @@ export class RaceScene {
   }
 
   /** Draw a frame from behind rider `me`. */
-  draw(riders: readonly Rider[], me: number, dashTop = 0.23, cars: readonly Car[] = []): void {
+  draw(riders: readonly Rider[], me: number, dashTop = 0.23, cars: readonly Car[] = [], walkers: readonly Walker[] = [], time = 0): void {
     const track = this.track;
     if (!track) return;
     this.placeCars(track, cars);
@@ -1027,6 +1046,7 @@ export class RaceScene {
     this.sea?.position.set(this.camera.position.x, track.water ?? 0, this.camera.position.z);
     this.camera.updateMatrixWorld();
     riders.forEach((r) => this.place(track, r));
+    this.placeWalkers(track, walkers, time, mine.z);
     // the sun's shadow box follows the camera
     const at = frameAt(track, z + 10, x);
     this.sun.target.position.set(at.px, at.py, at.pz);
@@ -1059,6 +1079,39 @@ export class RaceScene {
         turn = way > 0 ? -Math.PI / 2 : Math.PI / 2;
       }
       g.rotation.set(0, f.heading + turn + j, j * 0.5);
+    }
+  }
+
+  /** Everyone on foot within sight, where their timetable has them at race time `t` (T6, H3). */
+  private placeWalkers(track: Track, walkers: readonly Walker[], t: number, near: number): void {
+    if (!this.atlas) return;
+    for (const w of walkers) {
+      const p = walkerAt(w, t);
+      const seen = p.z > near - 30 && p.z < near + 320;
+      let a = this.walkers.get(w.id);
+      if (!a && !seen) continue;
+      if (!a) {
+        const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), shadowMaterial());
+        shadow.renderOrder = 1;
+        a = { sprite: new RiderSprite(this.atlas, w.kind === "flagger" ? FLAGGER : FOLK[w.look % FOLK.length]), shadow };
+        this.scene.add(a.sprite.mesh, shadow);
+        this.walkers.set(w.id, a);
+      }
+      a.sprite.mesh.visible = a.shadow.visible = seen;
+      if (!seen) continue;
+      const frame =
+        p.state === "walk" ? `run${Math.floor((t * 5) % 4)}`
+        : p.state === "flag" ? `flag${Math.floor(t * 2.5) % 2 ? 1 : 0}`
+        : p.state === "thrown" ? `tumble${Math.floor(t * 10) % 3}`
+        : p.state === "lying" ? "lying"
+        : "stand";
+      const f = frameAt(track, p.z, p.x);
+      // over the ground beside the road, not under it
+      const ground = Math.abs(p.x) > SHOULDER ? Math.max(0, groundAt(track, p.z, p.x)) : 0;
+      this.stand(track, a.sprite, frame, p.z, p.x, ground + (p.state === "thrown" ? Math.max(-0.75, p.air - 0.75) : 0), 0, f.heading - p.heading);
+      a.shadow.position.set(f.px, f.py + ground + 0.03, f.pz);
+      a.shadow.rotation.set(0, f.heading, 0);
+      a.shadow.scale.set(0.6, 1, 0.6);
     }
   }
 
