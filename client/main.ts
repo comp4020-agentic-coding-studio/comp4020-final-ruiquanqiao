@@ -9,6 +9,7 @@ import { MUSIC, setMusic, setRoad, sfx, soundState, startAudio, updateAudio } fr
 import { LIVERIES } from "../game/liveries.ts";
 import { react } from "./feel.ts";
 import { addFeud, feudLine, moodOf, peopleRows } from "./people.ts";
+import { schmooze } from "./schmooze.ts";
 import { ACTIONS, type Action, DEFAULT_KEYS, actionOf, keyName, loadKeys, rebind } from "./keys.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, walkInto, windingAt, windupOf } from "../game/sim.ts";
@@ -645,6 +646,17 @@ function onLoading(msg: Extract<ToClient, { t: "loading" }>): void {
       li.insertBefore(p, bar);
     }
     list.append(li);
+  }
+  // the field talks while it loads (O7)
+  const talk = $("#schmooze");
+  talk.replaceChildren();
+  for (const l of schmooze(makeTrack(msg.level, msg.track), msg.level, msg.entrants, msg.you, msg.feuds ?? [], msg.seed)) {
+    const li = document.createElement("li");
+    if (l.cold) li.className = "cold";
+    const who = document.createElement("b");
+    who.textContent = l.from;
+    li.append(who, ` ${l.text}`);
+    talk.append(li);
   }
   show("loading");
   void prepare(msg);

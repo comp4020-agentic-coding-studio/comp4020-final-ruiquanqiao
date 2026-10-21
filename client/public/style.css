@@ -276,6 +276,11 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 #loading .kicker { margin: 0; color: var(--dim); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.85rem; }
 #loading-head { margin: 0.1rem 0; font: italic 700 clamp(2.2rem, 8vw, 3.6rem) Oswald, sans-serif; text-transform: uppercase; color: var(--hot); text-shadow: 3px 3px 0 #000; }
 #loading-line { margin: 0; color: var(--gold); font-weight: bold; }
+/* the field talking on the grid (O7) */
+#schmooze { list-style: none; padding: 0; margin: 0 auto 1rem; max-width: 44rem; display: grid; gap: 0.5rem; }
+#schmooze li { padding: 0.55rem 0.8rem; background: var(--panel); border-left: 3px solid var(--gold); border-radius: 4px; line-height: 1.35; }
+#schmooze li b { margin-right: 0.3rem; }
+#schmooze li.cold { border-left-color: var(--hot); }
 #loading-cards {
   list-style: none; padding: 0; margin: 0 auto 1rem; max-width: 64rem;
   display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.8rem;

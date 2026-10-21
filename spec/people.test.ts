@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type Entry, LOAD_MIN, type ToClient } from "../game/protocol.ts";
 import { NO_INPUT, type Race, beginAttack, startRace, step } from "../game/sim.ts";
-import { bake } from "../game/track.ts";
+import { bake, makeTrack } from "../game/track.ts";
+import { schmooze, tips } from "../client/schmooze.ts";
 import { addFeud, feudLine, moodOf, peopleRows } from "../client/people.ts";
 import { drawDash } from "../client/dash.ts";
 import { applyRider, encodeRider } from "../game/protocol.ts";
@@ -247,5 +248,33 @@ describe("the closest opponent's mood, on their stamina wedge (O4)", () => {
     expect(new Set(after.slice(0, 10)).size).toBe(10);
     expect(after.slice(10).every((f) => f.startsWith("hsl(0,"))).toBe(true);
     expect(neutral.slice(10).every((f) => f.startsWith("hsl(50,"))).toBe(true);
+  });
+});
+
+describe("talk on the grid (O7)", () => {
+  const field: Entry[] = [
+    { id: 0, name: "Ana", human: true },
+    { id: 1, name: "Ben", human: true },
+    ...Array.from({ length: 13 }, (_, i) => ({ id: i + 2, name: `npc${i}`, human: false })),
+  ];
+
+  it("lets tips slip that are true of this road, and gives a cold word, not a tip, from someone you knocked off", () => {
+    const track = makeTrack(4, 0);
+    const lines = schmooze(track, 4, field, 0, [{ holder: 1, against: 0, n: 2 }], 7);
+    // Ben holds two knockdowns against Ana: he has nothing for her
+    expect(lines.find((l) => l.from === "Ben")).toMatchObject({ cold: true });
+    const warm = lines.filter((l) => !l.cold);
+    expect(warm).toHaveLength(3);
+    expect(new Set(warm.map((l) => l.from)).size).toBe(3);
+    // every distance a tip names is somewhere on the road
+    for (const l of warm) for (const m of l.text.matchAll(/(\d+\.\d) km/g)) expect(Number(m[1]) * 1000).toBeLessThanOrEqual(track.length);
+    // and the roadblock and the waiting car are where the tip says
+    const all = tips(track, 4).join(" ");
+    expect(all).toContain(`Roadblock at ${(track.roadblocks[0].z / 1000).toFixed(1)} km`);
+    expect(all).toContain(`side road at ${(track.crossings[0] / 1000).toFixed(1)} km`);
+    // with no grudge, everyone is civil; and the same race says the same thing in every browser
+    expect(schmooze(track, 4, field, 0, [], 7).every((l) => !l.cold)).toBe(true);
+    expect(schmooze(track, 4, field, 0, [], 7)).toEqual(schmooze(track, 4, field, 0, [], 7));
+    expect(tips(makeTrack(1, 0), 1).join(" ")).not.toContain("Roadblock");
   });
 });
