@@ -43,6 +43,23 @@ button:hover { border-color: var(--gold); }
 /* ---- lobby ---- */
 
 #lobby, #result { max-width: 44rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+/* the end of a race (V19): the spiked star with the word across it, as
+   pc-end-winner-logo-01, then the still's line, as pc-end-winner-02 */
+#star { position: relative; max-width: 30rem; margin: 0.5rem auto 1rem; aspect-ratio: 8 / 5; }
+#star-burst svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+#star-word {
+  position: absolute; left: 0; right: 0; top: 50%; margin: 0; transform: translateY(-50%); text-align: center;
+  font-family: Oswald, "Arial Narrow", Impact, sans-serif; font-weight: 700; font-size: clamp(2.2rem, 11vw, 4rem); line-height: 1;
+  color: #f4ecdc; text-transform: uppercase; letter-spacing: 0.04em; text-shadow: 3px 3px 0 #000;
+}
+#result[data-outcome="qualified"] #star-word, #result[data-outcome="placed"] #star-word { color: #f05030; }
+#star-still { position: absolute; left: 0; right: 0; bottom: -0.4rem; margin: 0; text-align: center; font-family: Oswald, "Arial Narrow", sans-serif; font-size: 1.1rem; }
+#star.go #star-burst svg { animation: burst 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) backwards; }
+#star.go #star-word { animation: word 0.4s 0.25s ease-out backwards; }
+@keyframes word { from { transform: translateY(-50%) scale(0.7); opacity: 0; } to { transform: translateY(-50%); } }
+#star.go #star-still { animation: pop 0.4s 0.9s ease-out backwards; }
+@keyframes burst { from { transform: scale(0.2) rotate(-40deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #star.go * { animation: none !important; } }
 .masthead h1 {
   font-size: clamp(2.4rem, 9vw, 4.2rem);
   line-height: 1;

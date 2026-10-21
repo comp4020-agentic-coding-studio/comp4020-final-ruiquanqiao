@@ -5,6 +5,7 @@ import { type Entry, LOAD_MIN, type ToClient } from "../game/protocol.ts";
 import { NO_INPUT, type Race, beginAttack, startRace, step } from "../game/sim.ts";
 import { ROADS, bake, makeTrack } from "../game/track.ts";
 import { TAGLINES, postcard } from "../client/postcard.ts";
+import { finishLine, placeWords, starWord, starburst } from "../client/ending.ts";
 import { schmooze, tips } from "../client/schmooze.ts";
 import { addFeud, feudLine, moodOf, peopleRows } from "../client/people.ts";
 import { drawDash } from "../client/dash.ts";
@@ -277,6 +278,23 @@ describe("talk on the grid (O7)", () => {
     expect(schmooze(track, 4, field, 0, [], 7).every((l) => !l.cold)).toBe(true);
     expect(schmooze(track, 4, field, 0, [], 7)).toEqual(schmooze(track, 4, field, 0, [], 7));
     expect(tips(makeTrack(1, 0), 1).join(" ")).not.toContain("Roadblock");
+  });
+});
+
+describe("the end of a race (V19)", () => {
+  it("puts WINNER on the star for the one who won, the way the race ended for anyone else, and their place in words under it", () => {
+    expect(starWord("qualified", 1)).toBe("Winner!");
+    expect(starWord("qualified", 2)).toBe("Qualified");
+    expect(starWord("wrecked", 0)).toBe("Wrecked");
+    expect(starWord("busted", 0)).toBe("Busted");
+    expect(finishLine("Ana", "qualified", 1)).toBe("Ana finished in First Place.");
+    expect(finishLine("Ana", "placed", 12)).toBe("Ana finished in 12th Place.");
+    expect(finishLine("Ana", "wrecked", 0)).toBe("");
+    expect(placeWords(22)).toBe("22nd Place");
+    expect(placeWords(13)).toBe("13th Place");
+    // a finish burns orange, a wreck or a bust cold
+    expect(starburst("qualified")).toContain("#ffb24a");
+    expect(starburst("busted")).toContain("#9ab0d8");
   });
 });
 

@@ -11,6 +11,7 @@ import { react, startShade } from "./feel.ts";
 import { addFeud, feudLine, moodOf, peopleRows } from "./people.ts";
 import { schmooze } from "./schmooze.ts";
 import { TAGLINES, postcard } from "./postcard.ts";
+import { finishLine, starWord, starburst } from "./ending.ts";
 import { ACTIONS, type Action, DEFAULT_KEYS, actionOf, keyName, loadKeys, rebind } from "./keys.ts";
 import { RaceScene } from "./scene.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, walkInto, windingAt, windupOf } from "../game/sim.ts";
@@ -832,11 +833,24 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
   $("#ending").textContent = head;
   $("#ending-line").textContent = line + revoked;
   $("#result").dataset.outcome = outcome;
+  star(outcome, mine?.place ?? 0, finishLine(mine?.name ?? "", outcome, mine?.place ?? 0));
   $("#again").hidden = false;
   $("#again-live").hidden = true;
   standingsTable(standings, mine);
   show("result");
   $<HTMLButtonElement>("#again").focus();
+}
+
+/** The spiked star with the race's word on it, and the still's line under it (V19). */
+function star(outcome: Standing["outcome"] | "watched", place: number, still: string): void {
+  $("#star-burst").innerHTML = starburst(outcome);
+  $("#star-word").textContent = starWord(outcome, place);
+  $("#star-still").textContent = still;
+  // played again from the top each time the screen comes up
+  const el = $("#star");
+  el.classList.remove("go");
+  void el.offsetWidth;
+  el.classList.add("go");
 }
 
 /** The end of a race one only watched: who won, and the table. */
@@ -849,6 +863,7 @@ function watched(standings: Standing[], aborted?: string): void {
       ? `${first.name}${first.human ? "" : " (NPC)"} took it.`
       : "Nobody reached the line.";
   $("#result").dataset.outcome = "watched";
+  star("watched", 0, first ? finishLine(first.name, "qualified", 1) : "");
   $("#again").hidden = true;
   $("#again-live").hidden = false;
   standingsTable(standings, undefined);
