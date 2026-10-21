@@ -52,7 +52,7 @@ the road at the go, and in the spec no bike off the front row at full
 throttle ever reached him. He now stands a second past the go, and over 30
 level 3 races on five roads he went flying in all 30 ([`468ae1b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/468ae1b)).
 Riding into people cost nobody a finish: 425 of 450 riders finished, against
-407 with nobody on foot, a gap I put down to seed-to-seed noise.
+407 with nobody on foot.
 
 ## Moment 3: real-time, by measurement
 
@@ -68,6 +68,17 @@ drawn by guesswork, against 4–6% once the delay followed the connection
 against the deployed app. A restart mid-race left both pages with no ending
 and the log with no `race_end` ([`f38c010`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/f38c010)); every race now ends
 as "stopped" for everyone in it ([`cd00bef`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cd00bef)).
+
+The showcase puts a room of people on one shared CPU, so I raced scripted
+people against the deployed app until it broke. Twenty-four in
+three races ran clean. Forty-eight in six full races did not: round trips
+reached 642 ms at p95, with 813 gaps of over a quarter of a second between
+snapshots. A CPU profile of the same load on my machine showed why. Every
+snapshot was turned into text again for each person in its race, though only the acknowledgement number differs. Serialised once,
+the same 48 on the live machine had no gaps and 24 ms round trips
+([`8977c44`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/8977c44)). Eighty then exposed a queueing fault, each
+full room waiting five seconds behind the last. With that fixed, 120 people
+in fifteen races all got a race, still without a gap ([`b85dd57`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/b85dd57)).
 
 ## Moment 4: checking what a marker meets
 
