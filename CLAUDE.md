@@ -112,7 +112,9 @@ their own browsers.
   race at both marking viewports, contrast included, and must report none.
 - Both marking viewports, 1920x1080 and 390x844, are checked with
   `scripts/shoot.ts` before a visual change ships. A phone gets every action
-  as a button.
+  under a thumb: riding on a stick under the left, the fight under the right.
+  A control a player holds (the gas) never shares a thumb with one they tap
+  (a punch).
 - A change to a screen or to the keys is run through
   `node scripts/rough.ts <url>`: a race reached and ridden with the keyboard
   alone, and resized mid-race between both marking viewports and back. The

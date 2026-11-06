@@ -14,6 +14,7 @@ import { TAGLINES, postcard } from "./postcard.ts";
 import { finishLine, starWord, starburst } from "./ending.ts";
 import { ACTIONS, type Action, DEFAULT_KEYS, actionOf, keyName, loadKeys, rebind } from "./keys.ts";
 import { RaceScene } from "./scene.ts";
+import { type StickKeys, knobAt, stickKeys } from "./stick.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, walkInto, windingAt, windupOf } from "../game/sim.ts";
 import { Handover, Prediction, Timeline } from "./netview.ts";
 import { walkerAt } from "../game/walkers.ts";
@@ -1031,6 +1032,47 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("#touch button")) {
   b.addEventListener("pointerup", up);
   b.addEventListener("pointercancel", up);
   b.addEventListener("pointerleave", up);
+}
+
+// the stick (client/stick.ts): one pointer at a time, held wherever the thumb
+// wanders once it has started on the ring, and every key it held let go on lift
+{
+  const area = $("#stick");
+  const ring = $("#stick-ring");
+  const knob = $("#stick-knob");
+  let pointer: number | null = null;
+  const apply = (s: StickKeys): void => {
+    for (const k of ["left", "right", "throttle", "brake"] as const) if (keys[k] !== s[k]) setKey(k, s[k]);
+  };
+  const move = (e: PointerEvent): void => {
+    const box = ring.getBoundingClientRect();
+    const radius = box.width / 2;
+    const dx = e.clientX - (box.left + radius);
+    const dy = e.clientY - (box.top + radius);
+    const [kx, ky] = knobAt(dx, dy, radius * 0.6);
+    knob.style.transform = `translate(${kx}px, ${ky}px)`;
+    apply(stickKeys(dx, dy, radius * 0.6));
+  };
+  const release = (e: PointerEvent): void => {
+    if (e.pointerId !== pointer) return;
+    pointer = null;
+    area.classList.remove("held");
+    knob.style.transform = "";
+    apply({ left: false, right: false, throttle: false, brake: false });
+  };
+  area.addEventListener("pointerdown", (e) => {
+    if (pointer !== null) return;
+    e.preventDefault();
+    pointer = e.pointerId;
+    area.setPointerCapture?.(e.pointerId);
+    area.classList.add("held");
+    move(e);
+  });
+  area.addEventListener("pointermove", (e) => {
+    if (e.pointerId === pointer) move(e);
+  });
+  area.addEventListener("pointerup", release);
+  area.addEventListener("pointercancel", release);
 }
 
 function sendKeys(now: number): void {

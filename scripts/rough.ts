@@ -115,6 +115,67 @@ const raceOn = (p: Page) => p.waitForFunction(() => document.querySelector("#app
   await p.close();
 }
 
+// ---- on a phone, with thumbs: the stick rides, the right thumb fights ----
+// A touch context of its own, 390x844 with touch events, so the buttons and
+// the stick are driven the way a thumb drives them. The first phone layout had
+// the gas beside the fists under the right thumb; a punch meant letting go of it.
+{
+  const phone = await chromium.launch({ executablePath: CHROME, headless: true, args: ["--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist"] });
+  const ctx = await phone.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
+  const p = await ctx.newPage();
+  p.on("pageerror", (e) => errors.push(e.message));
+  await p.goto(url + "/?probe=1");
+  await p.waitForTimeout(1000);
+  await p.tap("#queue-ai");
+  await p.waitForSelector("#found-yes:not([disabled])", { state: "visible", timeout: 20000 });
+  await p.tap("#found-yes");
+  await raceOn(p);
+  await p.waitForTimeout(4500);
+  const box = (await p.locator("#stick-ring").boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const r = box.width / 2;
+  const fits = await p.evaluate(() => {
+    const ids = ["#stick-ring", '#touch [data-key="hand"]', '#touch [data-key="foot"]', '#touch [data-key="off"]'];
+    return ids.every((s) => {
+      const b = document.querySelector(s)!.getBoundingClientRect();
+      return b.left >= 0 && b.right <= innerWidth && b.bottom <= innerHeight && b.width >= 44 && b.height >= 44;
+    });
+  });
+  expect(fits, "390x844: the stick and the J, K and L buttons are on screen and at least 44 px each way");
+  // a thumb on the stick, as touch events (one pointer that moves)
+  const cdp = await ctx.newCDPSession(p);
+  const thumb = (type: string, x: number, y: number, id = 1) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y, id }] });
+  const a0 = await rash(p);
+  await thumb("touchStart", cx, cy);
+  await thumb("touchMove", cx, cy - r * 0.9);
+  await p.waitForTimeout(3000);
+  const a1 = await rash(p);
+  expect((a1.kmh ?? 0) > (a0.kmh ?? 0) + 50, `the stick pushed up is the gas: ${a0.kmh?.toFixed(0)} to ${a1.kmh?.toFixed(0)} km/h in 3 s`);
+  await thumb("touchMove", cx - r * 0.8, cy - r * 0.6);
+  await p.waitForTimeout(700);
+  const a2 = await rash(p);
+  await thumb("touchMove", cx + r * 0.8, cy - r * 0.6);
+  await p.waitForTimeout(700);
+  const a3 = await rash(p);
+  expect((a2.x ?? 0) < (a1.x ?? 0) - 1 && (a3.x ?? 0) > (a2.x ?? 0) + 1, `up-left and up-right steer while the gas stays on: x ${a1.x?.toFixed(2)}, ${a2.x?.toFixed(2)}, ${a3.x?.toFixed(2)}`);
+  // the right thumb punches while the left still holds the gas
+  const hand = (await p.locator('#touch [data-key="hand"]').boundingBox())!;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: cx, y: cy - r * 0.9, id: 1 }, { x: hand.x + hand.width / 2, y: hand.y + hand.height / 2, id: 2 }] });
+  await p.waitForTimeout(150);
+  const blow = await attack(p);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [{ x: cx, y: cy - r * 0.9, id: 1 }] });
+  const a4 = await rash(p);
+  expect(!!blow?.startsWith("punch") && (a4.kmh ?? 0) >= (a3.kmh ?? 0) - 5, `a punch with the right thumb while the left holds the gas (${blow}, ${a3.kmh?.toFixed(0)} to ${a4.kmh?.toFixed(0)} km/h)`);
+  await thumb("touchEnd", 0, 0);
+  await p.waitForTimeout(1500);
+  const a5 = await rash(p);
+  expect((a5.kmh ?? 0) < (a4.kmh ?? 0), `letting go of the stick lets go of the gas (${a4.kmh?.toFixed(0)} to ${a5.kmh?.toFixed(0)} km/h)`);
+  await p.screenshot({ path: ".frames/phone-stick.png" });
+  await phone.close();
+}
+
 // ---- resized in the middle of riding, and back ----
 type Geo = { stage: string; road: string; dash: string; touch: string; off: string[]; hscroll: boolean };
 const geo = (p: Page): Promise<Geo> =>

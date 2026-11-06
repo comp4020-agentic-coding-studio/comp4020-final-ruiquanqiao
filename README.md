@@ -4,8 +4,8 @@ Fifteen motorbikes on one ridge road, and you can punch and kick whoever is
 riding beside you. Knuckle Road remakes the arcade mode of *Road Rash* (EA,
 1996 Windows port, known in China as 暴力摩托 and the version I played) as one
 race shared by whoever is on the road right now. Press **Race with NPCs** and
-accept. W rides, A and D steer, J punches and K kicks; on a phone the keys are
-on the screen.
+accept. W rides, A and D steer, J punches and K kicks; on a phone the left thumb
+rides a stick and the right thumb fights.
 
 ## What good means here
 

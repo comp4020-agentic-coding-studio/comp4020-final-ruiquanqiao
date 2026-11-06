@@ -240,9 +240,24 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
     touch-action: none; user-select: none; -webkit-user-select: none;
   }
   .pad { display: grid; gap: 0.4rem; }
-  .pad.left { grid-template-columns: 1fr 1fr; width: 42%; }
-  .pad.right { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; width: 55%; }
-  .pad.right [data-key="nitro"] { grid-row: span 2; }
+  /* the fists as two big buttons where the right thumb rests, get off small above them */
+  .pad.right { grid-template-columns: 1fr 1fr; grid-template-rows: 44px 1fr; width: 50%; }
+  .pad.right .small { grid-column: 1 / span 2; grid-row: 1; min-height: 44px; }
+  .pad.right .big { grid-row: 2; }
+  .pad.right .small small { display: inline; margin-left: 0.4em; }
+  #stick { width: 45%; display: flex; align-items: center; justify-content: center; touch-action: none; }
+  #stick-ring {
+    position: relative; width: 8.5rem; height: 8.5rem; max-width: 100%; aspect-ratio: 1;
+    border-radius: 50%; border: 2px solid #4a3f50; background: radial-gradient(#1d1822, #120f15 70%);
+  }
+  #stick-ring .tag { position: absolute; left: 50%; transform: translateX(-50%); font-size: 0.65rem; color: var(--dim); pointer-events: none; }
+  #stick-ring .tag.up { top: 0.3rem; }
+  #stick-ring .tag.down { bottom: 0.3rem; }
+  #stick-knob {
+    position: absolute; left: 50%; top: 50%; width: 3.4rem; height: 3.4rem; margin: -1.7rem 0 0 -1.7rem;
+    border-radius: 50%; background: #3a3140; border: 2px solid var(--dim); pointer-events: none;
+  }
+  #stick.held #stick-knob { background: #3a2226; border-color: var(--hot); }
   .pad button { font-size: 1.4rem; font-weight: bold; padding: 0; line-height: 1; }
   .pad button small { display: block; font-size: 0.65rem; font-weight: normal; color: var(--dim); }
   .pad button.down { background: #3a2226; border-color: var(--hot); }
