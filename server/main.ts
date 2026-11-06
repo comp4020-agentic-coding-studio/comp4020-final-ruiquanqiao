@@ -153,7 +153,18 @@ const server = createServer((req, res) => {
 
 // ---- sockets ----
 
-const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 4096 });
+// Snapshots are deflated on the wire (permessage-deflate, which every
+// browser speaks): 2077 bytes a snapshot down to about 800 on a full grid.
+// Each connection keeps its own window, so a snapshot that differs from the
+// last by a few digits costs less still. Level 1 and a small window because
+// this is one shared CPU; DEFLATE=0 turns it off for comparison.
+const deflate = process.env.DEFLATE !== "0";
+const wss = new WebSocketServer({
+  server,
+  path: "/ws",
+  maxPayload: 4096,
+  perMessageDeflate: deflate && { zlibDeflateOptions: { level: 1, memLevel: 7 }, serverMaxWindowBits: 12, clientNoContextTakeover: true, threshold: 256 },
+});
 
 wss.on("connection", (ws, req) => {
   const token = cookieToken(req);
@@ -233,7 +244,12 @@ wss.on("connection", (ws, req) => {
     } else lobby.reject(conn, "message", "unknown", { t: String((msg as { t?: unknown })?.t).slice(0, 20) });
   });
 
+  const opened = performance.now();
   ws.on("close", () => {
+    // bytes this connection put on the wire, after compression, and its rate
+    const sock = (ws as unknown as { _socket?: { bytesWritten?: number } })._socket;
+    const secs = (performance.now() - opened) / 1000;
+    if (sock?.bytesWritten !== undefined && secs > 1) log({ ev: "wire", who: who(conn), kb: Math.round(sock.bytesWritten / 1024), kbps: Math.round((sock.bytesWritten / 1024 / secs) * 10) / 10, deflate });
     lobby.disconnect(conn, performance.now() / 1000);
     log({ ev: "disconnect", who: who(conn) });
   });

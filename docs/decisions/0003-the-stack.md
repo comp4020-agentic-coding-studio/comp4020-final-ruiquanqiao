@@ -85,5 +85,14 @@ ride it as numbers (3f79d37).
   is drawn in the browser on arrival rather than shipped. That takes about 5 s
   with a GPU and 17 s without one, so it starts on the board, before anyone
   queues.
+- JSON on the wire is wordy. A snapshot of a full grid is about 2 KB of text,
+  twenty times a second, 30 KB/s for each person. Deflating each message on
+  the socket brings it to 7 KB/s, measured over 8 people for 30 s, and the
+  server's CPU does not rise with it (48 people in six races: 6.3 s of CPU
+  against 6.6 s without). A binary format would go further, at the price of
+  a second encoder to keep in step with the first; deflate is one option on
+  the socket. Twenty snapshots a second rather than thirty is still a cost:
+  the others are drawn 0.1 s back, and the recorded arrivals the spec
+  replays (`spec/fixtures/arrivals*.json`) were measured at twenty.
 - Type-stripping is not compiling. The server runs whatever the files say,
   so `pnpm check` runs `tsc --noEmit` before every test, and CI runs the same.

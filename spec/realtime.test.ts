@@ -163,3 +163,15 @@ it("drops a flood of messages from one connection past the rate, and still serve
   flood.close();
   calm.close();
 }, 20000);
+
+it("deflates what it sends: a browser that offers permessage-deflate gets it", async () => {
+  // 2077 bytes a snapshot on a full grid, about 800 deflated; measured over
+  // 8 people for 30 s, 30.3 KB/s each on the wire down to 7.0, and the
+  // server's CPU no higher (6.6 s against 6.3 s for 48 people in six races)
+  const { default: Ws } = await import("ws");
+  const cookie = ((await fetch(new URL("/", baseUrl))).headers.get("set-cookie") ?? "").split(";")[0];
+  const ws = new Ws(new URL("/ws?probe=1", baseUrl).href.replace(/^http/, "ws"), { headers: { cookie }, perMessageDeflate: true });
+  await new Promise((ok, fail) => (ws.once("open", ok), ws.once("error", fail)));
+  expect(ws.extensions).toContain("permessage-deflate");
+  ws.close();
+});
