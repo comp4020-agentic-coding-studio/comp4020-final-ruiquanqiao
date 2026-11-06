@@ -145,7 +145,7 @@ const raceOn = (p: Page) => p.waitForFunction(() => document.querySelector("#app
   expect(fits, "390x844: the stick and the J, K and L buttons are on screen and at least 44 px each way");
   // a thumb on the stick, as touch events (one pointer that moves)
   const cdp = await ctx.newCDPSession(p);
-  const thumb = (type: string, x: number, y: number, id = 1) =>
+  const thumb = (type: "touchStart" | "touchMove" | "touchEnd", x: number, y: number, id = 1) =>
     cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y, id }] });
   const a0 = await rash(p);
   await thumb("touchStart", cx, cy);
