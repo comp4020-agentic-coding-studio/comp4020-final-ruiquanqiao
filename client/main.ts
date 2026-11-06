@@ -15,6 +15,7 @@ import { finishLine, starWord, starburst } from "./ending.ts";
 import { ACTIONS, type Action, DEFAULT_KEYS, actionOf, keyName, loadKeys, rebind } from "./keys.ts";
 import { RaceScene } from "./scene.ts";
 import { type StickKeys, knobAt, stickKeys } from "./stick.ts";
+import { drawFrames } from "./sprites.ts";
 import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, walkInto, windingAt, windupOf } from "../game/sim.ts";
 import { Handover, Prediction, Timeline } from "./netview.ts";
 import { walkerAt } from "../game/walkers.ts";
@@ -1482,6 +1483,8 @@ window.__rash = {
   },
   press: (k: keyof Input, down: boolean) => setKey(k, down),
   scene: () => roadScene,
+  /** a contact sheet of the named frames, for scripts/blows.ts */
+  frames: (names: string[]) => roadScene && drawFrames(roadScene.renderer, names).toDataURL("image/png"),
   heard: () => heard,
   /** the music and the recorded hits: what is loaded and playing */
   sound: () => soundState(),

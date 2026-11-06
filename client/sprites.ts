@@ -52,7 +52,7 @@ type Pose = {
   kneeR?: V;
   kneeL?: V;
   /** a weapon in the right hand, pointing along this direction */
-  weapon?: { kind: "club" | "chain" | "flag"; dir: V };
+  weapon?: { kind: "club" | "chain" | "flag"; dir: V; pts?: V[] };
   bike: boolean;
   /** off the bike: the whole body turned (x pitch, z roll) and raised */
   body?: { rx: number; rz: number; lift: number };
@@ -86,6 +86,26 @@ const ride = (over: Partial<Pose> = {}): Pose => ({
   ...over,
 });
 
+// A chain as links: it leaves the hand along `from` and bends round to lie
+// along `to` at its tip, 0.77 m in all. Drawn as one fixed stick, it turned
+// with the hand like a rod; a chain trails the hand on the way and snaps out
+// straight only at the hit (spec/motion.test.ts).
+const CHAIN_LENGTH = 0.77;
+function links(from: V, to: V, n = 12): V[] {
+  const a = new THREE.Vector3(...from).normalize();
+  const b = new THREE.Vector3(...to).normalize();
+  const step = CHAIN_LENGTH / (n - 1);
+  const pts: V[] = [[0, 0, 0]];
+  const p = new THREE.Vector3();
+  for (let i = 1; i < n; i++) {
+    const d = a.clone().lerp(b, (i - 0.5) / (n - 1)).normalize();
+    p.addScaledVector(d, step);
+    pts.push([p.x, p.y, p.z]);
+  }
+  return pts;
+}
+const chain = (from: V, to: V): Pose["weapon"] => ({ kind: "chain", dir: to, pts: links(from, to) });
+
 // The blows, each as the recording shows it, measured off full-resolution
 // frames and held there by spec/sprites.test.ts ("every pose against the
 // recording"). Right-hand versions; the left ones are their mirror images
@@ -94,7 +114,7 @@ const ride = (over: Partial<Pose> = {}): Pose => ({
 const RIGHT: Record<string, Pose> = {
   ride: ride(),
   rideClub: ride({ weapon: { kind: "club", dir: [-0.3, -0.5, -0.8] } }),
-  rideChain: ride({ weapon: { kind: "chain", dir: [-0.2, -0.9, -0.3] } }),
+  rideChain: ride({ weapon: chain([-0.2, -0.9, 0.3], [0, -1, -0.3]) }),
   // the fist drawn back beside the helmet, the elbow out below it (6 frames)
   punchCock: ride({ pitch: 0.4, handR: [-0.42, 1.5, 0.05], elbowR: [-1.0, 1.1, -0.3] }),
   // then the whole arm straight out sideways at shoulder height (5 frames)
@@ -104,7 +124,7 @@ const RIGHT: Record<string, Pose> = {
   // and with a weapon in the hand, swept out and back the same way: without
   // these a backhand drew a bare fist while it hit with the club's weight
   backhandClub: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "club", dir: [-0.6, -0.35, -0.7] } }),
-  backhandChain: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "chain", dir: [-0.75, -0.1, -0.65] } }),
+  backhandChain: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2], weapon: chain([-0.75, -0.1, -0.65], [-0.75, -0.1, -0.65]) }),
   // the kick chambered: knee out, foot drawn back by the tail (6 frames)
   kickCock: ride({ pitch: 0.42, roll: -0.12, footR: [-0.95, 0.72, -0.45], kneeR: [-0.9, 1.3, 0.3] }),
   // then the leg straight out sideways just over the tail: the hips slide
@@ -113,8 +133,11 @@ const RIGHT: Record<string, Pose> = {
   // a club held up beside the helmet, pointing up over it, then brought out
   clubUp: ride({ pitch: 0.8, handR: [-0.42, 1.47, 0.0], elbowR: [-0.8, 1.9, -0.3], weapon: { kind: "club", dir: [0.35, 1, -0.2] } }),
   clubOut: ride({ pitch: 0.4, roll: -0.1, handR: [-1.2, 1.42, 0.1], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "club", dir: [-0.85, -0.45, 0.25] } }),
-  chainUp: ride({ pitch: 0.8, handR: [-0.42, 1.47, 0.0], elbowR: [-0.8, 1.9, -0.3], weapon: { kind: "chain", dir: [0.3, 0.6, -0.8] } }),
-  chainOut: ride({ pitch: 0.4, roll: -0.1, handR: [-1.2, 1.42, 0.05], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "chain", dir: [-1, -0.15, 0.2] } }),
+  // the chain cocked: the hand up by the helmet with the elbow raised behind
+  // it, the chain hanging down behind the shoulder
+  chainUp: ride({ pitch: 0.8, handR: [-0.42, 1.47, 0.0], elbowR: [-0.3, 1.9, -0.9], weapon: chain([0.2, -0.2, -1], [0.2, -1, 0]) }),
+  // at the hit the arm is straight and the chain straight out beyond the fist
+  chainOut: ride({ pitch: 0.4, roll: -0.1, handR: [-1.2, 1.42, 0.05], elbowR: [-0.5, 0.9, -0.2], weapon: chain([-1, -0.15, 0.2], [-1, -0.15, 0.2]) }),
   // struck on the right: knocked upright and over to the left, the right hand
   // jolted off the bar and up, the head thrown back - the frame a rival shows
   // the instant a blow lands (247.68: 露西娅 over and away from the chain)
@@ -211,7 +234,7 @@ function mirror(p: Pose): Pose {
     elbowL: m(p.elbowR),
     kneeR: m(p.kneeL),
     kneeL: m(p.kneeR),
-    weapon: p.weapon && { ...p.weapon, dir: m(p.weapon.dir)!, left: true } as Pose["weapon"],
+    weapon: p.weapon && { ...p.weapon, dir: m(p.weapon.dir)!, ...(p.weapon.pts ? { pts: p.weapon.pts.map((q) => m(q)!) } : {}), left: true } as Pose["weapon"],
   };
   mirrorOf.set(out, p);
   return out;
@@ -258,6 +281,7 @@ function between(a: Pose, b: Pose, f: number): Pose {
   const lerp = (p?: V, q?: V): V | undefined => (p && q ? [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f, p[2] + (q[2] - p[2]) * f] : (f < 0.5 ? p : q));
   const w = b.weapon ?? a.weapon;
   const dir = a.weapon && b.weapon ? new THREE.Vector3(...lerp(a.weapon.dir, b.weapon.dir)!).normalize().toArray() as V : w?.dir;
+  const pts = a.weapon?.pts && b.weapon?.pts ? a.weapon.pts.map((p, i) => lerp(p, b.weapon!.pts![i])!) : (f < 0.5 ? a.weapon : b.weapon)?.pts;
   return {
     ...a,
     pelvis: lerp(a.pelvis, b.pelvis)!,
@@ -271,7 +295,7 @@ function between(a: Pose, b: Pose, f: number): Pose {
     elbowL: lerp(a.elbowL, b.elbowL),
     kneeR: lerp(a.kneeR, b.kneeR),
     kneeL: lerp(a.kneeL, b.kneeL),
-    weapon: w && dir ? { kind: w.kind, dir } : undefined,
+    weapon: w && dir ? { kind: w.kind, dir, ...(pts ? { pts } : {}) } : undefined,
   };
 }
 
@@ -291,6 +315,8 @@ const ARM_SWEEP: [number, number] = [0.22, 0.48];
 const STRIKES = new Set(["punch", "backhand", "kick"]);
 /** where on the way out a fist's one in-between frame sits */
 const STRIKE_ARM = 0.3;
+/** where the elbow points while a fist goes out or comes back: down and behind */
+const ELBOW_DOWN: V = [-0.3, 0.4, -0.5];
 
 for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
   const [A, B, C] = [RIGHT[rest], RIGHT[back], RIGHT[out]];
@@ -298,6 +324,34 @@ for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
     // the arm is straight early, so its frame sits nearer the bar than halfway
     RIGHT[`${blow}~strike`] = between(A, C, blow === "kick" ? 0.5 : STRIKE_ARM);
     RIGHT[`${blow}~return`] = between(C, A, 0.5);
+    if (blow !== "kick") {
+      // the fist drives and the elbow follows down behind it. Interpolated
+      // with everything else, the elbow's aim went from the bar's (down) to
+      // full stretch's (up), so on the frame between the elbow swung up and
+      // out as far as the fist: an elbow strike, then a punch
+      RIGHT[`${blow}~strike`].elbowR = ELBOW_DOWN;
+      RIGHT[`${blow}~return`].elbowR = ELBOW_DOWN;
+    }
+    continue;
+  }
+  if (blow === "chain") {
+    // a whip, base first: the elbow drives out while the hand is still back
+    // by the helmet and the chain trails, then the forearm snaps through and
+    // the chain cracks out straight. Interpolated between cocked and out, the
+    // hand, elbow and a rigid chain all moved together, an arm turned on a crank
+    const [up, outPose] = [RIGHT.chainUp, RIGHT.chainOut];
+    const raise = between(A, up, 0.5);
+    raise.weapon = chain([0.1, -0.6, -0.6], [0, -1, -0.2]);
+    RIGHT["chain~raise"] = raise;
+    const s1 = between(up, outPose, 0.15);
+    s1.elbowR = [-1.0, 1.4, 0.05];
+    s1.weapon = chain([0.4, 0.3, -1], [1, -0.5, 0.5]);
+    RIGHT["chain~sweep1"] = s1;
+    const s2 = between(up, outPose, 0.6);
+    s2.elbowR = [-0.8, 1.1, -0.1];
+    s2.weapon = chain([-0.3, 0, -1], [1, -0.1, 0.1]);
+    RIGHT["chain~sweep2"] = s2;
+    RIGHT["chain~return"] = between(outPose, A, 0.5);
     continue;
   }
   const [f1, f2] = SWEEP[blow] ?? ARM_SWEEP;
@@ -545,6 +599,7 @@ class Puppet {
       const shin = knee.clone().sub(footAt).normalize();
       const ahead = new THREE.Vector3(0, 0, 1).addScaledVector(shin, -shin.z).normalize();
       block(footAt.clone().addScaledVector(ahead, 0.06).addScaledVector(shin, -0.025), ahead, shin, [0.048, 0.05, 0.125], 0.024, 0.02);
+      this.joints[`shoulder${s}`] = shoulder;
       this.joints[`elbow${s}`] = elbow;
       this.joints[`glove${s}`] = handAt;
       this.joints[`knee${s}`] = knee;
@@ -555,7 +610,15 @@ class Puppet {
           if (!w.visible) continue;
           const left = (p.weapon as { left?: boolean }).left;
           w.position.copy(left ? new THREE.Vector3() : handAt);
-          w.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v(p.weapon!.dir).normalize());
+          if (k === "chain" && p.weapon!.pts) {
+            // its links, laid out from the hand: rebuilt per pose, once, when the atlas is drawn
+            const m = w as THREE.Mesh;
+            m.geometry.dispose();
+            m.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(p.weapon!.pts.map((q) => v(q))), 40, 0.018, 6);
+            w.quaternion.identity();
+          } else {
+            w.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v(p.weapon!.dir).normalize());
+          }
         }
       } else if ((p.weapon as { left?: boolean } | undefined)?.left) {
         const w = this.weapons[p.weapon!.kind];
@@ -960,4 +1023,72 @@ export function frameFor(r: Rider): string {
     : t < w + 0.12 ? out
     : `${blow}~return`;
   return `${name}.${side}`;
+}
+
+// ---- the movement of a blow, in 3D, for spec/motion.test.ts ----
+
+export type Joints = { shoulder: [number, number, number]; elbow: [number, number, number]; hand: [number, number, number]; tip: [number, number, number] | null; chain: [number, number, number][] | null };
+
+/**
+ * The striking arm of a right-handed frame in bike space, metres: x is the
+ * rider's left (so the blow goes out towards -x), y up, z forward. `tip` and
+ * `chain` are a chain's links when the frame holds one.
+ */
+export function joints(frame: string): Joints {
+  const pose = FRAMES.find(([n]) => n === frame)?.[1];
+  if (!pose) throw new Error(`no frame ${frame}`);
+  const puppet = new Puppet(false);
+  puppet.set(pose);
+  const arr = (p: THREE.Vector3): [number, number, number] => [p.x, p.y, p.z];
+  const hand = puppet.at("gloveR");
+  const pts = (pose.weapon as { pts?: V[] } | undefined)?.pts;
+  const chain = pose.weapon?.kind === "chain" && pts ? pts.map((q) => arr(hand.clone().add(new THREE.Vector3(...q)))) : null;
+  return { shoulder: arr(puppet.at("shoulderR")), elbow: arr(puppet.at("elbowR")), hand: arr(hand), tip: chain ? chain.at(-1)! : null, chain };
+}
+
+/** Every frame name, in order: for a test to walk a blow through. */
+export const frameNames = (): string[] => FRAMES.map(([n]) => n);
+
+/**
+ * Frames drawn as they look, for a person to judge: each named frame of the
+ * striking side, shaded and outlined as the atlas draws it, from behind (as
+ * the chase camera sees it), from the side and from above. scripts/blows.ts
+ * lays them out as a contact sheet.
+ */
+export function drawFrames(renderer: THREE.WebGLRenderer, names: string[], size = 240): HTMLCanvasElement {
+  const views: [string, THREE.Vector3][] = [["behind", new THREE.Vector3(0.3, 1.6, -3.2)], ["side", new THREE.Vector3(-3.4, 1.3, 0)], ["above", new THREE.Vector3(-0.2, 4.2, -0.5)]];
+  const out = document.createElement("canvas");
+  out.width = names.length * size;
+  out.height = views.length * size;
+  const g = out.getContext("2d")!;
+  g.fillStyle = "#3b3f46";
+  g.fillRect(0, 0, out.width, out.height);
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight("#ffffff", "#555566", 2.2));
+  const sun = new THREE.DirectionalLight("#ffffff", 2);
+  sun.position.set(-2, 4, -3);
+  scene.add(sun);
+  const puppet = new Puppet(true);
+  puppet.root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh && m !== (puppet as unknown as { flesh: THREE.Mesh }).flesh && m.userData.part) m.material = new THREE.MeshStandardMaterial({ color: m.userData.part === PART.trim ? "#2a5bd7" : "#e8e8e8", roughness: 0.4 });
+  });
+  scene.add(puppet.root);
+  const cam = new THREE.PerspectiveCamera(32, 1, 0.1, 30);
+  renderer.setSize(size, size, false);
+  for (const [i, n] of names.entries()) {
+    const pose = FRAMES.find(([f]) => f === n)?.[1];
+    if (!pose) continue;
+    puppet.set(pose);
+    for (const [j, [, at]] of views.entries()) {
+      cam.position.copy(at);
+      cam.lookAt(-0.35, 1.15, 0);
+      renderer.render(scene, cam);
+      g.drawImage(renderer.domElement, i * size, j * size, size, size);
+    }
+    g.fillStyle = "#fff";
+    g.font = "13px sans-serif";
+    g.fillText(n, i * size + 6, 16);
+  }
+  return out;
 }

@@ -58,6 +58,21 @@ their own browsers.
   face winding) were made in the first version of the scene; check a new
   model's handedness against that file, not by eye.
 
+## A blow is judged by its movement, not its key poses
+
+- **Every frame between a blow's key poses is checked, not only the poses.**
+  `spec/sprites.test.ts` held each key pose to the recording and passed while
+  the punch read as an elbow strike and the chain as a cranked arm, because
+  the movement is in the frames between. `spec/motion.test.ts` holds the
+  rules a coach would give, measured on every frame: a fist drives and the
+  elbow trails below it; a chain is links that trail the hand and crack out
+  straight at the hit, with the elbow leading the hand.
+- **A change to a blow is looked at as a contact sheet before it ships.**
+  `node scripts/blows.ts <url>` draws every frame of every blow from behind,
+  the side and above into `.frames/blow-*.png`. A new rule that a sheet
+  shows is missing goes into `spec/motion.test.ts` first, and must fail on
+  the old frames before the poses change.
+
 ## Feel is tuned by riding, not by reasoning
 
 - **Every change to how the bike handles is ridden before it is committed**, in
