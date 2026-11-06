@@ -7,7 +7,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, normalize, sep } from "node:path";
 import { marked } from "marked";
 import { WebSocketServer } from "ws";
-import type { ToClient, ToServer } from "../game/protocol.ts";
+import { MSG_RATE, type ToClient, type ToServer } from "../game/protocol.ts";
 import { openDb } from "./db.ts";
 import { type Conn, Lobby, who } from "./lobby.ts";
 
@@ -188,7 +188,18 @@ wss.on("connection", (ws, req) => {
   lobby.hello(conn);
   log({ ev: "snapshot", who: who(conn), kind: "hello", races: lobby.rooms().length });
 
+  // a token bucket per connection (G2): a burst up to MSG_RATE, refilled at
+  // MSG_RATE a second. The page sends keys only when they change and four
+  // times a second otherwise, so a person never comes near it; a script
+  // flooding the socket has the excess dropped and is logged once
+  let tokens = MSG_RATE;
+  let filled = performance.now() / 1000;
   ws.on("message", (data) => {
+    const at = performance.now() / 1000;
+    tokens = Math.min(MSG_RATE, tokens + (at - filled) * MSG_RATE);
+    filled = at;
+    if (tokens < 1) return lobby.reject(conn, "message", "too many");
+    tokens -= 1;
     let msg: ToServer;
     try {
       msg = JSON.parse(String(data));

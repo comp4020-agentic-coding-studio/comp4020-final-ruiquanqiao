@@ -118,6 +118,18 @@ their own browsers.
 - What a person did is kept on `/data` and survives a restart and a redeploy;
   a race the server stops ends for everyone in it, and says so.
 
+## People the race is not built for
+
+- A public URL at a showcase gets every kind of player within the hour. The
+  rules for them are ledger rows G1-G3, held by `spec/griefing.test.ts` and
+  `spec/realtime.test.ts`: someone who rides nowhere for 45 s is taken out,
+  one connection cannot flood the server, and a race with nobody to beat
+  scores nothing.
+- A rule against a bad player never takes a freedom from a good one. Idle is
+  measured by progress down the road, so lying in the road or crawling past
+  a roadblock is never punished; racing alone is still allowed, it just does
+  not score; and two people racing each other always count.
+
 ## Every page, for everyone who arrives
 
 - Markers and visitors start at `/readme/`. Every link on it opens a page

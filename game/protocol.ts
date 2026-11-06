@@ -27,6 +27,16 @@ export const LOAD_MAX = 20;
 export const SAYINGS = ["Coming through!", "Nice one.", "You'll pay for that.", "See you at the line.", "Cop ahead!", "Sorry!", "Too slow.", "Good race."] as const;
 /** seconds between one person's lines, so the box cannot be flooded */
 export const SAY_GAP = 1.5;
+/**
+ * Players the race is not built for (ledger G1-G3). A person who rides
+ * nowhere for this long while the race goes on is taken out as "idle", so
+ * one tab left open cannot hold a race of people at its time limit.
+ */
+export const IDLE_OUT = 45;
+/** messages one connection may send a second, averaged over a few seconds; past it they are dropped */
+export const MSG_RATE = 90;
+/** one person against fewer riders than this, NPCs included, and a race scores no points or qualification; two people always count */
+export const MIN_FIELD = 4;
 
 export type ToServer =
   | { t: "queue"; mode: Mode; level: number; track?: number; ai?: number }
@@ -92,7 +102,7 @@ export type Standing = {
   human: boolean;
   place: number;
   /** "aborted": the server stopped mid-race (a restart or a deploy); the race counts for nobody */
-  outcome: "qualified" | "placed" | "wrecked" | "busted" | "unfinished" | "quit" | "aborted";
+  outcome: "qualified" | "placed" | "wrecked" | "busted" | "unfinished" | "quit" | "aborted" | "idle";
   time: number | null;
 };
 
@@ -115,7 +125,7 @@ export type ToClient =
   | { t: "start"; race: number; level: number; track: number; seed: number; entrants: Entry[]; you: number | null; /** seconds on the grid before the race goes (V16) */ countdown?: number; feuds?: Feud[] }
   | { t: "snap"; race: number; time: number; ack: number; riders: RiderState[]; cars: CarState[]; events: RaceEvent[] }
   /** `aborted` says why, when the server stopped the race rather than the race ending */
-  | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[]; aborted?: string }
+  | { t: "end"; race: number; standings: Standing[]; qualified: { level: number; track: string }[]; aborted?: string; unscored?: true }
   /** a line in the race's chat (N7): something a person said, by bike, or what happened to them */
   | { t: "chat"; race: number; from: number; say?: number; status?: "wrecked" | "busted" | "left" }
   /** every room on the road, once a second, to everyone not racing (N11) */

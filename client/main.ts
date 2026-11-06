@@ -309,7 +309,7 @@ function onMessage(msg: ToClient): void {
   else if (msg.t === "snap") onSnap(msg);
   else if (msg.t === "end") {
     if (current && current.id === msg.race) {
-      if (current.you !== null) result(msg.standings, msg.qualified);
+      if (current.you !== null) result(msg.standings, msg.qualified, msg.unscored === true);
       else if (current.id === spectating) {
         spectating = null;
         watched(msg.standings, msg.aborted);
@@ -812,7 +812,7 @@ $("#quit-yes").addEventListener("click", quitRace);
 
 const ordinal = (n: number): string => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
 
-function result(standings: Standing[], quals: { level: number; track: string }[]): void {
+function result(standings: Standing[], quals: { level: number; track: string }[], unscored = false): void {
   // what a wreck or a bust took off the board (S5)
   const lost = qualified.filter((q) => !quals.some((x) => x.level === q.level && x.track === q.track));
   qualified = quals;
@@ -829,11 +829,14 @@ function result(standings: Standing[], quals: { level: number; track: string }[]
     unfinished: ["Out of time", "The race closed before you reached the line."],
     quit: ["Left the race", ""],
     aborted: ["Race stopped", "The server restarted mid-race. It counts for nobody; the page reconnects by itself."],
+    idle: ["Taken out", "You got no further down the road for 45 seconds, so the race went on without you."],
   };
   const [head, line] = lines[outcome];
   const revoked = lost.length === 0 ? "" : ` It costs you every qualification on level ${c.level}: ${lost.map((q) => q.track).join(", ")}.`;
   $("#ending").textContent = head;
-  $("#ending-line").textContent = line + revoked;
+  // fewer than four on the grid (G3): ridden, shown, and not scored
+  const practice = unscored && (outcome === "qualified" || outcome === "placed") ? " With fewer than four on the grid, it was practice: no points and nothing on your board." : "";
+  $("#ending-line").textContent = (unscored && outcome === "qualified" ? `${ordinal(mine!.place)} across the line.` : line) + practice + revoked;
   $("#result").dataset.outcome = outcome;
   star(outcome, mine?.place ?? 0, finishLine(mine?.name ?? "", outcome, mine?.place ?? 0));
   $("#again").hidden = false;
@@ -880,7 +883,7 @@ function standingsTable(standings: Standing[], mine: Standing | undefined): void
     const tr = document.createElement("tr");
     if (s === mine) tr.className = "me";
     const time = s.time === null ? "" : `${Math.floor(s.time / 60)}:${(s.time % 60).toFixed(1).padStart(4, "0")}`;
-    const note = s.outcome === "wrecked" ? "wrecked" : s.outcome === "unfinished" ? "—" : s.outcome === "quit" ? "left" : s.outcome === "aborted" ? "stopped" : "";
+    const note = s.outcome === "wrecked" ? "wrecked" : s.outcome === "unfinished" ? "—" : s.outcome === "quit" ? "left" : s.outcome === "aborted" ? "stopped" : s.outcome === "idle" ? "idle" : "";
     for (const text of [String(s.place), s.name + (s.human ? "" : " (NPC)"), time, note]) {
       const td = document.createElement("td");
       td.textContent = text;

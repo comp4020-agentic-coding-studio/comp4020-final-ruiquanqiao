@@ -18,7 +18,7 @@ export function placeWords(place: number): string {
 /** The word on the star for each way a race ends; the winner alone gets WINNER, with its bang. */
 export function starWord(outcome: Standing["outcome"] | "watched", place: number): string {
   if (outcome === "qualified" && place === 1) return "Winner!";
-  return { qualified: "Qualified", placed: "Placed", wrecked: "Wrecked", busted: "Busted", unfinished: "Out of time", quit: "Left", aborted: "Stopped", watched: "Race over" }[outcome];
+  return { qualified: "Qualified", placed: "Placed", wrecked: "Wrecked", busted: "Busted", unfinished: "Out of time", quit: "Left", aborted: "Stopped", idle: "Idle", watched: "Race over" }[outcome];
 }
 
 /** The still's one line: "Ana finished in First Place." */

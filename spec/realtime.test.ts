@@ -134,3 +134,32 @@ it("shows a steer made in one session in the other within a second, with no relo
     b.ws.close();
   }
 }, 45_000);
+
+it("drops a flood of messages from one connection past the rate, and still serves everyone else (G2)", async () => {
+  const cookieOf = async (): Promise<string> => ((await fetch(new URL("/", baseUrl))).headers.get("set-cookie") ?? "").split(";")[0];
+  const open = async (cookie: string): Promise<WebSocket & { got: string[] }> => {
+    const Ws = WebSocket as unknown as new (url: string, opts: { headers: Record<string, string> }) => WebSocket;
+    const ws = new Ws(new URL("/ws?probe=1", baseUrl.replace(/^http/, "ws")).href, { headers: { cookie } }) as WebSocket & { got: string[] };
+    ws.got = [];
+    ws.addEventListener("message", (e) => ws.got.push(String(e.data)));
+    await new Promise((ok) => ws.addEventListener("open", ok));
+    return ws;
+  };
+  const flood = await open(await cookieOf());
+  const calm = await open(await cookieOf());
+  await new Promise((ok) => setTimeout(ok, 300));
+  // 2000 renames in a burst: each answered with a hello while allowed
+  const before = flood.got.length;
+  for (let i = 0; i < 2000; i++) flood.send(JSON.stringify({ t: "name", name: `Flood ${i}` }));
+  await new Promise((ok) => setTimeout(ok, 1500));
+  const answered = flood.got.slice(before).filter((m) => m.includes('"t":"hello"')).length;
+  expect(answered, "renames answered out of 2000").toBeLessThan(400);
+  expect(answered).toBeGreaterThan(10);
+  // the other connection is answered at once
+  const calmBefore = calm.got.length;
+  calm.send(JSON.stringify({ t: "name", name: "Calm" }));
+  await new Promise((ok) => setTimeout(ok, 500));
+  expect(calm.got.slice(calmBefore).some((m) => m.includes('"Calm"'))).toBe(true);
+  flood.close();
+  calm.close();
+}, 20000);

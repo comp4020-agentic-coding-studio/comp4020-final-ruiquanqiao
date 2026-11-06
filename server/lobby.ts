@@ -8,7 +8,7 @@
 // start, with each person's countdown shortened by half their round trip so
 // GO lands at the same moment in every browser.
 
-import { CHECK_WAIT, type Entry, type Feud, type Room, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SAYINGS, SAY_GAP, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
+import { CHECK_WAIT, IDLE_OUT, MIN_FIELD, type Entry, type Feud, type Room, GRID, LOAD_MAX, LOAD_MIN, MAX_AI, type Mode, POOL_WAIT, ROOM, SAYINGS, SAY_GAP, SNAPSHOT_HZ, type Standing, type ToClient, encodeCar, encodeRider } from "../game/protocol.ts";
 import { DT, type Input, type Race, NO_INPUT, TUNE, humansDone, standings, startRace, step, unpackInput } from "../game/sim.ts";
 import { LIVERIES } from "../game/liveries.ts";
 import { NET, Samples, cleanJump, cleanReport, ms } from "../game/net.ts";
@@ -102,6 +102,10 @@ export type Live = {
   net: Map<number, PersonNet>;
   /** the grudges between its people, by bike, as they stand now (O3) */
   feuds: Feud[];
+  /** each person's furthest point along the road and when they passed it, for the idle rule (G1) */
+  progress: Map<number, { z: number; at: number }>;
+  /** taken out for riding nowhere (G1) */
+  idle: Set<number>;
 };
 
 type Pool = { members: Conn[]; startsAt: number | null };
@@ -607,6 +611,8 @@ export class Lobby {
       timeLimit: track.length / 30 + 90,
       net: new Map(),
       feuds: m.feuds.map((f) => ({ ...f })),
+      progress: new Map(),
+      idle: new Set(),
     };
     this.races.set(id, live);
     members.forEach((c, i) => {
@@ -723,6 +729,7 @@ export class Lobby {
     step(live.race, inputs);
     this.stepCost.add(this.perf() - before);
     live.steps++;
+    if (live.steps % 60 === 0) this.idleCheck(live);
 
     if (live.steps % (60 / SNAPSHOT_HZ) === 0) {
       // logged once each, as they go out (this ran every step, from the last
@@ -757,6 +764,29 @@ export class Lobby {
     if (humansDone(live.race) && live.doneAt < 0) live.doneAt = live.race.t;
     const settled = live.doneAt >= 0 && live.race.t - live.doneAt >= FINISH_HOLD;
     if (settled || everyoneGone || live.race.t > live.timeLimit) this.finish(live, now);
+  }
+
+  /**
+   * A person who has got no further down the road for IDLE_OUT seconds of a
+   * race that is under way is taken out (G1). Further down, not faster: a
+   * person lying in the road, running back to the bike or crawling past a
+   * roadblock is still getting somewhere, and the clock starts at GO.
+   */
+  private idleCheck(live: Live): void {
+    const t = live.race.t;
+    if (t <= 0) return;
+    for (const r of live.race.riders) {
+      if (!r.human || r.phase === "finished" || r.phase === "wrecked" || r.phase === "busted" || live.quit.has(r.id)) continue;
+      const p = live.progress.get(r.id);
+      if (!p || r.z > p.z + 5) live.progress.set(r.id, { z: r.z, at: t });
+      else if (t - p.at >= IDLE_OUT) {
+        live.idle.add(r.id);
+        r.phase = "wrecked";
+        this.chat(live, { t: "chat", race: live.id, from: r.id, status: "left" });
+        const c = live.conns.get(r.id);
+        this.log({ ev: "idle", race: live.id, who: c ? who(c) : `bike ${r.id}`, secs: Math.round(t - p.at) });
+      }
+    }
   }
 
   /**
@@ -820,6 +850,8 @@ export class Lobby {
       const quit = live.quit.has(r.id);
       const outcome: Standing["outcome"] = quit
         ? "quit"
+        : live.idle.has(r.id)
+          ? "idle"
         : aborted
           ? "aborted"
         : r.phase === "finished"
@@ -840,14 +872,20 @@ export class Lobby {
         time: r.finishT >= 0 ? Math.round(r.finishT * 1000) / 1000 : null,
       };
     });
-    if (!aborted) this.store.finishRace(live.id, live.level, live.track, result);
+    // one person against fewer than MIN_FIELD on the grid is ridden and
+    // shown, but scores nothing (G3): alone against no NPCs, a first place is
+    // a lap of honour with nobody to beat, and it took 25 points on the
+    // leaderboard. Two people racing each other always count
+    const field = live.race.riders.filter((r) => !r.cop);
+    const counts = field.length >= MIN_FIELD || field.filter((r) => r.human).length >= 2;
+    if (!aborted && counts) this.store.finishRace(live.id, live.level, live.track, result);
     this.log({ ev: "race_end", race: live.id, secs: Math.round(live.race.t), ...(aborted ? { aborted } : {}), standings: result.filter((s) => s.human).map((s) => [`${s.name}#${s.id}`, s.place, s.outcome]) });
     for (const id of [...live.net.keys()]) this.netLine(live, id);
     // and the server's own share of the wait, over its last ten seconds or so
     const hundredths = (x: number | null): number | null => (x === null ? null : Math.round(x * 100) / 100);
     this.log({ ev: "server", race: live.id, lateP95: ms(this.late.p95()), lateMax: ms(this.late.max()), stepP95: hundredths(this.stepCost.p95()), stepMax: hundredths(this.stepCost.max()) });
     for (const c of live.conns.values()) {
-      c.send({ t: "end", race: live.id, standings: result, qualified: this.store.qualified(c.rider), ...(aborted ? { aborted } : {}) });
+      c.send({ t: "end", race: live.id, standings: result, qualified: this.store.qualified(c.rider), ...(aborted ? { aborted } : {}), ...(counts ? {} : { unscored: true }) });
       c.race = null;
     }
     for (const c of live.watchers) c.send({ t: "end", race: live.id, standings: result, qualified: [], ...(aborted ? { aborted } : {}) });
