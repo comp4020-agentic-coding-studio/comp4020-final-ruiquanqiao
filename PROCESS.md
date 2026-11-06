@@ -1,17 +1,16 @@
 # Process overview
 
 Knuckle Road remakes the arcade mode of *Road Rash* (the 1996 Windows port I
-played) as one race shared by everyone on the road at once. This is how the
-project stands at submission, and how its harness came to be: which of the
-agent's mistakes, and mine, ended up as rules and checks, and how I knew a
-result was right before I accepted it.
+played) as one race shared by everyone on the road at once. Below are the
+mistakes, the agent's and mine, that became rules and checks, and how I knew
+each result was right before I accepted it.
 
 ## What "good" had to mean
 
 My first idea was a video-translation tool, until I saw it failed two of the
 three fixed requirements. I chose a race where you can hit the rider beside
-you, because there being next to another person is the whole game; Wilson's
-confrontational games for a room describe what Road Rash already was. The
+you, because being next to another person is the whole game, which is what
+Wilson means by confrontational games for a room. The
 harder question was fidelity. An agent asked to "remake Road Rash" builds the
 median racing game, and Neill Hoch's point, that remakes keep the story and
 replace the mechanics, names exactly that trap. So I kept the mechanics and
@@ -20,9 +19,9 @@ rebuilt everything else, and that position runs through the README,
 
 ## Moment 1: a record instead of my memory
 
-The first plan left out the police, both weapons and weapon snatching. If I
-had added them by hand, I would have become the error detector for every
-mechanic in the game, so I had the agent research six manuals and five guides
+The first plan left out the police, both weapons and weapon snatching. Adding them by
+hand would have made me the error detector for every mechanic, so I had the
+agent research six manuals and five guides
 into [`docs/ledger.md`](docs/ledger.md): every mechanic with a source and a
 decision, held by `spec/ledger.test.ts`, which I checked by breaking two rows
 on purpose ([`8d029d5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/8d029d5)). The ledger later overruled the agent's
@@ -42,8 +41,8 @@ became the subject of my research note.
 
 `game/sim.ts` is the race as pure functions with one fixed 1/60 s step. The
 server runs it, the browser runs the same `ride()` for its own rider, and
-scripts replay it with scripted keys ([`3f79d37`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/3f79d37)). That means a feel can
-be judged by riding and then settled by counting. Nitro felt like cheating
+scripts replay it with scripted keys ([`3f79d37`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/3f79d37)). So a feel can be judged
+by riding and then settled by counting. Nitro felt like cheating
 when I rode against it, and over twenty races 47 of 77 passes on a flat-out
 player turned out to be an NPC bursting past the bike's top speed. I tried
 rationing it and drawing a flame, and dropped both; the only fair rule was
@@ -59,8 +58,7 @@ still finished: 425 of 450, against 407 with nobody on foot.
 ## Moment 3: real-time, by measurement
 
 The server owns the race over one WebSocket per tab
-([decision 1](docs/decisions/0001-whose-word-counts.md)), but making it look
-smooth took measurement rather than reasoning. When I overtook, the bike
+([decision 1](docs/decisions/0001-whose-word-counts.md)). When I overtook, the bike
 ahead jerked. Replaying snapshot arrivals recorded on the live server through
 `spec/netview.test.ts` showed 451 of 17,362 frames drawn off a bike's real
 movement, and none once each snapshot was placed by the race time it carries
@@ -80,8 +78,7 @@ people in fifteen races all got a race ([`b85dd57`](https://github.com/comp4020-
 
 ## Moment 4: checking what a marker meets
 
-Before submitting I tested the app the way a marker arrives at it, and it was
-worse than I had assumed. Four of the README's five links downloaded files
+Before submitting I tested the app the way a marker arrives at it. Four of the README's five links downloaded files
 instead of opening pages and the fifth was a 404, so a spec now crawls every
 link from `/readme/` ([`c7d4fa2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/c7d4fa2)). axe failed three of five pages
 in Chrome ([`5e0e632`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/5e0e632)). In a browser with no GPU, loading froze for 64 s;
@@ -105,9 +102,9 @@ several tabs, is in [decision 2](docs/decisions/0002-who-may-do-what.md).
 ## How I directed the agent
 
 Research went to background agents with a written brief and a file to fill,
-and I read that file before anything was built from it. Every claim about
-look or feel is checked on the running game, with probes for numbers and the
-deployed game played in Chrome at both marking viewports. When the agent got
+and I read that file before anything was built from it. Claims about look or
+feel are checked on the running game: probes for numbers, and the deployed
+game played in Chrome at both marking viewports. When the agent got
 something wrong, the correction went into `CLAUDE.md` or `spec/`, where the
 next session would meet it; and when one of my own measurements turned out
 wrong, the next commit says so.
