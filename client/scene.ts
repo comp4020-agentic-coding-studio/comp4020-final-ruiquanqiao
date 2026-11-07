@@ -12,10 +12,10 @@ import { BIOMES, type Biome, OPEN, ROAD_HALF, SEGMENT, SHOULDER, type Slick, typ
 import { groundAt } from "../game/terrain.ts";
 import { centreline, frameAt } from "../game/world.ts";
 import { RIBBON, Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
-import { buildCar } from "./models.ts";
+import { buildCar, loadRider } from "./models.ts";
 import { RECOIL, type Reaction, hopLift, wobble } from "./feel.ts";
 import { LIVERIES } from "../game/liveries.ts";
-import { type Atlas, AtlasBuilder, type Look, RiderSprite, frameFor } from "./sprites.ts";
+import { type Atlas, AtlasBuilder, type Look, RiderSprite, frameFor, useHuman } from "./sprites.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
 
@@ -916,6 +916,18 @@ export class RaceScene {
   }
 
   prepare(): void {
+    if (this.atlas || this.builder || this.loading) return;
+    // the modelled human first (client/skin.ts); without it the frames are
+    // drawn from the blended capsules, as they are in Node
+    this.loading = true;
+    loadRider()
+      .then((gltf) => useHuman(gltf.scene))
+      .catch(() => {})
+      .finally(() => this.startAtlas());
+  }
+  private loading = false;
+
+  private startAtlas(): void {
     if (this.atlas || this.builder) return;
     const b = (this.builder = new AtlasBuilder(this.renderer));
     // a few frames at a time, giving the page back between them, so the lobby

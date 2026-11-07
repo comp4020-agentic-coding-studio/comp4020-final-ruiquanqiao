@@ -16,8 +16,10 @@
 // Bike space: metres, +z forward, +y up, the rider's right is -x.
 
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { type Rider, TUNE, windupOf } from "../game/sim.ts";
 import { type Prim, meshBody } from "./body.ts";
+import { type BodyJoints, type SkinnedBody, skinnedBody } from "./skin.ts";
 import { buildBike } from "./models.ts";
 
 // ---- poses ----
@@ -454,6 +456,37 @@ type Part = THREE.Mesh & { userData: { part: number } };
 
 const LEG = 0.5;
 
+/**
+ * The modelled human the body is skinned from, once loaded (client/skin.ts).
+ * Until then, and in Node where there is no model, the blended capsules
+ * stand in.
+ */
+let human: THREE.Object3D | null = null;
+export const useHuman = (scene: THREE.Object3D): void => {
+  human = scene;
+};
+
+/** Which atlas part a vertex of the human is, from its bone and where it sits at rest. */
+function humanPart(bone: string, rest: THREE.Vector3, from: THREE.Vector3): number {
+  if (/^(hand|thumb|index|middle|ring|pinky)_/.test(bone)) return PART.fixed;
+  // the gauntlet's cuff, a hand's width up the forearm
+  if (/^lowerarm_/.test(bone) && Math.abs(rest.x) > 0.6) return PART.fixed;
+  if (/^(foot|ball)_/.test(bone)) return PART.fixed;
+  // the boot's shaft, up the shin
+  if (/^calf_/.test(bone) && rest.y < 0.3) return PART.fixed;
+  if (/^(neck|Head)/.test(bone)) return PART.fixed;
+  // two-tone as the recording's riders are: the second colour over the
+  // shoulders and back, the first on the seat; and the sleeves and trouser
+  // legs two-tone along their length (413.82, 57.32), the first colour over
+  // the top of the arm and the outside of the leg, the second underneath and
+  // on the inside. At rest the model stands arms out, so under an arm is
+  // below its bone, and the inside of a leg is towards the other leg
+  if (/^(spine_02|spine_03|clavicle)/.test(bone)) return PART.trim;
+  if (/^(upperarm|lowerarm)_/.test(bone)) return from.y < -0.01 ? PART.trim : PART.main;
+  if (/^(thigh|calf)_/.test(bone)) return from.x * Math.sign(rest.x - from.x) < -0.02 ? PART.trim : PART.main;
+  return PART.main;
+}
+
 class Puppet {
   root = new THREE.Group(); // bike space
   body = new THREE.Group(); // the rider; turned as a whole when off the bike
@@ -462,6 +495,8 @@ class Puppet {
   private parts: Record<string, Part> = {};
   private weapons: Record<"club" | "chain" | "flag", THREE.Object3D>;
   private flesh: THREE.Mesh;
+  private skin: SkinnedBody | null = null;
+  private skinJoints: BodyJoints | null = null;
   /** joints, for measuring a pose against the recording */
   private joints: Record<string, THREE.Vector3> = {};
   private mesh: boolean;
@@ -497,6 +532,14 @@ class Puppet {
     // everything else is one surface (client/body.ts), coloured per vertex
     this.flesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0 }));
     this.body.add(this.flesh);
+    if (mesh && human) {
+      this.skin = skinnedBody(human, humanPart, fleshColour, (part) => idMaterial(part).color);
+      this.body.add(this.skin.mesh);
+      this.flesh.visible = false;
+      // gauntlets: a squared fist, wider across the knuckles than it is thick
+      const glove = new RoundedBoxGeometry(0.1, 0.085, 0.12, 3, 0.025);
+      for (const s of ["gloveR", "gloveL"]) add(s, glove, PART.fixed, "#171717", 0.5);
+    }
     const wood = this.mat("#ffffff", 0.8, 0);
     const steel = this.mat("#9a9aa2", 0.35, 0.8);
     const club = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.022, 0.75, 10).translate(0, 0.33, 0), wood);
@@ -600,6 +643,7 @@ class Puppet {
     P.visor.position.copy(head).addScaledVector(look, 0.075).add(new THREE.Vector3(0, 0.01, 0));
     P.visor.scale.set(0.115, 0.055, 0.1);
     this.joints.helmet = head.clone();
+    const sk: Partial<BodyJoints> = { pelvis: pelvis.clone(), spine: spine.clone(), fwd: fwd.clone(), neckBase: chest.clone(), neckTop: neckTop.clone(), head: head.clone() };
     for (const [s, sign] of [
       ["R", 1],
       ["L", -1],
@@ -619,6 +663,16 @@ class Puppet {
       const fist = handAt.clone().sub(elbow).normalize();
       cone(wrist, handAt.clone().addScaledVector(fist, -0.02), 0.06, 0.063, PART.fixed, 0.012);
       block(handAt.clone().addScaledVector(fist, 0.03), fist, new THREE.Vector3(0, 1, 0), [0.048, 0.038, 0.056], 0.018, 0.012);
+      const glove = P[`glove${s}`];
+      if (glove) {
+        // its length along the forearm, its back facing up as near as it can
+        glove.position.copy(handAt).addScaledVector(fist, 0.03);
+        const up = new THREE.Vector3(0, 1, 0).addScaledVector(fist, -fist.y);
+        if (up.lengthSq() < 1e-6) up.set(sign, 0, 0);
+        up.normalize();
+        glove.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(up, fist), up, fist));
+        glove.scale.set(1, 1, 1);
+      }
       const hip = pelvis.clone().addScaledVector(across, sign * 0.11);
       const foot = v(s === "R" ? p.footR : p.footL);
       const kneePole = v((s === "R" ? p.kneeR : p.kneeL) ?? [sign * -0.4, 0.9, 0.4]);
@@ -637,7 +691,18 @@ class Puppet {
       this.joints[`elbow${s}`] = elbow;
       this.joints[`glove${s}`] = handAt;
       this.joints[`knee${s}`] = knee;
+      this.joints[`hip${s}`] = hip;
       this.joints[`boot${s}`] = footAt.clone().add(new THREE.Vector3(0, -0.02, 0.05));
+      Object.assign(sk, {
+        [`shoulder${s}`]: shoulder,
+        [`elbow${s}`]: elbow,
+        [`wrist${s}`]: wrist,
+        [`fist${s}`]: handAt.clone().addScaledVector(fist, 0.07),
+        [`hip${s}`]: hip,
+        [`knee${s}`]: knee,
+        [`ankle${s}`]: ankle,
+        [`toe${s}`]: footAt.clone().addScaledVector(ahead, 0.17).addScaledVector(shin, -0.05),
+      });
       if (s === "R") {
         for (const [k, w] of Object.entries(this.weapons)) {
           w.visible = p.weapon?.kind === k;
@@ -659,7 +724,8 @@ class Puppet {
         w.position.copy(handAt);
       }
     }
-    if (this.mesh) {
+    if (this.skin) this.skinJoints = sk as BodyJoints;
+    else if (this.mesh) {
       // the atlas draws each left-hand pose straight after its right-hand one
       const done = this.last && mirrorOf.get(p) === this.last.pose ? reflect(this.last.geometry) : meshBody(prims, fleshColour, (part) => idMaterial(part).color);
       this.flesh.geometry.dispose();
@@ -674,6 +740,11 @@ class Puppet {
     if (p.body) {
       this.body.rotation.set(p.body.rx, 0, p.body.rz, "ZXY");
       this.body.position.y = p.body.lift;
+    }
+    // the skinned body's bones are written in world space, so after the body is placed
+    if (this.skin && this.skinJoints) {
+      this.root.updateMatrixWorld(true);
+      this.skin.pose(this.skinJoints, this.skin.mesh.matrixWorld);
     }
     // a bike down on its side, sliding (V13)
     this.bike.rotation.set(0, 0, bikeDown ? Math.PI / 2 - 0.15 : 0);
@@ -690,7 +761,7 @@ class Puppet {
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
-      if (m === this.flesh) {
+      if (m === this.flesh || m === this.skin?.mesh) {
         // the one surface carries its part numbers per vertex
         const g = m.geometry;
         if (g.attributes.idColour) g.setAttribute("color", on ? g.attributes.idColour : g.userData.shaded);
@@ -1199,4 +1270,26 @@ export function drawFrames(renderer: THREE.WebGLRenderer, names: string[], size 
   g.fillStyle = "#fff";
   g.fillText("paths: elbow, fist, tip", x0 + 6, 16);
   return out;
+}
+
+/**
+ * The skinned body in a pose, its vertices where the bones put them, for
+ * measuring its shape against the recording (spec/body-shape.test.ts).
+ * Needs useHuman() first.
+ */
+export function posedBody(frame: string): { pos: THREE.BufferAttribute; at: (joint: string) => THREE.Vector3 } {
+  const pose = FRAMES.find(([n]) => n === frame)?.[1];
+  if (!pose) throw new Error(`no frame ${frame}`);
+  const puppet = new Puppet(true);
+  puppet.set(pose);
+  const mesh = (puppet as unknown as { skin: SkinnedBody | null }).skin?.mesh;
+  if (!mesh) throw new Error("no modelled body: call useHuman first");
+  const src = mesh.geometry.attributes.position;
+  const out = new THREE.BufferAttribute(new Float32Array(src.count * 3), 3);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < src.count; i++) {
+    mesh.getVertexPosition(i, v);
+    out.setXYZ(i, v.x, v.y, v.z);
+  }
+  return { pos: out, at: (j) => puppet.at(j) };
 }
