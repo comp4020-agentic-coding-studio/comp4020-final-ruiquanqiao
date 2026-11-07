@@ -96,8 +96,12 @@ export const TUNE = {
   mudDrag: 9,
   /** grip comes back after a patch at this share a second, not all at once */
   gripBack: 2,
-  punchReach: { z: 1.8, x: 1.6 },
-  kickReach: { z: 1.5, x: 1.7 },
+  // how far ahead or behind a blow lands, m (C3): measured off the recording's
+  // hits by the size of the two rear tyres, the struck bike is never more
+  // than 0.7-0.9 m from level (RRVID 92.46, 57.28, 247.64, 355.60, 413.82).
+  // 1.8 m, set before any of it was measured, hit a rider a bike length back
+  punchReach: { z: 0.9, x: 1.6 },
+  kickReach: { z: 0.8, x: 1.7 },
   // A fist or a kick lands on the next few steps: straight out from the bar,
   // no drawing back. The original draws back for 6 frames at 25 fps (0.22 s),
   // and copied, it rode as a warm-up swing with the hit arriving late; a
@@ -209,7 +213,7 @@ export const TUNE = {
   slideDecel: 14,
   /** a weapon is swung with the punch key (C5); the chain reaches further,
    * the club hits harder */
-  reach: { club: { z: 2.0, x: 2.1 }, chain: { z: 2.2, x: 2.6 } },
+  reach: { club: { z: 1.1, x: 2.1 }, chain: { z: 1.3, x: 2.6 } },
   // seven club blows from full, eight fists; five and six (21 and 17), as the
   // recording's rival seemed to go (353-357.5), were too few to ride
   weaponStamina: { club: 15, chain: 14 },
@@ -1653,13 +1657,23 @@ function duelInput(race: Race, r: Rider, foe: Rider): Input {
   // to spoil someone else's. Now it neither waits (a foe that drops back is
   // left, pickFoe) nor rides any faster than it races
   else if (r.speed > topSpeed(r) * r.skill) input.throttle = false;
+  // ... but a foe within a few metres is held level off the gas, never the
+  // brake, as the recording's rival holds level beside the player for six
+  // seconds: with the reach measured at 0.9 m instead of 1.8, a rider drifting
+  // past at its own pace was out of reach before its swing landed, and swings
+  // at a player fell from 9.3 a race to 4.7 (eight seeds); held, 7.0
+  else if (dz < 0 && dz > -3 && closing > 0) input.throttle = false;
   // bends still have to be ridden
   const need = TUNE.centrifugal * r.speed * r.speed * Math.abs(curve);
   if (need > 0.8 * TUNE.steerFast) input.throttle = false;
   if (need > 1.05 * TUNE.steerFast) input.brake = true;
   // swing on the beat when it is in reach (C1): a fist or the weapon, unless
   // the foe has something on its far side to be kicked into (C4)
-  if (race.t >= r.nextSwing && Math.abs(dz) < 1.6 && Math.abs(foe.x - r.x) < 1.7 && !r.attack) {
+  // timed for where the foe will be when the blow lands, not where it is now:
+  // with the reach measured off the recording (0.9 m for a fist) a rider
+  // closing at a few m/s is through the window before a swing from it arrives
+  const arrive = dz - closing * windupOf(r, { kind: "punch", side: 1, t: 0, target: -1, landed: false });
+  if (race.t >= r.nextSwing && Math.abs(arrive) < reachOf(r, "punch").z && Math.abs(foe.x - r.x) < 1.7 && !r.attack) {
     if (random(race) < (kickPays(race, r, foe) ? 0.85 : 0.1)) input.foot = true;
     else input.hand = true;
     r.nextSwing = race.t + (TUNE.duelBeat / Math.sqrt(r.temper)) * (0.8 + random(race) * 0.4);
@@ -1670,7 +1684,7 @@ function duelInput(race: Race, r: Rider, foe: Rider): Input {
   // a player alongside it was hit less at level 5 than at level 1
   else if (!r.attack && r.temper > 1) {
     const near = nearest(race, r);
-    if (near && near !== foe && !near.cop && Math.abs(near.z - r.z) < 1.6 && Math.abs(near.x - r.x) < 1.6 && random(race) < r.aggression * (r.temper - 1) * DT * 4) input.hand = true;
+    if (near && near !== foe && !near.cop && Math.abs(near.z - r.z) < reachOf(r, "punch").z && Math.abs(near.x - r.x) < 1.6 && random(race) < r.aggression * (r.temper - 1) * DT * 4) input.hand = true;
   }
   // grabbing a weapon drawn back at it still comes first (C6)
   if (!r.weapon && !r.prevHand && grabbable(race, r) && random(race) < r.aggression * DT * TUNE.aiGrab) input.hand = true;
