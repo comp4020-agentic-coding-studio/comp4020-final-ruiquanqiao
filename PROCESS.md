@@ -7,13 +7,14 @@ finding each fault by hand.
 
 ## What good means for this game
 
-Good here is the race I remember, played against people in the same room, as
-[the README](README.md) argues. Each part became a check the agent runs
-itself: how the bike rides (`spec/feel.test.ts`), how the field fights (`spec/fights.test.ts`), that a
-room of people gets into one race together (`spec/lobby.test.ts`), and that
-the network does not show (`spec/netview.test.ts`). No test can say how it
-looks, so that is judged frame beside frame against 137 screenshots of the
-original.
+[The README](README.md) describes a good race: friends in one room, a game
+that races and looks like the one I played, punches with weight, and nothing
+strange happening. Each part became a check the agent runs itself: how the
+bike rides (`spec/feel.test.ts`), how the field fights
+(`spec/fights.test.ts`), that a room of people gets into one race
+(`spec/lobby.test.ts`), and that other bikes move smoothly over a bad
+connection (`spec/netview.test.ts`). No test can say how it looks, so I
+judged that frame beside frame against 137 screenshots of the original.
 
 ## Mechanics from a ledger
 
@@ -46,17 +47,17 @@ rationing it and drawing a flame, then took it out for everyone ([`bc121fa`](htt
 
 ## A blow judged by its movement
 
-The punch had been tuned by eye more than once, and every version passed the
-check that held its key poses to the recording, because the movement is in
-the frames between. So the agent wrote `spec/motion.test.ts`, a coach's rules
+I had tuned the punch by eye more than once, and every version passed the
+check on its key poses, though it still looked wrong: the movement is in the
+frames between them. So the agent wrote `spec/motion.test.ts`, a coach's rules
 measured in 3D on every frame (the fist drives, the elbow trails below it).
 On the old frames 10 of 15 failed ([`ca9385e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/ca9385e)). The chain then passed
-and still looked cranked, so I worded the correction as a coach would, "the
+and still swung like a crank handle, so I worded the correction as a coach would, "the
 upper arm level, the forearm turning about the elbow", and its new rules
 failed on the old frames before any pose changed ([`f640d80`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/f640d80)). In play
-it cranked anyway, through a backhand that no hand-written list of frames
-included, so the frames checked are now found by stepping the game through
-every move ([`46677c1`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/46677c1)). In the end fewer frames looked better: a fist
+it still cranked on a backhand, a swing missing from the hand-written list of
+frames, so the test now finds its frames by stepping the game through every
+move ([`46677c1`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/46677c1)). In the end fewer frames looked better: a fist
 goes out and back through one frame halfway ([`b102d7d`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/b102d7d)). Playing it
 then showed a flicker no frame could: my browser ended its own punch before
 the server did. One function now ends a swing for both, and a test fails on
@@ -71,12 +72,13 @@ name what was wrong.
 ## A detector for each fault before its fix
 
 I accepted no fix until a test had failed on the old code. The bike ahead
-jerked as I overtook. Replaying live snapshot arrivals showed 451 of 17,362
-frames drawn off its real movement, and none once each snapshot was placed by
-the race time it carries ([`d4e2ab2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d4e2ab2)). Everyone else is drawn a little
-behind ([decision 1](docs/decisions/0001-whose-word-counts.md)). Through a 300 ms, 3%-loss proxy, a
-fixed tenth of a second of delay left 44 to 78% of frames drawn by guesswork;
-a delay that follows the connection's lateness left 4 to 6% ([`cb5b158`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cb5b158)).
+jerked as I overtook. Replaying the timing of real server updates showed 451 of 17,362
+frames drawn off its real movement, and none once each update was placed by
+the race time it carries ([`d4e2ab2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d4e2ab2)). Other riders are drawn a little in
+the past ([decision 1](docs/decisions/0001-whose-word-counts.md)), and on a bad
+connection a fixed tenth of a second was not far enough: through a 300 ms,
+3%-loss proxy, 44 to 78% of frames were guesses. Drawing as far back as the
+connection needs left 4 to 6% ([`cb5b158`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cb5b158)).
 Rammed bikes passed through mine, and `spec/ram.test.ts` caught them drawn
 inside each other on 5 frames, then none ([`bf12eb7`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/bf12eb7)). It also caught
 struck bikes tipping the wrong way, which an older test passed on the same
@@ -85,9 +87,9 @@ misread axis; `CLAUDE.md` now checks handedness against `spec/world.test.ts`.
 ## Testing with several people
 
 I ran crit 10's eight multi-user scenarios against the deployed app
-([`f38c010`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/f38c010)). Two machines failed as the code predicted: two people
-queueing together were never matched, and one person reconnecting became two
-riders. The app stays on one machine. A restart mid-race left pages with no
+([`f38c010`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/f38c010)). Scaled to two machines, it failed as the code predicted:
+two people queueing together were never matched, and one person reconnecting
+became two riders. So the app stays on one machine. A restart mid-race left pages with no
 ending, and now the race ends as "stopped" ([`cd00bef`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cd00bef)). At the crit, two
 classmates raced from the URL while I read the log.
 
@@ -110,7 +112,7 @@ limit I accept; what it leaves open is in
 
 ## How I worked with the agent
 
-My attention went on the standards, the checking to the agent. Research went
+I spent my attention on the standards and left the checking to the agent. Research went
 to background agents with a brief and a file to fill, read before anything was
 built on it. The agent rides every handling change through a player's keys and shoots every screen change at both marking
 viewports beside the original. Corrections went into `CLAUDE.md` or `spec/`,

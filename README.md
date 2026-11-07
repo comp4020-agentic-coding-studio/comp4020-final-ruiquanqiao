@@ -1,68 +1,58 @@
 # Knuckle Road
 
-Fifteen motorbikes on one ridge road, and you can punch and kick whoever is
-riding beside you. Knuckle Road remakes the arcade mode of *Road Rash* (EA,
-1996 Windows port, known in China as 暴力摩托 and the version I played) as one
-race shared by whoever is on the road right now. W rides, A and D steer, J
-punches and K kicks; on a phone the left thumb rides a stick and the right
-thumb fights.
+Knuckle Road remakes the arcade mode of *Road Rash* (EA, 1996 Windows port,
+known in China as 暴力摩托 and the version I played) as one race shared by whoever
+is on the road right now. It is a racing game in which you can also punch and
+kick whoever is riding beside you. W rides, A and D steer, J punches and K
+kicks; on a phone the left thumb rides a stick and the right thumb fights.
 
-To race another person, each of you presses the gold **Humans only** button
-and then **Accept**. The room waits ten seconds after the last of you joins, so
-there is time to get to the second window. **Race with NPCs** is for riding on
-your own: it leaves five seconds after the first press and takes only whoever
-joined in that time.
+To race another person, each of you presses the gold **Humans only** button,
+then **Accept**. The room leaves ten seconds after the last of you joins, time
+enough to reach a second window. **Race with NPCs** is for riding alone and
+leaves five seconds after the first press.
 
 ## What good means here
 
-I wanted the game as its manuals describe it, because my first plan, written
-from memory, left out the police, both weapons and weapon snatching. Neill Hoch
-(2020) finds that remakes usually keep a game's story and replace its
-mechanics, so I kept the mechanics. Every
-mechanic has a row in [the ledger](docs/ledger.md) with a source and a
-decision (copied, adapted or left out) and its reason. Like most games of its
-age, the original is no longer sold (Video Game History Foundation, 2023).
+A good race is a few friends in one room on one road. It races like a race,
+the road and the riders look right, a punch lands with weight, each road's
+music sets its mood, and nothing strange pulls anyone out of it.
 
-Your bike should answer your keys at once. Bernier (2001) says who gets
-believed when two screens disagree "is a game design decision", and I made
-Valve's choice: each browser runs the server's simulation for its own rider,
-so a steer or a swing happens on the keypress, and everyone else is drawn
-slightly behind, as Gambetta describes. [Decision 1](docs/decisions/0001-whose-word-counts.md)
-records the price: you punch where the server says a rider is, which is not
-quite where you saw them.
+Right means the game I played. Remakes usually keep a game's story and replace
+its mechanics (Neill Hoch, 2020); I kept the mechanics, because the original is
+no longer sold (Video Game History Foundation, 2023). My first plan, written
+from memory, left out the police and both weapons, so every mechanic now has a
+sourced row in [the ledger](docs/ledger.md) saying whether I copied, adapted or
+left it out. The look is matched against 137 screenshots, the speed against
+the original's dial.
 
-It should be more fun with a person in the next chair. Wilson (2012) makes
-games "confrontational" on purpose, because that makes play in a room festive,
-and Road Rash was already that kind of game. A room holds eight people, each in leathers
-nobody else there wears. NPCs fill only the empty seats, so one visitor still
-gets a full grid. Everyone starts on the same GO, anyone can watch at `/live`,
-and whoever knocks you off is named the next time you share a road.
+A punch has weight only if it starts on the keypress. Bernier (2001) calls
+deciding whose screen is believed "a game design decision", and I made Valve's
+choice, as Gambetta describes: your browser runs the server's simulation for
+your own rider and draws everyone else slightly behind. The cost, in
+[decision 1](docs/decisions/0001-whose-word-counts.md), is that you punch where
+the server says a rider is, a little off from where you saw them. Every frame
+of a blow is checked for how it moves, and a club cracks on a helmet with a
+recorded sound. Each road plays its own recorded rock track; the synthesised
+loop it replaced sounded thin and made the five roads blur together.
 
-It is small on purpose, like Shirky's (2004) software for "dozens of users"
-and Sloan's (2020) app that nobody else will use; this one is for a room of
-friends. Your browser is your rider
-([decision 2](docs/decisions/0002-who-may-do-what.md)). A top-three finish
-flags that road on your Qualified board until you wreck or get busted on that
-level, and `/leaderboard` lists everyone who has raced, however it went, so
-whoever you raced is still there the next day.
+Strange means what a player would notice: two bikes inside each other, a rider
+stuttering as you pass, a race lost to a slow network. The first two are tests
+now, and the netcode is ridden at 300 ms with 3% loss before it ships.
+
+Wilson (2012) makes games "confrontational" because that makes play in a room
+festive, and Shirky (2004) and Sloan (2020) argue for software made for a few
+people. So a room holds eight, each in leathers nobody else there wears, NPCs
+fill only the empty seats, and your browser is your rider, with no account
+([decision 2](docs/decisions/0002-who-may-do-what.md)). Everyone starts on one
+GO, anyone can watch at `/live`, whoever knocks you off is named the next time
+you meet, and `/leaderboard` keeps everyone who has raced.
 
 ## Enforced, and judged
 
-| Claim | How it is held |
-|---|---|
-| Every mechanic has a sourced decision, none overdue | `spec/ledger.test.ts` |
-| A steer in one browser shows in another within a second | `spec/realtime.test.ts` |
-| Other bikes are drawn as they moved, however late snapshots come | `spec/netview.test.ts`, on arrivals recorded live |
-| No one can steer another person's bike; a room holds eight | `spec/lobby.test.ts` |
-| Everyone who raced is on the leaderboard, and it, the qualifications and the log survive a restart | `spec/persistence.test.ts` |
-| Every page passes axe, and every link here opens | `spec/a11y.test.ts`, `spec/readme.test.ts` |
-| A blow moves like one on every frame, between its key poses as well | `spec/motion.test.ts`, and a contact sheet of every frame before it ships |
-| Every helmet goes with its leathers | `spec/liveries.test.ts` |
-| It looks like the original | Judged frame beside frame against 137 screenshots, each judgement in a commit |
-| It handles like the original | Judged by riding, then pinned as numbers in `spec/feel.test.ts` |
-| It holds up over a bad network | Ridden at 300 ms with 3% loss, and with 8 scripted people |
-| It works from the keyboard alone, and survives a resize mid-race | `scripts/rough.ts` on the deployed app |
-| Two people who follow this page end up in one race and on the leaderboard | `scripts/marker.ts` on the deployed app, two browsers sharing no cookies, one at each marking viewport |
+A test in `spec/` or a script on the deployed app holds every claim above
+except the look and the music, which are judged: the look frame beside frame
+against 137 screenshots, the music by ear. [The checks](docs/checks.md) list
+which test or script holds which claim.
 
 ## What I left out
 
