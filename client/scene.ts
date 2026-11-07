@@ -14,7 +14,7 @@ import { centreline, frameAt } from "../game/world.ts";
 import { RIBBON, Terrain, ribbons, sea, terrainMaterial, town } from "./land.ts";
 import { buildCar, loadRider } from "./models.ts";
 import { RECOIL, type Reaction, hopLift, wobble } from "./feel.ts";
-import { LIVERIES } from "../game/liveries.ts";
+import { AI_LEATHERS as LEATHERS, LIVERIES } from "../game/liveries.ts";
 import { type Atlas, AtlasBuilder, type Look, RiderSprite, frameFor, useHuman } from "./sprites.ts";
 
 // ---- colours measured off the PC version (docs/road-rash-visuals.md) ----
@@ -430,26 +430,6 @@ function tint(track: Track, g: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 
 // ---- riders (V5) ----
-
-// The PC default rider first: magenta leathers, yellow-green shoulders,
-// yellow helmet. Then fourteen more, each with its own pair.
-const LEATHERS: [string, string, string][] = [
-  ["#d0308c", "#b8c838", "#f0d020"],
-  ["#c02020", "#f0f0f0", "#f0f0f0"],
-  ["#2a8c38", "#151515", "#2a8c38"],
-  ["#2448c0", "#c02020", "#f0f0f0"],
-  ["#e8c018", "#151515", "#e8c018"],
-  ["#6e2aa0", "#e0e0e0", "#202020"],
-  ["#e06c18", "#202020", "#e06c18"],
-  ["#1c90a0", "#f0f0f0", "#1c90a0"],
-  ["#1e1e22", "#c02020", "#c02020"],
-  ["#d8d8d8", "#2448c0", "#2448c0"],
-  ["#901c48", "#e8c018", "#901c48"],
-  ["#56661c", "#d8b878", "#d8b878"],
-  ["#e05c98", "#202020", "#f0f0f0"],
-  ["#3a3a98", "#e89818", "#e89818"],
-  ["#9c5428", "#f0f0f0", "#202020"],
-];
 
 /** A rider on the road: the sprite, the bike's own sprite for when they part
  * company (M2), and a shadow under each. */
@@ -910,6 +890,48 @@ export class RaceScene {
    * was shown, the page stood frozen for the whole three-second countdown on
    * a slow machine (4-6 s in headless Chrome), and the count was never seen.
    */
+  /**
+   * Every set of leathers in a row, through the race's own sprite shader, on
+   * asphalt, seen from behind and from the side: for judging them together
+   * (`__rash.lineup()`, probe only).
+   */
+  lineup(size = 200): HTMLCanvasElement {
+    this.atlas ??= (this.builder ??= new AtlasBuilder(this.renderer)).finish();
+    const looks: Look[] = [...LIVERIES, ...LEATHERS.map(([main, trim, helmet]) => ({ main, trim, helmet, paint: main, paintTrim: trim }))];
+    const out = document.createElement("canvas");
+    const per = 8;
+    const rows = Math.ceil(looks.length / per);
+    out.width = per * 2 * size;
+    out.height = rows * size;
+    const g = out.getContext("2d")!;
+    g.fillStyle = "#5a5a5e";
+    g.fillRect(0, 0, out.width, out.height);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#5a5a5e");
+    const cam = new THREE.OrthographicCamera(-1.3, 1.3, 1.3, -1.3, 0.1, 10);
+    cam.position.set(0, 1.4, -5);
+    cam.lookAt(0, 1.4, 0);
+    const old = new THREE.Vector2();
+    this.renderer.getSize(old);
+    this.renderer.setSize(size, size, false);
+    for (const [i, look] of looks.entries()) {
+      const s = new RiderSprite(this.atlas, look);
+      s.mesh.rotation.y = Math.PI;
+      scene.add(s.mesh);
+      for (const [k, view] of [0, Math.PI / 2].entries()) {
+        s.show("ride.R", view);
+        this.renderer.render(scene, cam);
+        g.drawImage(this.renderer.domElement, ((i % per) * 2 + k) * size, Math.floor(i / per) * size);
+      }
+      scene.remove(s.mesh);
+      g.fillStyle = "#fff";
+      g.font = "12px sans-serif";
+      g.fillText(i < LIVERIES.length ? LIVERIES[i].name : `ai ${i - LIVERIES.length}`, (i % per) * 2 * size + 4, Math.floor(i / per) * size + 14);
+    }
+    this.renderer.setSize(old.x, old.y, false);
+    return out;
+  }
+
   /** The people in this race and the leathers each picked. */
   setLooks(entrants: readonly { id: number; human: boolean; look?: number }[]): void {
     this.looks = new Map(entrants.flatMap((e) => (e.human && e.look !== undefined ? [[e.id, e.look] as [number, number]] : [])));

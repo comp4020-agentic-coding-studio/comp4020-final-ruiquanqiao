@@ -49,6 +49,8 @@ raced.
 | No one can steer another person's bike; a room holds eight | `spec/lobby.test.ts` |
 | Qualifications, the leaderboard and the log survive a restart | `spec/persistence.test.ts` |
 | Every page passes axe, and every link here opens | `spec/a11y.test.ts`, `spec/readme.test.ts` |
+| A blow moves like one on every frame, not just its key poses | `spec/motion.test.ts`, and a contact sheet of every frame before it ships |
+| Every helmet goes with its leathers | `spec/liveries.test.ts` |
 | It looks like the original | Judged frame beside frame against 137 screenshots, each judgement in a commit |
 | It handles like the original | Judged by riding, then pinned as numbers in `spec/feel.test.ts` |
 | It holds up over a bad network | Ridden at 300 ms with 3% loss, and with 8 scripted people |

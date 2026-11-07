@@ -92,6 +92,23 @@ their own browsers.
   through half a circle"); the earlier rules passed while the forearm swept
   a cone, because none of them held the elbow still.
 
+- **A blow is played as well as drawn.** A punch whose every frame was right
+  still flickered in the race: the browser predicting its own rider ended the
+  swing 0.065 s before the server did. Anything the browser and the server
+  both decide about a blow goes through one function in `game/sim.ts`
+  (`swingOver`), never a sum written out again in `client/`.
+
+## Colours are matched as racing kit is
+
+- A helmet repeats the suit's second colour or is white or black; it is never
+  the suit's main colour (the head melts into the back) nor a colour the suit
+  does not have. `spec/liveries.test.ts` holds every set, the people's and
+  the AI riders'. Before, 14 of 23 sets broke it.
+- A colour change is judged in `__rash.lineup()`: every set side by side in
+  the race's own sprite shader, from behind and from the side.
+- Two colours on the suit meet only at a joint, as a seam does. Panels and
+  stripes cut by a line through the mesh came out ragged at the atlas's size.
+
 ## Feel is tuned by riding, not by reasoning
 
 - **Every change to how the bike handles is ridden before it is committed**, in

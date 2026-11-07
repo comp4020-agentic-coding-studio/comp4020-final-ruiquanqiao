@@ -703,12 +703,12 @@ function onLoads(msg: Extract<ToClient, { t: "loads" }>): void {
   }
 }
 
-/** A person's leathers as a little badge: the main colour, the second across its top, and the helmet's dot. */
+/** A person's leathers as a little badge: the main colour, the second across its top, and the helmet's dot, ringed, since it is often the second colour. */
 function swatch(look: number | undefined): HTMLElement {
   const el = document.createElement("span");
   el.className = "swatch";
   const l = look === undefined ? undefined : LIVERIES[look];
-  if (l) el.style.background = `radial-gradient(circle at 50% 24%, ${l.helmet} 0 17%, transparent 18%), linear-gradient(${l.trim} 0 42%, ${l.main} 42%)`;
+  if (l) el.style.background = `radial-gradient(circle at 50% 24%, ${l.helmet} 0 15%, #000a 15% 18%, transparent 19%), linear-gradient(${l.trim} 0 42%, ${l.main} 42%)`;
   return el;
 }
 
@@ -1488,6 +1488,8 @@ window.__rash = {
   scene: () => roadScene,
   /** a contact sheet of the named frames, for scripts/blows.ts */
   frames: (names: string[], labels?: string[], size = 240) => roadScene && drawFrames(roadScene.renderer, names, size, labels).toDataURL("image/png"),
+  /** every set of leathers side by side, for judging the colours together */
+  lineup: (size = 200) => roadScene && roadScene.lineup(size).toDataURL("image/png"),
   heard: () => heard,
   /** the music and the recorded hits: what is loaded and playing */
   sound: () => soundState(),

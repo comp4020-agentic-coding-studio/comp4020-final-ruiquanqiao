@@ -530,7 +530,8 @@ class Puppet {
     };
     // the helmet is a hard shell, not leather: it stays a piece of its own
     add("helmet", ball, PART.helmet, "#ffffff", 0.25);
-    add("stripe", ball, PART.trim, "#ffffff", 0.25);
+    // its stripe is the suit's main colour, as the shell is its second (game/liveries.ts)
+    add("stripe", ball, PART.main, "#ffffff", 0.25);
     add("visor", ball, PART.fixed, "#101318", 0.1);
     // everything else is one surface (client/body.ts), coloured per vertex
     this.flesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0 }));
