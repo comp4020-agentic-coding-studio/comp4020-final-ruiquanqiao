@@ -118,7 +118,19 @@ button:hover { border-color: var(--gold); }
 #queue-human { color: var(--bg); background: var(--gold); border-color: var(--gold); }
 #queue-human small { color: #3d3218; }
 #queue-human:hover { border-color: var(--ink); }
-#queue-human[aria-pressed="true"] { color: var(--bg); background: var(--gold); border-color: var(--hot); }
+/* queued for people: a thick red ring that breathes. The ring is a shadow
+   on top of the 2px border, so the button keeps its size; the shared
+   "searching" pulse is not used here because it fades the border to gold,
+   which on a gold button looked the same as not being pressed at all */
+#queue-human[aria-pressed="true"] {
+  color: var(--bg); background: var(--gold); border-color: var(--hot);
+  box-shadow: 0 0 0 3px var(--hot);
+  animation: humans-breathe 1.8s ease-in-out infinite;
+}
+@keyframes humans-breathe {
+  0%, 100% { box-shadow: 0 0 0 3px #e0493a, 0 0 4px 3px #e0493a33; }
+  50% { box-shadow: 0 0 0 3px #e0493a66, 0 0 18px 6px #e0493a99; }
+}
 #pool { min-height: 1.4em; margin: 0.8rem 0 0; color: var(--gold); }
 #leave { margin-top: 0.6rem; }
 .hint { color: var(--dim); font-size: 0.9rem; margin: 0 0 0.6rem; }
@@ -376,7 +388,7 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 #loading-note { text-align: center; }
 
 @media (prefers-reduced-motion: reduce) {
-  .pulse, .queue button[aria-pressed="true"], .found-card, #found, #loading-cards li { animation: none; }
+  .pulse, .queue button[aria-pressed="true"], #queue-human[aria-pressed="true"], .found-card, #found, #loading-cards li { animation: none; }
 }
 
 /* ---- the pages: race, live (N11) ---- */
