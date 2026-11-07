@@ -11,7 +11,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium } from "playwright-core";
 import { frameFor } from "../client/sprites.ts";
-import { startRace, windupOf } from "../game/sim.ts";
+import { attackAfter, startRace, windupOf } from "../game/sim.ts";
 import { makeTrack } from "../game/track.ts";
 
 const url = process.argv[2] ?? "http://localhost:8080";
@@ -21,7 +21,6 @@ mkdirSync(".frames", { recursive: true });
 
 const BLOWS: Record<string, string[]> = {
   punch: ["ride.R", "punch~draw.R", "punch~load.R", "punch~strike.R", "punchOut.R", "punch~return.R"],
-  backhand: ["ride.R", "backhand~draw.R", "backhand~load.R", "backhand~strike.R", "backhand.R", "backhand~return.R"],
   chain: ["rideChain.R", "chain~raise.R", "chainUp.R", "chain~sweep1.R", "chain~sweep2.R", "chainOut.R", "chain~return.R"],
   club: ["rideClub.R", "club~raise.R", "clubUp.R", "club~sweep1.R", "club~sweep2.R", "clubOut.R", "club~return.R"],
   kick: ["ride.R", "kick~strike.R", "kick.R", "kick~return.R"],
@@ -36,9 +35,9 @@ await page.waitForFunction(() => (window as unknown as { __rash: { scene(): { at
 const held = (blow: string, frames: string[]): string[] => {
   const r = startRace(makeTrack(1), 1, [{ id: 0, name: "me", human: true }], 1).riders[0];
   r.weapon = blow === "chain" ? "chain" : blow === "club" ? "club" : null;
-  r.attack = { kind: blow === "kick" ? "kick" : blow === "backhand" ? "backhand" : "punch", side: 1, t: 0, target: -1, landed: false };
+  r.attack = { kind: blow === "kick" ? "kick" : "punch", side: 1, t: 0, target: -1, landed: false };
   const ms = new Map<string, number>();
-  for (let t = 0; t < windupOf(r, r.attack) + 0.2; t += 1 / 1000) {
+  for (let t = 0; t < windupOf(r, r.attack) + attackAfter(r, r.attack); t += 1 / 1000) {
     r.attack.t = t;
     const f = frameFor(r);
     ms.set(f, (ms.get(f) ?? 0) + 1);

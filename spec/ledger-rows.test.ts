@@ -100,15 +100,28 @@ describe("combat", () => {
     expect(nearest(race, rider(race, 0))).toBeNull();
   });
 
-  it("turns the hand into a backhand at a rider behind, and lands it (C3)", () => {
-    const race = alone(2);
-    const [a, b] = [rider(race, 0), rider(race, 1)];
-    Object.assign(a, { z: 500, x: 0, speed: 30 });
-    Object.assign(b, { z: 498.6, x: 1, speed: 30 });
-    beginAttack(race, a, "hand");
-    expect(a.attack?.kind).toBe("backhand");
-    hold(race, {}, 0.5);
-    expect(race.events).toContainEqual(expect.objectContaining({ kind: "hit", by: 0, on: 1, move: "backhand" }));
+  it("throws the same punch at a rider ahead, level or behind, and lands it on whoever is within reach (C3)", () => {
+    // a rider behind used to get a backhand, with poses of its own
+    for (const dz of [1.5, 0, -1.5]) {
+      const race = alone(2);
+      const [a, b] = [rider(race, 0), rider(race, 1)];
+      Object.assign(a, { z: 500, x: 0, speed: 30 });
+      Object.assign(b, { z: 500 + dz, x: 1, speed: 30 });
+      beginAttack(race, a, "hand");
+      expect(a.attack?.kind, `dz ${dz}`).toBe("punch");
+      hold(race, {}, 0.5);
+      expect(race.events, `dz ${dz}`).toContainEqual(expect.objectContaining({ kind: "hit", by: 0, on: 1, move: "punch" }));
+    }
+    // and nobody past the reach, ahead or behind, is touched
+    for (const dz of [TUNE.punchReach.z + 0.3, -TUNE.punchReach.z - 0.3]) {
+      const race = alone(2);
+      const [a, b] = [rider(race, 0), rider(race, 1)];
+      Object.assign(a, { z: 500, x: 0, speed: 30 });
+      Object.assign(b, { z: 500 + dz, x: 1, speed: 30 });
+      beginAttack(race, a, "hand");
+      hold(race, {}, 0.5);
+      expect(race.events.filter((e) => e.kind === "hit"), `dz ${dz}`).toEqual([]);
+    }
   });
 
   it("is worth a kick with a car in the far lane, and the kicked rider meets it (K8)", () => {

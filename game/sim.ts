@@ -103,14 +103,20 @@ export const TUNE = {
   // and copied, it rode as a warm-up swing with the hit arriving late; a
   // weapon still draws back (weaponWindup), since that is when it is snatched
   windup: 0.07, // s from key to contact, for a kick
-  // A fist is drawn back before it goes, elbow back and down, then driven
-  // out. Thrown from the bar with no draw-back (0.07 s, as a kick) it read as
-  // an elbow thrown first and the fist after. The draw-back is slow and the
-  // drive fast (spec/motion.test.ts): 0.10 s back, 0.03 s out. The whole
-  // 0.22 s of the recording's draw-back still rode as a warm-up
-  fistWindup: 0.13,
+  // A fist is loaded before it goes, then driven out. Thrown from the bar
+  // with no load (0.07 s, as a kick) it read as an elbow thrown first and the
+  // fist after. Timed off the recording frame by frame at 25 fps (RRVID
+  // 91.90-92.62, two punches at a police rider): loaded 3 to 4 frames, straight
+  // out on the next, held out 6 to 8, back to the bar in one, and the next
+  // punch 11 frames after the first. So 0.14 s loading, 0.035 s out, held
+  // 0.22 s, 0.045 s back: 0.44 s in all (punchCooldown). At 0.10 s loading,
+  // 0.03 s out and held 0.12 s, the fist read as flicked, not thrown
+  fistWindup: 0.175,
   /** of a fist's windup, the part spent drawing back; the rest drives it out */
-  fistDrawBack: 0.1,
+  fistDrawBack: 0.14,
+  /** s a fist stays out after it lands, then s it takes to come back to the bar */
+  fistHold: 0.22,
+  fistReturn: 0.045,
   punchCooldown: 0.44,
   // duels (C11, O5): how readily a rider picks a fight per second, scaled by
   // its aggression, with whoever is level with it for its place, and with
@@ -267,7 +273,7 @@ export type Phase = "riding" | "thrown" | "running" | "finished" | "wrecked" | "
 
 export type CrashCause = "tree" | "wall" | "lowside" | "knockdown" | "rub" | "rearEnd" | "headOn" | "broadside";
 
-export type AttackKind = "punch" | "backhand" | "kick";
+export type AttackKind = "punch" | "kick";
 
 export type Attack = { kind: AttackKind; side: -1 | 1; t: number; target: number; landed: boolean };
 
@@ -275,6 +281,9 @@ export type Weapon = "club" | "chain";
 
 /** Seconds from the key to the blow: a weapon is drawn back first (C6). */
 export const windupOf = (r: Rider, a: Attack): number => (a.kind === "kick" ? TUNE.windup : r.weapon ? TUNE.weaponWindup : TUNE.fistWindup);
+
+/** Seconds a blow lasts after it lands: out, then back to the bar. */
+export const attackAfter = (r: Rider, a: Attack): number => (a.kind === "punch" && !r.weapon ? TUNE.fistHold + TUNE.fistReturn : 0.2);
 
 export type Rider = {
   id: number;
@@ -968,8 +977,9 @@ export function beginAttack(race: Race, r: Rider, kind: "hand" | "foot"): void {
   if (r.phase !== "riding" || r.cooldown > 0 || r.attack) return;
   const target = nearest(race, r);
   const side: -1 | 1 = target ? (target.x >= r.x ? 1 : -1) : 1;
-  // J turns into a backhand on its own for a rider beside or behind (C3)
-  const move: AttackKind = kind === "foot" ? "kick" : target && target.z < r.z - 0.6 ? "backhand" : "punch";
+  // one punch for a rider anywhere within reach, ahead, level or behind (C3):
+  // the move is the same wherever they are, mirrored only to their side
+  const move: AttackKind = kind === "foot" ? "kick" : "punch";
   r.attack = { kind: move, side, t: 0, target: target?.id ?? -1, landed: false };
   r.cooldown = kind === "foot" ? TUNE.kickCooldown : r.weapon ? TUNE.weaponCooldown : TUNE.punchCooldown;
 }
@@ -986,8 +996,7 @@ export function windingAt(race: Race, r: Rider): Rider | null {
     const dx = r.x - o.x;
     const reach = reachOf(o, a.kind);
     if (Math.sign(dx || a.side) !== a.side || Math.abs(dx) > reach.x) continue;
-    const zOk = a.kind === "backhand" ? dz > -reach.z - 0.8 && dz < 0.6 : Math.abs(dz) < reach.z;
-    if (zOk) return o;
+    if (Math.abs(dz) < reach.z) return o;
   }
   return null;
 }
@@ -1036,13 +1045,12 @@ function resolveAttack(race: Race, r: Rider): void {
       const dz = o.z - r.z;
       const dx = o.x - r.x;
       if (Math.sign(dx || a.side) !== a.side) continue;
-      const zOk = a.kind === "backhand" ? dz > -reach.z - 0.8 && dz < 0.6 : Math.abs(dz) < reach.z;
-      if (!zOk || Math.abs(dx) > reach.x) continue;
+      if (Math.abs(dz) >= reach.z || Math.abs(dx) > reach.x) continue;
       hit(race, r, o, a.kind);
       break;
     }
   }
-  if (a.t >= windup + 0.2) r.attack = null;
+  if (a.t >= windup + attackAfter(r, a)) r.attack = null;
 }
 
 function hit(race: Race, by: Rider, on: Rider, move: AttackKind): void {

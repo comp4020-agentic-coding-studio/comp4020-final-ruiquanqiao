@@ -76,8 +76,15 @@ their own browsers.
   (an elbow that stays put draws a dot, a fist on one axis draws an arc).
   A new rule that a sheet shows is missing goes into `spec/motion.test.ts`
   first, and must fail on the old frames before the poses change.
+- **The frames checked are the frames the race can show, found by stepping
+  `frameFor` through every move, weapon and side**, never a list written by
+  hand. The chain was fixed on its forward swing and still cranked round in
+  play, because a backhand had poses of its own that no list named. A frame
+  no rule looks at fails `spec/motion.test.ts`. There is now one swing
+  wherever the opponent is; whether it lands is the reach, not the pose.
 - **Spacing is checked as well as the path.** A blow is a load, a strike and
-  a recovery; the load is held at least twice as long as the strike and the
+  a recovery; the load is held three to four times as long as the strike (as the
+  recording's punch is, read frame by frame) and the
   fist moves at least three times faster through the strike. The chain's
   rules came from a correction worded as a coach would word it ("the upper
   arm level, the forearm turning about the elbow on one axis, from the chest

@@ -17,7 +17,7 @@ describe("rider frames", () => {
     const r = rider();
     r.attack = { kind: "punch", side: 1, t: 0, target: -1, landed: false };
     const seen: string[] = [];
-    for (let t = 0; t < TUNE.fistWindup + 0.2; t += 1 / 120) {
+    for (let t = 0; t < TUNE.punchCooldown; t += 1 / 120) {
       r.attack.t = t;
       if (seen.at(-1) !== frameFor(r)) seen.push(frameFor(r));
     }
@@ -48,17 +48,18 @@ describe("rider frames", () => {
     expect(frameFor(r)).toBe("clubOut.R");
   });
 
-  it("swings the weapon it holds in a backhand too, on either side", () => {
-    // a backhand with a club used to show a bare fist while it hit with the club
+  it("swings the weapon it holds the same way on either side, wherever the one it is swung at is", () => {
+    // a backhand at a rider behind used to have poses of its own, which kept
+    // the old cranked chain after the forward swing had been fixed
     for (const weapon of ["club", "chain"] as const)
       for (const side of [1, -1] as const) {
         const r = rider();
         r.weapon = weapon;
         const s = side > 0 ? "R" : "L";
-        r.attack = { kind: "backhand", side, t: TUNE.weaponWindup * 0.4, target: -1, landed: false };
+        r.attack = { kind: "punch", side, t: TUNE.weaponWindup * 0.4, target: -1, landed: false };
         expect(frameFor(r)).toBe(`${weapon}Up.${s}`);
         r.attack.t = TUNE.weaponWindup;
-        expect(frameFor(r)).toBe(`backhand${weapon === "club" ? "Club" : "Chain"}.${s}`);
+        expect(frameFor(r)).toBe(`${weapon}Out.${s}`);
       }
   });
 
@@ -85,6 +86,8 @@ const POSES: [frame: string, at: string, joint: keyof Measure, x: number | null,
   ["punchCock.R", "247.44", "tailLamp", null, -2.85],
   ["punchCock.R", "247.44", "hand", 1.45, -0.4],
   ["punchCock.R", "247.44", "elbow", 1.8, -0.9],
+  ["punch~load.R", "92.42", "elbow", 1.7, -1.2],
+  ["punch~load.R", "92.42", "hand", 2.2, -2.3],
   ["punchOut.R", "247.64", "tailLamp", 0.4, -2.85],
   ["punchOut.R", "247.64", "hand", 3.4, -0.6],
   ["chainOut.R", "247.64", "hand", 3.4, -0.6],
@@ -174,7 +177,7 @@ describe("how finely the frames are drawn", () => {
     expect(desk.tile).toBe(224);
     expect(desk.perRow * desk.tile).toBeLessThanOrEqual(4096);
     expect(desk.rows * desk.tile).toBeLessThanOrEqual(4096);
-    expect(desk.pages * desk.rows * desk.perRow).toBeGreaterThanOrEqual(desk.pages > 0 ? 702 : 0); // 760 before fists and kicks lost their drawn-back frames
+    expect(desk.pages * desk.rows * desk.perRow).toBeGreaterThanOrEqual(desk.pages > 0 ? 540 : 0); // 760 before fists and kicks lost their drawn-back frames, 702 before the backhand lost its own
     // two bytes a texel; the one RGBA page before the in-between frames was 4032 x 4032 x 4
     const bytes = desk.pages * desk.rows * desk.tile * desk.perRow * desk.tile * 2;
     expect(bytes).toBeLessThanOrEqual(4032 * 4032 * 4 * 1.35);

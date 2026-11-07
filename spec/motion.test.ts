@@ -19,7 +19,7 @@ const dot = (a: P, b: P): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const out = (p: P, shoulder: P): number => shoulder[0] - p[0];
 
 describe("a punch is thrown fist first", () => {
-  const frames = ["punch~strike.R", "punchOut.R", "punch~return.R", "backhand~strike.R"];
+  const frames = ["punch~strike.R", "punchOut.R", "punch~return.R"];
 
   it.each(frames)("%s: the elbow trails the fist, never out ahead of it", (f) => {
     // a jab drives the fist and the elbow follows behind it; an elbow out as
@@ -36,9 +36,13 @@ describe("a punch is thrown fist first", () => {
     expect(j.elbow[1] - lineY, "elbow above the shoulder-fist line, m").toBeLessThanOrEqual(0.02);
   });
 
-  it("goes out in one movement: the fist only ever moves further out until it lands", () => {
-    const path = ["ride.R", "punch~strike.R", "punchOut.R"].map((f) => joints(f));
-    for (let i = 1; i < path.length; i++) expect(out(path[i].hand, path[i].shoulder)).toBeGreaterThan(out(path[i - 1].hand, path[i - 1].shoulder) + 0.1);
+  it("goes out in one movement from the load: the fist only ever rises and comes forward until it lands", () => {
+    const path = ["punch~load.R", "punch~strike.R", "punchOut.R"].map((f) => joints(f));
+    for (let i = 1; i < path.length; i++) {
+      expect(path[i].hand[1], "fist rises").toBeGreaterThan(path[i - 1].hand[1] + 0.1);
+      expect(path[i].hand[2], "fist comes forward").toBeGreaterThan(path[i - 1].hand[2]);
+      expect(out(path[i].hand, path[i].shoulder), "fist never comes back in").toBeGreaterThanOrEqual(out(path[i - 1].hand, path[i - 1].shoulder) - 0.01);
+    }
   });
 });
 
@@ -47,7 +51,7 @@ describe("a chain is swung like a whip", () => {
   const at = swing.map((f) => joints(f));
 
   it("is drawn as links in every frame it is held, riding and putting away included", () => {
-    for (const f of ["rideChain.R", ...swing, "chain~return.R", "backhandChain.R"]) expect(joints(f).chain, f).not.toBeNull();
+    for (const f of ["rideChain.R", ...swing, "chain~return.R"]) expect(joints(f).chain, f).not.toBeNull();
   });
 
   it("is a chain of links, not a stick: it bends while it swings", () => {
@@ -132,53 +136,100 @@ describe("a chain is whipped from the elbow", () => {
   });
 });
 
-// A fist is loaded before it is thrown: the elbow goes back and down and the
-// fist comes in to the shoulder, slowly, then the fist is driven out fast.
-// Thrown straight from the bar it had no load at all, and the elbow swung
-// out ahead of the fist on the way. Timed from frameFor, the frames as the
-// race steps through them.
+// A fist is loaded before it is thrown, as the recording loads it, read
+// frame by frame at 25 fps (RRVID 91.90-92.62, two punches at a police rider):
+// the upper arm drawn back, the elbow bent, and the fist dropped down and out
+// beside the bike, behind the shoulder; then the arm is straight out at
+// shoulder height on the very next frame. The load is held three or four
+// frames, the strike takes one, the arm stays out six to eight, and one punch
+// follows the next eleven frames apart. The first load here was my own idea
+// of one, the fist tucked in by the shoulder with the elbow under it, timed
+// 0.10 s back and 0.03 s out with the arm out 0.12 s: nothing in the
+// recording looks like it, and the punch read as a flick. Timed from
+// frameFor, the frames as the race steps through them.
 describe("a punch is loaded, then driven", () => {
   const rider = (): Rider => startRace(makeTrack(1), 1, [{ id: 0, name: "me", human: true }], 1).riders[0];
-  const shown = (kind: "punch" | "backhand"): { frame: string; t: number }[] => {
+  const shown = (): { frame: string; t: number }[] => {
     const r = rider();
-    r.attack = { kind, side: 1, t: 0, target: -1, landed: false };
+    r.attack = { kind: "punch", side: 1, t: 0, target: -1, landed: false };
     const seen: { frame: string; t: number }[] = [];
-    for (let t = 0; t <= TUNE.fistWindup + 1e-9; t += 1 / 480) {
+    for (let t = 0; t < TUNE.punchCooldown; t += 1 / 480) {
       r.attack.t = t;
       const f = frameFor(r);
       if (seen.at(-1)?.frame !== f) seen.push({ frame: f, t });
     }
     return seen;
   };
+  const held = (frame: string): number => {
+    const seen = shown();
+    const k = seen.findIndex((s) => s.frame === frame);
+    return (seen[k + 1]?.t ?? TUNE.punchCooldown) - seen[k].t;
+  };
 
-  it.each(["punch", "backhand"] as const)("%s: draws the elbow back and down before the fist goes out", (kind) => {
-    const seen = shown(kind);
-    // loaded: the fist in by the shoulder, the elbow under it and behind it,
-    // and further back than it rides (the rider sits up to strike, so the
-    // shoulder itself goes back; the elbow is judged against the fist)
-    const ridden = joints("ride.R").elbow;
-    const loaded = seen.map((s) => joints(s.frame)).filter((j) => j.elbow[1] < j.shoulder[1] - 0.15 && j.elbow[2] < j.hand[2] - 0.08 && j.elbow[2] < ridden[2] - 0.05 && out(j.hand, j.shoulder) < 0.15);
-    expect(loaded.length, `frames: ${seen.map((s) => s.frame).join(", ")}`).toBeGreaterThan(0);
+  it("drops the fist down and out beside the bike, behind the shoulder, with the elbow bent, before it goes out", () => {
+    const j = joints("punch~load.R");
+    const upper = sub(j.elbow, j.shoulder);
+    const fore = sub(j.hand, j.elbow);
+    const bend = (Math.acos(dot(upper, fore) / len(upper) / len(fore)) * 180) / Math.PI;
+    expect(j.hand[1], "fist below the elbow, m").toBeLessThan(j.elbow[1] - 0.15);
+    expect(j.hand[2], "fist behind the shoulder, m").toBeLessThan(j.shoulder[2] - 0.1);
+    expect(out(j.hand, j.shoulder), "fist out beside the bike, m").toBeGreaterThan(0.35);
+    expect(bend, "elbow bent, degrees off straight").toBeGreaterThan(40);
+    expect(bend).toBeLessThan(110);
   });
 
-  it.each(["punch", "backhand"] as const)("%s: the draw-back is slow and the drive is fast", (kind) => {
-    const seen = shown(kind);
-    const fists = seen.map((s) => joints(s.frame));
-    // the turn: the frame where the fist is least far out
-    let k = 0;
-    for (let i = 1; i < fists.length; i++) if (out(fists[i].hand, fists[i].shoulder) < out(fists[k].hand, fists[k].shoulder)) k = i;
-    const rest = joints("ride.R");
-    const path = [rest, ...fists];
-    const travel = (a: number, b: number): number => path.slice(a + 1, b + 1).reduce((n, j, i) => n + len(sub(j.hand, path[a + i].hand)), 0);
-    const drawTime = seen[k + 1]?.t ?? TUNE.fistWindup;
-    const driveTime = TUNE.fistWindup - drawTime;
-    // a fist that never comes in has nothing to drive from
-    expect(k, `frames: ${seen.map((s) => s.frame).join(", ")}`).toBeGreaterThan(0);
-    expect(driveTime).toBeGreaterThan(0.02);
-    expect(drawTime, `drawn back for ${drawTime.toFixed(3)} s, driven for ${driveTime.toFixed(3)} s`).toBeGreaterThanOrEqual(2 * driveTime);
-    const out_ = joints(kind === "punch" ? "punchOut.R" : "backhand.R");
-    const drawSpeed = travel(0, k + 1) / drawTime;
-    const driveSpeed = (travel(k + 1, path.length - 1) + len(sub(out_.hand, path.at(-1)!.hand))) / driveTime;
-    expect(driveSpeed, `fist ${drawSpeed.toFixed(1)} m/s back, ${driveSpeed.toFixed(1)} m/s out`).toBeGreaterThan(3 * drawSpeed);
+  it("holds the load three to four times as long as the strike, and the arm out longer than both", () => {
+    const seen = shown();
+    const load = held("punch~draw.R") + held("punch~load.R");
+    const strike = held("punch~strike.R");
+    expect(seen.map((s) => s.frame)).toEqual(["punch~draw.R", "punch~load.R", "punch~strike.R", "punchOut.R", "punch~return.R"]);
+    expect(load / strike, `loaded ${load.toFixed(3)} s, struck ${strike.toFixed(3)} s`).toBeGreaterThanOrEqual(3);
+    expect(load / strike).toBeLessThanOrEqual(4.5);
+    expect(held("punchOut.R"), "out, s").toBeGreaterThanOrEqual(0.2);
+    expect(held("punchOut.R")).toBeGreaterThan(load);
+  });
+
+  it("drives the fist out at least three times as fast as it was drawn back", () => {
+    const path = ["ride.R", "punch~draw.R", "punch~load.R"].map((f) => joints(f).hand);
+    const back = path.slice(1).reduce((n, p, k) => n + len(sub(p, path[k])), 0);
+    const drive = ["punch~load.R", "punch~strike.R", "punchOut.R"].map((f) => joints(f).hand);
+    const going = drive.slice(1).reduce((n, p, k) => n + len(sub(p, drive[k])), 0);
+    const backSpeed = back / (held("punch~draw.R") + held("punch~load.R"));
+    const driveSpeed = going / held("punch~strike.R");
+    expect(driveSpeed, `fist ${backSpeed.toFixed(1)} m/s back, ${driveSpeed.toFixed(1)} m/s out`).toBeGreaterThan(3 * backSpeed);
+  });
+
+  it("comes round again eleven frames after the last, as the recording's two punches do", () => {
+    expect(TUNE.punchCooldown * 25).toBeCloseTo(11, 0);
+    expect(TUNE.fistWindup + TUNE.fistHold + TUNE.fistReturn).toBeCloseTo(TUNE.punchCooldown, 5);
+  });
+});
+
+// Every frame a blow can put on screen, found by stepping frameFor through
+// every move, every weapon and both sides, not by listing them by hand. The
+// lists above once named only the forward swings: a backhand chain kept the
+// old cranked arm in play while its forward swing passed every rule here.
+describe("every frame a blow can show is one these rules look at", () => {
+  const ruled = new Set([
+    "ride", "rideClub", "rideChain",
+    "punch~draw", "punch~load", "punch~strike", "punchOut", "punch~return",
+    "chain~raise", "chainUp", "chain~sweep1", "chain~sweep2", "chainOut", "chain~return",
+    "club~raise", "clubUp", "club~sweep1", "club~sweep2", "clubOut", "club~return",
+    "kick~strike", "kick", "kick~return",
+  ]);
+  it("leaves no frame of any blow, with any weapon, on either side, out of the rules", () => {
+    const shown = new Set<string>();
+    for (const weapon of [null, "club", "chain"] as const)
+      for (const kind of ["punch", "kick"] as const)
+        for (const side of [1, -1] as const) {
+          const r = startRace(makeTrack(1), 1, [{ id: 0, name: "me", human: true }], 1).riders[0];
+          r.weapon = weapon;
+          r.attack = { kind, side, t: 0, target: -1, landed: false };
+          for (let t = 0; t < 1.5; t += 1 / 480) {
+            r.attack.t = t;
+            shown.add(frameFor(r).replace(/\.[RL]$/, ""));
+          }
+        }
+    expect([...shown].filter((f) => !ruled.has(f))).toEqual([]);
   });
 });

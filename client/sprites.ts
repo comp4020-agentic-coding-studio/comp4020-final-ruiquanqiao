@@ -122,12 +122,6 @@ const RIGHT: Record<string, Pose> = {
   punchCock: ride({ pitch: 0.4, handR: [-0.42, 1.5, 0.05], elbowR: [-1.0, 1.1, -0.3] }),
   // then the whole arm straight out sideways at shoulder height (5 frames)
   punchOut: ride({ pitch: 0.4, roll: -0.1, handR: [-1.2, 1.42, 0.05], elbowR: [-0.5, 1.8, -0.2] }),
-  // the backhand sweeps out and behind
-  backhand: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2] }),
-  // and with a weapon in the hand, swept out and back the same way: without
-  // these a backhand drew a bare fist while it hit with the club's weight
-  backhandClub: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2], weapon: { kind: "club", dir: [-0.6, -0.35, -0.7] } }),
-  backhandChain: ride({ pitch: 0.4, roll: -0.1, handR: [-1.1, 1.42, -0.5], elbowR: [-0.5, 1.8, -0.2], weapon: chain([-0.75, -0.1, -0.65], [-0.75, -0.1, -0.65]) }),
   // the kick chambered: knee out, foot drawn back by the tail (6 frames)
   kickCock: ride({ pitch: 0.42, roll: -0.12, footR: [-0.95, 0.72, -0.45], kneeR: [-0.9, 1.3, 0.3] }),
   // then the leg straight out sideways just over the tail: the hips slide
@@ -273,9 +267,6 @@ const BLOWS: Record<string, [string, string, string]> = {
   punch: ["ride", "punchCock", "punchOut"],
   club: ["rideClub", "clubUp", "clubOut"],
   chain: ["rideChain", "chainUp", "chainOut"],
-  backhand: ["ride", "punchCock", "backhand"],
-  backhandClub: ["rideClub", "clubUp", "backhandClub"],
-  backhandChain: ["rideChain", "chainUp", "backhandChain"],
   kick: ["ride", "kickCock", "kick"],
 };
 
@@ -315,7 +306,7 @@ const ARM_SWEEP: [number, number] = [0.22, 0.48];
 // two sweep frames it read as an arm being wound round for a warm-up, and the
 // hit came late (TUNE.windup). A weapon keeps its swing: it is snatched while
 // it is drawn back.
-const STRIKES = new Set(["punch", "backhand", "kick"]);
+const STRIKES = new Set(["punch", "kick"]);
 /** where on the way out a fist's one in-between frame sits */
 const STRIKE_ARM = 0.3;
 /** where the elbow points while a fist goes out or comes back: down and behind */
@@ -326,8 +317,13 @@ for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
   if (STRIKES.has(blow)) {
     // the arm is straight early, so its frame sits nearer the bar than halfway
     if (blow !== "kick") {
-      // loaded: the fist in by the shoulder, the elbow back and down
-      RIGHT[`${blow}~load`] = ride({ pitch: 0.45, roll: -0.05, handR: [-0.24, 1.36, 0.14], elbowR: [-0.28, 0.3, -1.2] });
+      // loaded as the recording loads it (RRVID 91.94-92.02, 92.38-92.46): the
+      // upper arm drawn back behind the shoulder, foreshortened from behind,
+      // the elbow bent to about 110 degrees and the fist dropped down and out
+      // beside the bike at the height of the tail lamp, ready to be swung up
+      // and out. The fist tucked in by the shoulder with the elbow under it
+      // was a load of my own, and nothing in the recording looks like it
+      RIGHT[`${blow}~load`] = ride({ pitch: 0.45, roll: -0.05, handR: [-0.62, 0.95, -0.32], elbowR: [-1.0, 1.4, -0.9] });
       RIGHT[`${blow}~draw`] = between(A, RIGHT[`${blow}~load`], 0.5);
       RIGHT[`${blow}~strike`] = { ...between(RIGHT[`${blow}~load`], C, 0.35), elbowR: [-0.2, 0.2, -0.8] };
     } else RIGHT[`${blow}~strike`] = between(A, C, 0.5);
@@ -344,26 +340,6 @@ for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
   }
   if (blow === "chain") {
     whip(A);
-    continue;
-  }
-  if (blow === "chain_old") {
-    // a whip, base first: the elbow drives out while the hand is still back
-    // by the helmet and the chain trails, then the forearm snaps through and
-    // the chain cracks out straight. Interpolated between cocked and out, the
-    // hand, elbow and a rigid chain all moved together, an arm turned on a crank
-    const [up, outPose] = [RIGHT.chainUp, RIGHT.chainOut];
-    const raise = between(A, up, 0.5);
-    raise.weapon = chain([0.1, -0.6, -0.6], [0, -1, -0.2]);
-    RIGHT["chain~raise"] = raise;
-    const s1 = between(up, outPose, 0.15);
-    s1.elbowR = [-1.0, 1.4, 0.05];
-    s1.weapon = chain([0.4, 0.3, -1], [1, -0.5, 0.5]);
-    RIGHT["chain~sweep1"] = s1;
-    const s2 = between(up, outPose, 0.6);
-    s2.elbowR = [-0.8, 1.1, -0.1];
-    s2.weapon = chain([-0.3, 0, -1], [1, -0.1, 0.1]);
-    RIGHT["chain~sweep2"] = s2;
-    RIGHT["chain~return"] = between(outPose, A, 0.5);
     continue;
   }
   const [f1, f2] = SWEEP[blow] ?? ARM_SWEEP;
@@ -1107,14 +1083,14 @@ export function frameFor(r: Rider): string {
   if (!a) return r.weapon === "club" ? "rideClub.R" : r.weapon === "chain" ? "rideChain.R" : "ride.R";
   const side = a.side > 0 ? "R" : "L";
   const held = r.weapon === "club" ? "Club" : r.weapon === "chain" ? "Chain" : "";
-  // a weapon is drawn up and swept with the arm, backhand or not, never left behind
-  const blow = a.kind === "kick" ? "kick" : a.kind === "backhand" ? `backhand${held}` : held ? r.weapon! : "punch";
+  // one swing wherever the opponent is (C3): a weapon if one is held, else the fist
+  const blow = a.kind === "kick" ? "kick" : held ? r.weapon! : "punch";
   const [, back, out] = BLOWS[blow];
   const w = windupOf(r, a);
   const t = a.t;
   // a fist: drawn back slowly (draw, load), then driven out in one frame (strike)
   const drawn = TUNE.fistDrawBack;
-  if (blow !== "kick" && STRIKES.has(blow)) return `${t < drawn * 0.4 ? `${blow}~draw` : t < drawn ? `${blow}~load` : t < w ? `${blow}~strike` : t < w + 0.12 ? out : `${blow}~return`}.${side}`;
+  if (blow === "punch") return `${t < drawn * 0.4 ? "punch~draw" : t < drawn ? "punch~load" : t < w ? "punch~strike" : t < w + TUNE.fistHold ? out : "punch~return"}.${side}`;
   if (STRIKES.has(blow)) return `${t < w ? `${blow}~strike` : t < w + 0.12 ? out : `${blow}~return`}.${side}`;
   const name =
     t < 0.3 * w ? `${blow}~raise`

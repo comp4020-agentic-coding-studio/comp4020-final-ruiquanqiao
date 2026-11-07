@@ -102,6 +102,7 @@ width.
 |---|---|---|
 | Riding | 56.90 | Hunched: helmet 2.1 over the tail lamp; elbows out at x 1.1, y −1.35 |
 | Fist drawn back (chain in hand) | 247.44 | Sitting up: helmet 2.85 over the lamp. Fist beside the helmet at x 1.45, y −0.4; elbow out below it at x 1.8, y −0.9 |
+| Fist loaded (bare fist) | 92.42 | Arm drawn back and down: elbow out at x 1.7, y −1.2, bent about 60 degrees off straight; fist below it beside the tail at x 2.2, y −2.3, behind the shoulder. Held 3–4 frames, then straight out on the next; out 6–8 frames, back in one; 11 frames from one punch (91.90) to the next (92.34) |
 | Fist or chain out | 247.64 | Arm dead straight at shoulder height: fist at x 3.4, y −0.6. The body leans *away* from the blow: the lamp sits 0.4 out towards it |
 | Club overhead | 355.32 | Fist beside the helmet at x 1.4, level with it; the club points up and back over the head. Helmet 2.4 over the lamp |
 | Kick chambered | 57.08 | Not a riding pose: the leg is already out, bent. Knee at x 2.2, y −2.2; foot back by the tail at x 3.2, level with the lamp |

@@ -159,7 +159,7 @@ export function applyRider(r: Rider, s: RiderState): void {
   r.grudge = Object.fromEntries((s[18] ?? []).map((id) => [id, 1]));
   if (s[12]) {
     const [kind, side, t] = s[12].split(":");
-    r.attack = { kind: kind as "punch" | "backhand" | "kick", side: Number(side) as -1 | 1, t: Number(t), target: -1, landed: false };
+    r.attack = { kind: kind === "kick" ? "kick" : "punch", side: Number(side) as -1 | 1, t: Number(t), target: -1, landed: false };
     // whether it has landed follows from how far into the swing it is
     r.attack.landed = r.attack.t >= windupOf(r, r.attack);
   } else r.attack = null;
