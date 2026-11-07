@@ -17,8 +17,9 @@ their own browsers.
   and weapon snatching**. It described the game from a general impression, and
   every missing detail had to be caught by hand. The ledger makes the gaps
   visible in one table instead.
-- **When a row is built, flip it to `built` and name its proof** as
-  `spec/file.test.ts › test name`. `spec/ledger.test.ts` fails if the test
+- **When a row is built, flip it to `built` and name its proof** as the spec
+  file and test name, e.g. `spec/griefing.test.ts › scores nothing with fewer
+  than 4 on the grid, and says so`. `spec/ledger.test.ts` fails if the test
   named does not exist, if a planned row has no due crit, if a planned row is
   still planned after its crit's cutoff, or if a source tag does not resolve.
 - **The due date is checked because the form alone was not enough.** On 20 Oct
@@ -220,6 +221,10 @@ their own browsers.
 ## Checks
 
 - `pnpm check` runs against the running app. It must be green before a commit.
+- A number in `PROCESS.md` must appear in the message of the commit it cites,
+  or in a file that commit adds. On 7 Nov three did not: "120 all raced" cited
+  a commit that says 56 of 80 got in, and the run behind 120 was in no commit
+  at all. It was run again and recorded before the sentence stayed.
 
 ## Writing
 

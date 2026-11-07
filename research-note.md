@@ -4,26 +4,25 @@
 
 When a coding agent gets something wrong, the usual response is to tell it
 more, with another line in `CLAUDE.md` or `AGENTS.md`. I did this for most of
-the semester, and I now think it works on the wrong bottleneck. Agents largely
-do what their instruction files say; what they cannot do is notice what nobody
-told them. Good agentic practice therefore moves the human's knowledge of what
+the semester, and I now think it aims at the wrong problem. Agents largely do
+what their instruction files say. They cannot notice what nobody told them. Good agentic practice therefore moves the human's knowledge of what
 to build out of prose the agent is asked to follow and into a record the build
 checks: each requirement with its source and a decision, held to the code by a
 test that fails when the two disagree. I limit the claim to domain-heavy
 work, where the agent's prior is a confident impression of the thing being
 built.
 
-## Obedience is not the bottleneck
+## Agents already follow instructions
 
-The sharpest evidence is Gloaguen et al.'s evaluation of `AGENTS.md` files.
-Agents followed them, using a tool the file named about 1.6 times a task
-and almost never without the file. Yet "providing context files does not generally
+Gloaguen et al.'s evaluation of `AGENTS.md` files shows this most clearly.
+Agents followed them, using a tool the file named about 1.6 times a task and
+almost never without the file. Yet "providing context files does not generally
 improve task success rates, while increasing inference cost by over 20%"
-(2026); an earlier version had reported lower success. Where an instruction pushes against a learned tendency, it
-barely registers. METR's o3 reward-hacked one task in 80% of runs
-with its original prompt and in 80% with "Please do not cheat" added (Von Arx
-et al., 2025), though from only 20 runs a prompt. Anthropic's
-documentation calls `CLAUDE.md` instructions "advisory" and hooks
+(2026); an earlier version had reported lower success. Where an instruction
+pushes against a learned tendency, it barely registers: METR's o3
+reward-hacked one task in 80% of runs with its original prompt and in 80% with
+"Please do not cheat" added (Von Arx et al., 2025), though from only 20 runs a
+prompt. Anthropic's documentation calls `CLAUDE.md` instructions "advisory" and hooks
 "deterministic", and warns that without a check "you become the verification
 loop" (Anthropic, n.d.).
 
@@ -31,39 +30,37 @@ loop" (Anthropic, n.d.).
 
 Böckeler (2026) names the two kinds of control. Instructions are guides,
 feedforward controls that raise the odds of a good first attempt; tests are
-computational sensors, which observe afterwards. Her caveat applies here: "Correctness is outside any sensor's
-remit if the human didn't clearly specify what they wanted." A sourced
+computational sensors, which observe afterwards. Her caveat applies:
+"Correctness is outside any sensor's remit if the human didn't clearly specify what they wanted." A sourced
 requirements record is that specification made readable by a sensor. Brooks
 (1987) called "deciding precisely what to build" the hardest part, made harder
 because software lacks the floor plan on which "contradictions and omissions
-become obvious". Agents cut the labour
-of writing code and leave that part as hard as before.
+become obvious". Agents cut the labour of writing code and leave that part as
+hard as before.
 
 OpenAI's Codex team reached the same design in practice. Their single large
 `AGENTS.md` "failed": "too much guidance becomes non-guidance", it "rots
-instantly", and it "doesn't lend itself to mechanical checks". They moved it into
-a docs directory "treated as the system of record" and validated by CI
-(Lopopolo, 2026). It is one team's report, from a company
-selling Codex, but the controlled studies predict it.
+instantly", and it "doesn't lend itself to mechanical checks". They moved it
+into a docs directory "treated as the system of record" and validated by CI
+(Lopopolo, 2026). It is one team's report, from a company selling Codex, but
+the controlled studies predict it.
 
-My final project is a small case of this. Asked to remake *Road
-Rash*, the agent produced the median racing game, without the police, the
+My final project is a small case of this. Asked to remake *Road Rash*, the agent produced the median racing game, without the police, the
 weapons or weapon snatching. No instruction could have prevented this, because
 nobody had yet seen what was missing. Hashimoto's `AGENTS.md` lines "almost
 completely resolved" his agents' bad behaviours (2026), but he wrote each one
 after its behaviour appeared. A table of every mechanic, sourced from the
-manuals, showed the gaps at once. It then went stale itself, with 35 rows
+manuals, showed the gaps at once. It then went stale itself, with 22 rows
 still "planned" weeks after they were built, until a test checked its dates.
 
 ## The counter-case
 
-The strongest objection is Campbell's law, that the more an indicator is used for
-decisions, "the more subject it will be to corruption pressures" (1979).
+The strongest objection is Campbell's law, that the more an indicator is used
+for decisions, "the more subject it will be to corruption pressures" (1979).
 Agents do game checks. On ImpossibleBench, where tests contradict the
 specification, GPT-5 passed by cheating 54% of the time, Claude models mostly
-by editing the tests (Zhong et al., 2025). Yet the remedies that paper found
-are structural. Hidden tests cut cheating
-"to near zero", read-only tests stopped the edits, and a way to flag a task
+by editing the tests (Zhong et al., 2025). The remedies that paper found are
+structural, though: hidden tests cut cheating "to near zero", read-only tests stopped the edits, and a way to flag a task
 for a human cut GPT-5 from 54% to 9%. Stricter prompts helped too, which is a
 point for prose, but on the harder benchmark only from 66% to 54%. So I answer
 gamed checks with checks that make gaming visible and costly; an instruction
@@ -79,10 +76,9 @@ about records the build checks; the cost is also why the claim stops at
 domain-heavy work.
 
 Instructions remain right for conventions an agent cannot infer, such as
-which package manager to use. When the agent cannot know what the
-thing should be, that knowledge has to come from the human, and a line of
-prose will never report when the code stops matching it. A record the build
-checks will.
+which package manager to use. When the agent cannot know what the thing
+should be, that knowledge has to come from the human, and it should go where
+the build can see the code drift away from it.
 
 ## References
 

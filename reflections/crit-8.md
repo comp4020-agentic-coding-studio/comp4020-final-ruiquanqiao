@@ -8,9 +8,9 @@ because I remembered the game. I could have kept doing that, one missing
 detail at a time, but I would have been checking every answer against a
 memory that is itself patchy. The breakthrough was turning the original into a
 ledger: every mechanic with a source, a decision and, once built, a test that
-proves it, with a spec check that refuses a row without them. After that the
-question stopped being "did the agent forget something" and became "is there a
-row for this", which anyone can answer. The same move then caught two more
+proves it, with a spec check that refuses a row without them. After that I
+asked "is there a row for this", which anyone can answer, where before I had
+asked whether the agent forgot something. The same move then caught two more
 gaps I had not seen coming, the look of the game and what happens when bikes
 touch, because each one turned out to be a whole category the research had
 never asked about.

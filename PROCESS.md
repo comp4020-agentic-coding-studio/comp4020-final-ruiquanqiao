@@ -1,110 +1,118 @@
 # Process overview
 
-Knuckle Road remakes the arcade mode of *Road Rash* (the 1996 Windows port I
-played) as one race shared by everyone on the road at once. Below are the
-mistakes, the agent's and mine, that became rules and checks, and how I knew
-each result was right before I accepted it.
+Knuckle Road remakes the arcade mode of *Road Rash* (1996, Windows) as one
+race shared by everyone on the road. I wrote down what good meant as
+standards the agent could check its own work against, so I was not the one
+finding each fault by hand.
 
-## What "good" had to mean
+## What good means for this game
 
-My first idea was a video-translation tool, until I saw it failed two of the
-three fixed requirements. I chose a race where you can hit the rider beside
-you, because being next to another person is the whole game, which is what
-Wilson means by confrontational games for a room. The
-harder question was fidelity. An agent asked to "remake Road Rash" builds the
-median racing game, and Neill Hoch's point, that remakes keep the story and
-replace the mechanics, names exactly that trap. So I kept the mechanics and
-rebuilt everything else, and that position runs through the README,
-`CLAUDE.md` and `spec/`.
+Good here is the race I remember, played against people in the same room, as
+[the README](README.md) argues. Each part became a check the agent runs
+itself: how the bike rides (`spec/feel.test.ts`), how the field fights (`spec/fights.test.ts`), that a
+room of people gets into one race together (`spec/lobby.test.ts`), and that
+the network does not show (`spec/netview.test.ts`). No test can say how it
+looks, so that is judged frame beside frame against 137 screenshots of the
+original.
 
-## Moment 1: a record instead of my memory
+## Mechanics from a ledger
 
-The first plan left out the police, both weapons and weapon snatching. Adding them by
-hand would have made me the error detector for every mechanic, so I had the
-agent research six manuals and five guides
-into [`docs/ledger.md`](docs/ledger.md): every mechanic with a source and a
-decision, held by `spec/ledger.test.ts`, which I checked by breaking two rows
-on purpose ([`8d029d5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/8d029d5)). The ledger later overruled the agent's
-own design: an NPC picked a person to fight 37 times as readily as it picked
-another NPC, while the sources say riders fight "over position" ([`d21f170`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d21f170)).
+My first plan, written from memory, left out the police, both weapons and
+weapon snatching. Rather than catch each gap myself, I had the agent research
+the manuals of five versions and the GameFAQs guides into
+[`docs/ledger.md`](docs/ledger.md): every mechanic with a source and a decision, held by `spec/ledger.test.ts`. I checked the test by breaking two
+rows on purpose, and it failed on exactly those two ([`8d029d5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/8d029d5)). The
+ledger then overruled the agent's design: an NPC picked a person to fight 37
+times as readily as another NPC, where the sources say riders fight "over
+position" ([`d21f170`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d21f170)).
 
-Then the ledger itself went stale, and I did not notice for weeks. On 20
-October, 35 rows still read "planned" for crits long past while the README
-said every mechanic had a decision, because the test checked each row's form
-and never its date. An audit against the code found 22 of them built and 21
-never started. Before touching a single row I changed the check, so it now
-fails on any planned row past its cutoff; it failed on 9, and fourteen built
-rows gained the tests they had been missing ([`c83a137`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/c83a137)). That failure
-became the subject of my research note.
+Then the ledger went stale and I did not notice. On 20 October 56 rows still
+read "planned", 22 of them built weeks before, because the test checked each
+row's form and never its date. I changed the check first. It failed on 9
+rows, and fourteen built rows got the tests they had been missing
+([`c83a137`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/c83a137)). That failure became the subject of my research note.
 
-## Moment 2: the rules as numbers before any picture
+## Riding feel as numbers
 
-`game/sim.ts` is the race as pure functions with one fixed 1/60 s step. The
-server runs it, the browser runs the same `ride()` for its own rider, and
-scripts replay it with scripted keys ([`3f79d37`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/3f79d37)). So a feel can be judged
-by riding and then settled by counting. Nitro felt like cheating
-when I rode against it, and over twenty races 47 of 77 passes on a flat-out
-player turned out to be an NPC bursting past the bike's top speed. I tried
-rationing it and drawing a flame, and dropped both; the only fair rule was
-that nobody has it, held by a spec across all 25 road and level pairs ([`bc121fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/bc121fa)).
+`game/sim.ts` is the race as pure functions on a fixed 1/60 s step, run by the
+server, the browser and scripts with timed keys, so the agent rides the game
+itself and reports numbers. I decide what they should be, from one recorded
+race of the original
+([`9aa3259`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/9aa3259)).
 
-Counting settled the start too. One of the ledger's sources remembers knocking
-the flagger down "every start", but my first flagger walked off the road at
-the go, and in the spec no bike leaving the front row at full throttle ever
-reached him. He now stands there a second past the go, and over 30 level 3
-races on five roads he went flying in all 30 ([`468ae1b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/468ae1b)), while riders
-still finished: 425 of 450, against 407 with nobody on foot.
+Riding showed where copying was wrong. Nitro felt like cheating: 47 of 77
+passes on a flat-out player were an NPC bursting past top speed. I considered
+rationing it and drawing a flame, then took it out for everyone ([`bc121fa`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/bc121fa)).
 
-## Moment 3: real-time, by measurement
+## A blow judged by its movement
 
-The server owns the race over one WebSocket per tab
-([decision 1](docs/decisions/0001-whose-word-counts.md)). When I overtook, the bike
-ahead jerked. Replaying snapshot arrivals recorded on the live server through
-`spec/netview.test.ts` showed 451 of 17,362 frames drawn off a bike's real
-movement, and none once each snapshot was placed by the race time it carries
-([`d4e2ab2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d4e2ab2)). Through a 300 ms, 3%-loss proxy, a fixed tenth of a second of
-delay left 44–78% of frames drawn by guesswork, against 4–6% once the delay
-followed the connection ([`cb5b158`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cb5b158)). In the crit 10 test, a restart
-mid-race left both pages with no ending and the log with no `race_end`
-([`f38c010`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/f38c010)); now every race ends as "stopped" for everyone in it ([`cd00bef`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cd00bef)).
+The punch had been tuned by eye more than once, and every version passed the
+check that held its key poses to the recording, because the movement is in
+the frames between. So the agent wrote `spec/motion.test.ts`, a coach's rules
+measured in 3D on every frame (the fist drives, the elbow trails below it).
+On the old frames 10 of 15 failed ([`ca9385e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/ca9385e)). The chain then passed
+and still looked cranked, so I worded the correction as a coach would, "the
+upper arm level, the forearm turning about the elbow", and its new rules
+failed on the old frames before any pose changed ([`f640d80`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/f640d80)). In play
+it cranked anyway, through a backhand that no hand-written list of frames
+included, so the frames checked are now found by stepping the game through
+every move ([`46677c1`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/46677c1)). In the end fewer frames looked better: a fist
+goes out and back through one frame halfway ([`b102d7d`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/b102d7d)). Playing it
+then showed a flicker no frame could: my browser ended its own punch before
+the server did. One function now ends a swing for both, and a test fails on
+the hand-timed end ([`d7ea7c6`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d7ea7c6)).
 
-The showcase puts a room of people on one shared CPU, so I raced scripted
-people against the deployed app until it broke. Twenty-four ran clean; 48 in
-six races reached 642 ms round trips at p95. A CPU profile showed why: every
-snapshot was turned into text again for each person in its race, although
-only the acknowledgement number differs. Serialised once, the same 48 had
-24 ms round trips and no gaps ([`8977c44`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/8977c44)), and after a queueing fix 120
-people in fifteen races all got a race ([`b85dd57`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/b85dd57)).
+The checks never made the rider good. I wrote every rule in
+`spec/motion.test.ts` after naming a fault I had seen, so the suite holds a
+blow at "not wrong" and no further; nothing it measures says a punch has
+weight. Where the judgement is by eye, the limit was how precisely I could
+name what was wrong.
 
-## Moment 4: checking what a marker meets
+## A detector for each fault before its fix
 
-Before submitting I tested the app the way a marker arrives at it. Four of the README's five links downloaded files
-instead of opening pages and the fifth was a 404, so a spec now crawls every
-link from `/readme/` ([`c7d4fa2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/c7d4fa2)). axe failed three of five pages
-in Chrome ([`5e0e632`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/5e0e632)). In a browser with no GPU, loading froze for 64 s;
-I suspected the sprite atlas, but a CPU profile put 85% of it in one canvas
-fill under a 4,096-point clip. Fixed and diffed against the old canvas pixel
-by pixel, loading took 3 s ([`51f6986`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/51f6986)).
+I accepted no fix until a test had failed on the old code. The bike ahead
+jerked as I overtook. Replaying live snapshot arrivals showed 451 of 17,362
+frames drawn off its real movement, and none once each snapshot was placed by
+the race time it carries ([`d4e2ab2`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/d4e2ab2)). Everyone else is drawn a little
+behind ([decision 1](docs/decisions/0001-whose-word-counts.md)). Through a 300 ms, 3%-loss proxy, a
+fixed tenth of a second of delay left 44 to 78% of frames drawn by guesswork;
+a delay that follows the connection's lateness left 4 to 6% ([`cb5b158`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cb5b158)).
+Rammed bikes passed through mine, and `spec/ram.test.ts` caught them drawn
+inside each other on 5 frames, then none ([`bf12eb7`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/bf12eb7)). It also caught
+struck bikes tipping the wrong way, which an older test passed on the same
+misread axis; `CLAUDE.md` now checks handedness against `spec/world.test.ts`.
 
-## The stack, and what it costs
+## Testing with several people
 
-One Node 24 process with no framework, WebSockets, SQLite on the Fly volume
-and three.js; the options and costs are in
-[decision 3](docs/decisions/0003-the-stack.md). What decided it was that the
-simulation has to run identically on the server and in the browser, which
-rules out a second language. I chose WebSockets over server-sent events
-because keys flow upward sixty times a second. `node:sqlite` blocks the tick,
-and a 570 ms write stall went away only with `synchronous = NORMAL`
-([`82ae6e7`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/82ae6e7)). Two machines would split one person into two riders, so the
-app stays on one, and what that still leaves open, one person racing from
-several tabs, is in [decision 2](docs/decisions/0002-who-may-do-what.md).
+I ran crit 10's eight multi-user scenarios against the deployed app
+([`f38c010`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/f38c010)). Two machines failed as the code predicted: two people
+queueing together were never matched, and one person reconnecting became two
+riders. The app stays on one machine. A restart mid-race left pages with no
+ending, and now the race ends as "stopped" ([`cd00bef`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/cd00bef)). At the crit, two
+classmates raced from the URL while I read the log.
 
-## How I directed the agent
+In a load test for the showcase, 48 scripted people reached 642 ms round
+trips at p95, and a profile showed each snapshot turned into text once per
+person. Serialised once, the same 48 had 24 ms ([`8977c44`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/8977c44), measured in
+[`b85dd57`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/b85dd57)). Rerun on 7 November, 120 people in 15 races all got in, with
+114 ms at worst and no stalls ([`11d50a9`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/11d50a9)).
 
-Research went to background agents with a written brief and a file to fill,
-and I read that file before anything was built from it. Claims about look or
-feel are checked on the running game: probes for numbers, and the deployed
-game played in Chrome at both marking viewports. When the agent got
-something wrong, the correction went into `CLAUDE.md` or `spec/`, where the
-next session would meet it; and when one of my own measurements turned out
+## The stack and its costs
+
+One Node 24 process, WebSockets, SQLite on the Fly volume and three.js, with
+the options in [decision 3](docs/decisions/0003-the-stack.md). The simulation
+has to run identically on the server and in the browser, which rules out a
+second language, and keys go up sixty times a second, which rules out
+server-sent events. `node:sqlite` blocks the tick, and a 570 ms write stall
+went away only with `synchronous = NORMAL` ([`82ae6e7`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-ruiquanqiao/commit/82ae6e7)). One machine is a
+limit I accept; what it leaves open is in
+[decision 2](docs/decisions/0002-who-may-do-what.md).
+
+## How I worked with the agent
+
+My attention went on the standards, the checking to the agent. Research went
+to background agents with a brief and a file to fill, read before anything was
+built on it. The agent rides every handling change through a player's keys and shoots every screen change at both marking
+viewports beside the original. Corrections went into `CLAUDE.md` or `spec/`,
+where the next session meets them. When one of my own measurements turned out
 wrong, the next commit says so.

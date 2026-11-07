@@ -3,16 +3,22 @@
 Fifteen motorbikes on one ridge road, and you can punch and kick whoever is
 riding beside you. Knuckle Road remakes the arcade mode of *Road Rash* (EA,
 1996 Windows port, known in China as 暴力摩托 and the version I played) as one
-race shared by whoever is on the road right now. Press **Race with NPCs** and
-accept. W rides, A and D steer, J punches and K kicks; on a phone the left thumb
-rides a stick and the right thumb fights.
+race shared by whoever is on the road right now. W rides, A and D steer, J
+punches and K kicks; on a phone the left thumb rides a stick and the right
+thumb fights.
+
+To race another person, each of you presses the gold **Humans only** button
+and then **Accept**. The room waits ten seconds after the last of you joins, so
+there is time to get to the second window. **Race with NPCs** is for riding on
+your own: it leaves five seconds after the first press and takes only whoever
+joined in that time.
 
 ## What good means here
 
 I wanted the game as its manuals describe it, because my first plan, written
-from memory, left out the police, both weapons and weapon snatching. Remakes
-usually keep a game's story and replace its mechanics, which Neill Hoch (2020)
-calls nostalgia rather than reproduction, so I kept the mechanics. Every
+from memory, left out the police, both weapons and weapon snatching. Neill Hoch
+(2020) finds that remakes usually keep a game's story and replace its
+mechanics, so I kept the mechanics. Every
 mechanic has a row in [the ledger](docs/ledger.md) with a source and a
 decision (copied, adapted or left out) and its reason. Like most games of its
 age, the original is no longer sold (Video Game History Foundation, 2023).
@@ -27,7 +33,7 @@ quite where you saw them.
 
 It should be more fun with a person in the next chair. Wilson (2012) makes
 games "confrontational" on purpose, because that makes play in a room festive,
-and Road Rash already was one. A room holds eight people, each in leathers
+and Road Rash was already that kind of game. A room holds eight people, each in leathers
 nobody else there wears. NPCs fill only the empty seats, so one visitor still
 gets a full grid. Everyone starts on the same GO, anyone can watch at `/live`,
 and whoever knocks you off is named the next time you share a road.
@@ -35,9 +41,10 @@ and whoever knocks you off is named the next time you share a road.
 It is small on purpose, like Shirky's (2004) software for "dozens of users"
 and Sloan's (2020) app that nobody else will use; this one is for a room of
 friends. Your browser is your rider
-([decision 2](docs/decisions/0002-who-may-do-what.md)), a top-three finish
-qualifies you on that road for good, and `/leaderboard` ranks everyone who has
-raced.
+([decision 2](docs/decisions/0002-who-may-do-what.md)). A top-three finish
+flags that road on your Qualified board until you wreck or get busted on that
+level, and `/leaderboard` lists everyone who has raced, however it went, so
+whoever you raced is still there the next day.
 
 ## Enforced, and judged
 
@@ -47,9 +54,9 @@ raced.
 | A steer in one browser shows in another within a second | `spec/realtime.test.ts` |
 | Other bikes are drawn as they moved, however late snapshots come | `spec/netview.test.ts`, on arrivals recorded live |
 | No one can steer another person's bike; a room holds eight | `spec/lobby.test.ts` |
-| Qualifications, the leaderboard and the log survive a restart | `spec/persistence.test.ts` |
+| Everyone who raced is on the leaderboard, and it, the qualifications and the log survive a restart | `spec/persistence.test.ts` |
 | Every page passes axe, and every link here opens | `spec/a11y.test.ts`, `spec/readme.test.ts` |
-| A blow moves like one on every frame, not just its key poses | `spec/motion.test.ts`, and a contact sheet of every frame before it ships |
+| A blow moves like one on every frame, between its key poses as well | `spec/motion.test.ts`, and a contact sheet of every frame before it ships |
 | Every helmet goes with its leathers | `spec/liveries.test.ts` |
 | It looks like the original | Judged frame beside frame against 137 screenshots, each judgement in a commit |
 | It handles like the original | Judged by riding, then pinned as numbers in `spec/feel.test.ts` |
