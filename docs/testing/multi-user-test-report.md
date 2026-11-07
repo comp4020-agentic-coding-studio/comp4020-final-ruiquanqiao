@@ -273,6 +273,23 @@ Both people were back 2.6 s after the close, against 1.1 s and 11.4 s before.
 These numbers depend on when the reconnect lands relative to the new process
 starting to listen, not on this change.
 
+## A room full of people: the showcase load
+
+The showcase is a room of people on one URL at once, so the deployed machine
+was loaded with scripted people, all probes:
+`node scripts/load.ts https://comp4020-final-ruiquanqiao.fly.dev <people> <seconds> <npcs>`.
+
+| When | People | Races | Round trip p95, worst person | Snapshot gaps past 250 ms | Key acknowledged, p95 worst |
+|---|---|---|---|---|---|
+| 21 Oct, before `8977c44` | 48 | 6 | 642 ms | 813 | 604 ms |
+| 21 Oct, after `8977c44` | 48 | 6 | 24 ms | 0 | 61 ms |
+| 7 Nov, deploy of `a25aeec` | 120 | 15 | 114 ms | 0 | 118 ms |
+
+The 7 Nov run was 120 people with 7 NPCs each for 30 s: all 120 were racing
+within the script's 30 s wait, in 15 races of eight, and the median person's
+round trip p95 was 88 ms. On 21 Oct, before the room fix in `b85dd57`, 64 and
+80 people queued at once both got only 56 into races in that time.
+
 ## Summary
 
 | | Scenario | Result |
