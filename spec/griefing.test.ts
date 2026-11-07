@@ -13,10 +13,23 @@ const conn = (rider: number, name = `r${rider}`): Fake => {
   return { rider, name, inbox, send: (m) => inbox.push(m), pool: null, level: 1, road: 0, race: null, local: -1, seq: 0 };
 };
 function lobby() {
+  // finished: the races that scored; kept: every race written, scored or not
   const finished: Standing[][] = [];
+  const kept: { standings: Standing[]; scored: boolean }[] = [];
   const lines: Record<string, unknown>[] = [];
-  const l = new Lobby({ startRace: () => 1, finishRace: (_r, _l, _t, s) => void finished.push(s), qualified: () => [] }, (e) => void lines.push(e), () => 0.5);
-  return { l, finished, lines };
+  const l = new Lobby(
+    {
+      startRace: () => 1,
+      finishRace: (_r, _l, _t, s, scored) => {
+        kept.push({ standings: s, scored });
+        if (scored) finished.push(s);
+      },
+      qualified: () => [],
+    },
+    (e) => void lines.push(e),
+    () => 0.5,
+  );
+  return { l, finished, kept, lines };
 }
 function start(l: Lobby, cs: Fake[], ai?: number): number {
   cs.forEach((c, i) => l.join(c, "ai", 1, i * 0.01, 0, ai));
@@ -74,7 +87,7 @@ describe("someone who rides nowhere (G1)", () => {
 describe("a race with nobody to beat (G3)", () => {
   it("scores nothing with fewer than 4 on the grid, and says so", () => {
     expect(MIN_FIELD).toBe(4);
-    const { l, finished } = lobby();
+    const { l, finished, kept } = lobby();
     const a = conn(1);
     const t = start(l, [a], 0);
     const live = [...l.races.values()][0];
@@ -85,6 +98,8 @@ describe("a race with nobody to beat (G3)", () => {
     r.finishT = 60;
     ride(l, t, TUNE.countdown + 4);
     expect(finished).toHaveLength(0);
+    // kept all the same, unscored, so the person who rode it is on the leaderboard (N12)
+    expect(kept.map((k) => [k.scored, k.standings.filter((s) => s.human).length])).toEqual([[false, 1]]);
     const end = a.inbox.find((m) => m.t === "end") as Extract<ToClient, { t: "end" }>;
     expect(end.unscored).toBe(true);
   });

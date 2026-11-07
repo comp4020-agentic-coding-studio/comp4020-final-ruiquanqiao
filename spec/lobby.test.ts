@@ -19,7 +19,7 @@ function lobby() {
   const l = new Lobby(
     {
       startRace: () => ++races,
-      finishRace: (_r, _l, _t, s) => void finished.push(s),
+      finishRace: (_r, _l, _t, s, scored) => void (scored && finished.push(s)),
       qualified: () => [],
     },
     () => {},
@@ -543,7 +543,19 @@ describe("the log (who did what)", () => {
   it("ends every race as stopped when the server shuts down, tells everyone in it, and scores nobody", () => {
     const lines: Record<string, unknown>[] = [];
     const finished: Standing[][] = [];
-    const l = new Lobby({ startRace: () => 7, finishRace: (_r, _l, _t, st) => void finished.push(st), qualified: () => [] }, (e) => void lines.push(e), () => 0.5);
+    const kept: boolean[] = [];
+    const l = new Lobby(
+      {
+        startRace: () => 7,
+        finishRace: (_r, _l, _t, st, scored) => {
+          kept.push(scored);
+          if (scored) finished.push(st);
+        },
+        qualified: () => [],
+      },
+      (e) => void lines.push(e),
+      () => 0.5,
+    );
     const ana = conn(11, "Ana");
     const ben = conn(12, "Ben");
     l.join(ana, "human", 1, 0);
@@ -562,6 +574,8 @@ describe("the log (who did what)", () => {
     expect(end).toMatchObject({ race: 7, aborted: "server restarting" });
     expect((end.standings as [string, number, string][]).map(([w, , o]) => `${w} ${o}`).sort()).toEqual(["Ana#11 aborted", "Ben#12 aborted"]);
     expect(finished).toEqual([]);
+    // written unscored, so Ana and Ben are still on the leaderboard (N12)
+    expect(kept).toEqual([false]);
     expect(ana.race).toBeNull();
   });
 

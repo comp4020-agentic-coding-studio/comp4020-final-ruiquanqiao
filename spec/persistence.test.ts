@@ -85,6 +85,26 @@ it("ranks everyone who has raced by points for their finishes, wins and podiums,
   db.close();
 });
 
+it("lists everyone who rode a race that scored nothing, with no points, qualification or lost board for it (N12, G3)", () => {
+  const db = openDb(join(dir, "unscored.db"));
+  const ana = db.rider("token-ana-practice");
+  const ben = db.rider("token-ben-stopped");
+  db.rename(ana.id, "Ana");
+  db.rename(ben.id, "Ben");
+  // Ben holds a board, which a scored wreck would take
+  db.finishRace(db.startRace("ai", 1, "Gold Town"), 1, "Gold Town", [{ id: ben.id, name: "Ben", human: true, place: 2, outcome: "qualified", time: 200 }]);
+  // Ana alone against nobody, first across the line: practice (G3)
+  db.finishRace(db.startRace("ai", 1, "Ridge Road"), 1, "Ridge Road", [{ id: ana.id, name: "Ana", human: true, place: 1, outcome: "qualified", time: 180 }], false);
+  // Ben wrecked in a race the server stopped
+  db.finishRace(db.startRace("human", 1, "Gold Town"), 1, "Gold Town", [{ id: ben.id, name: "Ben", human: true, place: 1, outcome: "wrecked", time: null }], false);
+  expect(db.leaderboard().map((l) => [l.name, l.points, l.races, l.wins, l.podiums, l.boards])).toEqual([
+    ["Ben", 18, 2, 0, 1, 1],
+    ["Ana", 0, 1, 0, 0, 0],
+  ]);
+  expect(db.qualified(ana.id)).toEqual([]);
+  db.close();
+});
+
 it("ranks no rider a script made, and adds the mark to a database from before it existed (N12)", () => {
   const file = join(dir, "probe.db");
   // a database as it was before the mark: riders without the column

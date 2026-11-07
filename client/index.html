@@ -80,8 +80,8 @@
         <output id="ai-count-out" for="ai-count">14</output>
       </label>
       <div class="queue">
-        <button id="queue-ai" data-mode="ai">Race with NPCs <small>starts in 5s</small></button>
-        <button id="queue-human" data-mode="human">Humans only <small>needs two</small></button>
+        <button id="queue-human" data-mode="human">Humans only <small>Race people: each of you presses this</small></button>
+        <button id="queue-ai" data-mode="ai">Race with NPCs <small>On your own, starts in 5s</small></button>
       </div>
       <p id="pool" role="status" aria-live="polite"></p>
     </div>
@@ -118,7 +118,7 @@
   <!-- everyone who has raced, by points (N12) -->
   <section id="leaders" aria-labelledby="leaders-head">
     <h1 id="leaders-head">Leaderboard</h1>
-    <p class="hint">Everyone who has raced. A finish scores by its place across the line, NPCs included in the count: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1. Wrecked, busted or leaving scores nothing.</p>
+    <p class="hint">Everyone who has raced, however it went. A finish scores by its place across the line, NPCs included in the count: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1. Wrecked, busted, leaving, practice alone and a race the server stopped score nothing, but each still counts as a race.</p>
     <div class="table-wrap" tabindex="0">
       <table id="leaderboard">
         <thead><tr><th scope="col">#</th><th scope="col">Rider</th><th scope="col">Points</th><th scope="col">Races</th><th scope="col">Wins</th><th scope="col">Podiums</th><th scope="col" title="Road and level boards qualified on">Boards</th></tr></thead>

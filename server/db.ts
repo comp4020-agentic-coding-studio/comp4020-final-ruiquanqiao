@@ -79,6 +79,11 @@ export function openDb(file: string) {
   // database gains the column here
   const cols = db.prepare("PRAGMA table_info(riders)").all() as { name: string }[];
   if (!cols.some((c) => c.name === "probe")) db.exec("ALTER TABLE riders ADD COLUMN probe INTEGER NOT NULL DEFAULT 0");
+  // a race that counts for nothing (practice with nobody to beat, G3, or one
+  // the server stopped) is still kept, so whoever rode it is on the
+  // leaderboard; before this column such races were not written at all
+  const raceCols = db.prepare("PRAGMA table_info(races)").all() as { name: string }[];
+  if (!raceCols.some((c) => c.name === "scored")) db.exec("ALTER TABLE races ADD COLUMN scored INTEGER NOT NULL DEFAULT 1");
 
   const q = {
     byToken: db.prepare("SELECT id, name FROM riders WHERE token = ?"),
@@ -87,7 +92,7 @@ export function openDb(file: string) {
     markProbe: db.prepare("UPDATE riders SET probe = 1 WHERE id = ?"),
     isProbe: db.prepare("SELECT probe FROM riders WHERE id = ?"),
     insertRace: db.prepare("INSERT INTO races (mode, level, track, started_at) VALUES (?, ?, ?, ?)"),
-    endRace: db.prepare("UPDATE races SET ended_at = ? WHERE id = ?"),
+    endRace: db.prepare("UPDATE races SET ended_at = ?, scored = ? WHERE id = ?"),
     insertResult: db.prepare("INSERT INTO results (race_id, rider_id, name, place, outcome, time_ms) VALUES (?, ?, ?, ?, ?, ?)"),
     qualify: db.prepare("INSERT OR IGNORE INTO qualifications (rider_id, level, track, race_id, at) VALUES (?, ?, ?, ?, ?)"),
     revoke: db.prepare("DELETE FROM qualifications WHERE rider_id = ? AND level = ?"),
@@ -98,15 +103,17 @@ export function openDb(file: string) {
     logSince: db.prepare("SELECT at, line FROM log WHERE at >= ? AND (? IS NULL OR line LIKE ?) AND (? IS NULL OR ev IN (SELECT value FROM json_each(?))) ORDER BY id LIMIT ?"),
     // every person who has raced, from the results kept for every race: a
     // finish scores by its place across the line, NPCs counted in the place
-    // but never listed; wrecked, busted, left or out of time score nothing
+    // but never listed; wrecked, busted, left or out of time score nothing,
+    // and so does any place in a race that was not scored, which still lists
+    // the person with one more race
     leaders: db.prepare(`
       SELECT r.id, r.name,
         COUNT(*) AS races,
-        SUM(CASE WHEN x.outcome IN ('qualified', 'placed') THEN COALESCE((SELECT value FROM json_each(?) WHERE key = x.place - 1), 0) ELSE 0 END) AS points,
-        SUM(x.outcome IN ('qualified', 'placed') AND x.place = 1) AS wins,
-        SUM(x.outcome IN ('qualified', 'placed') AND x.place <= 3) AS podiums,
+        SUM(CASE WHEN g.scored = 1 AND x.outcome IN ('qualified', 'placed') THEN COALESCE((SELECT value FROM json_each(?) WHERE key = x.place - 1), 0) ELSE 0 END) AS points,
+        SUM(g.scored = 1 AND x.outcome IN ('qualified', 'placed') AND x.place = 1) AS wins,
+        SUM(g.scored = 1 AND x.outcome IN ('qualified', 'placed') AND x.place <= 3) AS podiums,
         (SELECT COUNT(*) FROM qualifications q WHERE q.rider_id = r.id) AS boards
-      FROM results x JOIN riders r ON r.id = x.rider_id
+      FROM results x JOIN riders r ON r.id = x.rider_id JOIN races g ON g.id = x.race_id
       WHERE r.probe = 0
       GROUP BY r.id
       ORDER BY points DESC, wins DESC, podiums DESC, races ASC, r.id ASC
@@ -136,19 +143,21 @@ export function openDb(file: string) {
       return Number(q.insertRace.run(mode, level, track, Date.now()).lastInsertRowid);
     },
     /**
-     * Results for everyone; a qualification for every human in the top three
-     * (S4), and every qualification on the level taken from a human wrecked
-     * or busted in it (S5).
+     * Results for everyone. A scored race also gives a qualification to every
+     * human in the top three (S4) and takes every qualification on the level
+     * from a human wrecked or busted in it (S5); one that is not scored (G3,
+     * or stopped by the server) only records who rode it (N12).
      */
-    finishRace(race: number, level: number, track: string, standings: Standing[]): void {
+    finishRace(race: number, level: number, track: string, standings: Standing[], scored = true): void {
       db.exec("BEGIN");
       try {
         for (const s of standings) {
           q.insertResult.run(race, s.human ? s.id : null, s.name, s.place, s.outcome, s.time === null ? null : Math.round(s.time * 1000));
+          if (!scored) continue;
           if (s.human && s.outcome === "qualified") q.qualify.run(s.id, level, track, race, Date.now());
           if (s.human && (s.outcome === "wrecked" || s.outcome === "busted")) q.revoke.run(s.id, level);
         }
-        q.endRace.run(Date.now(), race);
+        q.endRace.run(Date.now(), scored ? 1 : 0, race);
         db.exec("COMMIT");
       } catch (e) {
         db.exec("ROLLBACK");

@@ -113,6 +113,12 @@ button:hover { border-color: var(--gold); }
 .queue button { font-weight: bold; font-size: 1.05rem; text-align: left; }
 .queue button small { display: block; font-weight: normal; color: var(--dim); font-size: 0.8rem; }
 .queue button[aria-pressed="true"] { border-color: var(--hot); background: #3a2226; }
+/* racing people is what the app is for, so its button is filled gold like
+   Accept, the one other "do this" on the site; NPCs stay outlined */
+#queue-human { color: var(--bg); background: var(--gold); border-color: var(--gold); }
+#queue-human small { color: #3d3218; }
+#queue-human:hover { border-color: var(--ink); }
+#queue-human[aria-pressed="true"] { color: var(--bg); background: var(--gold); border-color: var(--hot); }
 #pool { min-height: 1.4em; margin: 0.8rem 0 0; color: var(--gold); }
 #leave { margin-top: 0.6rem; }
 .hint { color: var(--dim); font-size: 0.9rem; margin: 0 0 0.6rem; }

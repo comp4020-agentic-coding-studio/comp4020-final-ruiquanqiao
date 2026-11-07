@@ -112,7 +112,8 @@ type Pool = { members: Conn[]; startsAt: number | null };
 
 export type Store = {
   startRace(mode: string, level: number, track: string): number;
-  finishRace(race: number, level: number, track: string, standings: Standing[]): void;
+  /** `scored` false: practice (G3) or stopped by the server; kept so the people in it are listed (N12), worth nothing */
+  finishRace(race: number, level: number, track: string, standings: Standing[], scored: boolean): void;
   qualified(id: number): { level: number; track: string }[];
   /** one person knocked another off, kept for good (O3) */
   grudge?(holder: number, against: number, race: number): void;
@@ -875,10 +876,11 @@ export class Lobby {
     // one person against fewer than MIN_FIELD on the grid is ridden and
     // shown, but scores nothing (G3): alone against no NPCs, a first place is
     // a lap of honour with nobody to beat, and it took 25 points on the
-    // leaderboard. Two people racing each other always count
+    // leaderboard. Two people racing each other always count. Every race is
+    // kept all the same, so everyone who rode one is on the leaderboard (N12)
     const field = live.race.riders.filter((r) => !r.cop);
     const counts = field.length >= MIN_FIELD || field.filter((r) => r.human).length >= 2;
-    if (!aborted && counts) this.store.finishRace(live.id, live.level, live.track, result);
+    this.store.finishRace(live.id, live.level, live.track, result, !aborted && counts);
     this.log({ ev: "race_end", race: live.id, secs: Math.round(live.race.t), ...(aborted ? { aborted } : {}), standings: result.filter((s) => s.human).map((s) => [`${s.name}#${s.id}`, s.place, s.outcome]) });
     for (const id of [...live.net.keys()]) this.netLine(live, id);
     // and the server's own share of the wait, over its last ten seconds or so
