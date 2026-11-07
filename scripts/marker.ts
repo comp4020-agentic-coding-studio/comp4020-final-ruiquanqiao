@@ -2,7 +2,10 @@
 // that share no cookies or storage, one at each marking viewport, each
 // following the README's instructions (Humans only, then Accept). Checks they
 // land in the same race, see each other move, and are both on the leaderboard
-// once it ends, however it ended.
+// once it ends, however it ended. A race with two people in it was always
+// written, so the last check passes on the code before c3bd178 too; the cases
+// that change dropped (one person practising alone, a race the server
+// stopped) are held by spec/persistence.test.ts and spec/griefing.test.ts.
 //
 //   node scripts/marker.ts [url]
 //
