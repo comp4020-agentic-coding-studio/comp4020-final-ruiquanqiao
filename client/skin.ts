@@ -125,7 +125,7 @@ export class SkinnedBody {
    * `source` is the loaded character; `part` says which atlas part a vertex
    * belongs to from the bone that moves it most and where it sits at rest.
    */
-  constructor(source: THREE.Object3D, part: (bone: string, rest: V3, from: V3) => number, colour: (part: number) => THREE.Color, id: (part: number) => THREE.Color) {
+  constructor(source: THREE.Object3D, part: (bone: string, from: V3, along: number) => number, colour: (part: number) => THREE.Color, id: (part: number) => THREE.Color) {
     let found: THREE.SkinnedMesh | null = null;
     source.updateMatrixWorld(true);
     source.traverse((o) => {
@@ -151,15 +151,6 @@ export class SkinnedBody {
     // bound once, in the model's rest space; the mesh itself sits at the body's origin
     geo.applyMatrix4(src.bindMatrix);
     smooth(geo, 4, 0.5);
-    // each limb's own thickness in the model, to scale to GIRTH
-    for (const l of ["l", "r"])
-      for (const [bone, next] of [
-        ["upperarm", "lowerarm"],
-        ["lowerarm", "hand"],
-        ["thigh", "calf"],
-        ["calf", "foot"],
-      ])
-        this.thick[`${bone}_${l}`] = GIRTH[bone] / girth(geo.attributes.position, this.rest[`${bone}_${l}`], this.rest[`${next}_${l}`], bone === "thigh" || bone === "calf" ? 0.12 : 0.2);
     // the model's back is 0.70 m across at the shoulders (measured over its
     // vertices, arms left out): a bodybuilder's lats
     this.across = SHOULDERS / 0.7;
@@ -176,10 +167,45 @@ export class SkinnedBody {
       for (let k = 1; k < 4; k++) if (sw.getComponent(v, k) > sw.getComponent(v, best)) best = k;
       const bone = bones[si.getComponent(v, best)].name;
       p.fromBufferAttribute(pos, v);
-      const n = part(bone, p, p.clone().sub(this.rest[bone]));
+      // where it sits round its bone, with the bone's own line taken out: the
+      // model stands with its arms angled down, so "below the bone" in the
+      // world would take in the whole of an arm
+      const from = p.clone().sub(this.rest[bone]);
+      // and how far along the bone it is, 0 at its root and 1 at its child
+      let along = 0;
+      const child = src.skeleton.bones[si.getComponent(v, best)].children.find((c) => (c as THREE.Bone).isBone);
+      if (child) {
+        const d = this.rest[child.name].clone().sub(this.rest[bone]);
+        const L = d.length();
+        d.normalize();
+        along = from.dot(d) / L;
+        from.addScaledVector(d, -from.dot(d));
+      }
+      const n = part(bone, from, along);
       colour(n).toArray(col, v * 3);
       id(n).toArray(ids, v * 3);
     }
+    // each limb's own thickness in the model, to scale to GIRTH, from the
+    // vertices its own bone moves most: an arm at rest beside the chest
+    // otherwise counts the chest as arm
+    const own = (bone: string): THREE.BufferAttribute => {
+      const b = this.index.get(bone)!;
+      const keep: number[] = [];
+      for (let v = 0; v < pos.count; v++) {
+        let best = 0;
+        for (let k = 1; k < 4; k++) if (sw.getComponent(v, k) > sw.getComponent(v, best)) best = k;
+        if (si.getComponent(v, best) === b) keep.push(pos.getX(v), pos.getY(v), pos.getZ(v));
+      }
+      return new THREE.BufferAttribute(new Float32Array(keep), 3);
+    };
+    for (const l of ["l", "r"])
+      for (const [bone, next] of [
+        ["upperarm", "lowerarm"],
+        ["lowerarm", "hand"],
+        ["thigh", "calf"],
+        ["calf", "foot"],
+      ])
+        this.thick[`${bone}_${l}`] = GIRTH[bone] / girth(own(`${bone}_${l}`), this.rest[`${bone}_${l}`], this.rest[`${next}_${l}`], 0.2);
     geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
     geo.setAttribute("idColour", new THREE.BufferAttribute(ids, 3));
     geo.userData.shaded = geo.attributes.color;
@@ -212,13 +238,14 @@ export class SkinnedBody {
     const across = j.shoulderL.clone().sub(j.shoulderR);
     const lower = carry(r("pelvis"), restShoulders, restHips, j.pelvis, shoulders, hips);
     const upper = carry(r("pelvis"), restShoulders, restAcross, j.pelvis, shoulders, across, this.across);
-    for (const n of ["root", "pelvis", "spine_01"]) A.set(n, lower);
+    for (const n of ["root", "Root", "pelvis", "spine_01"]) A.set(n, lower);
     for (const n of ["spine_02", "spine_03", "clavicle_l", "clavicle_r"]) A.set(n, upper);
     // the neck from the collar to the skull, and the head kept small enough
     // to stay inside the helmet, which is a shell of its own
-    A.set("neck_01", carry(r("neck_01"), r("Head"), Z, j.neckBase, j.neckTop, j.fwd));
-    const skull = r("Head").add(new THREE.Vector3(0, 0.12, 0));
-    A.set("Head", carry(r("Head"), skull, Z, j.neckTop, j.neckTop.clone().addScaledVector(j.head.clone().sub(j.neckTop).normalize(), 0.12 * 0.7), Z, 0.7));
+    const HEAD = this.index.has("head") ? "head" : "Head";
+    A.set("neck_01", carry(r("neck_01"), r(HEAD), Z, j.neckBase, j.neckTop, j.fwd));
+    const skull = r(HEAD).add(new THREE.Vector3(0, 0.12, 0));
+    A.set(HEAD, carry(r(HEAD), skull, Z, j.neckTop, j.neckTop.clone().addScaledVector(j.head.clone().sub(j.neckTop).normalize(), 0.12 * 0.7), Z, 0.7));
 
     for (const [s, l] of [
       ["R", "r"],
@@ -283,7 +310,7 @@ export class SkinnedBody {
  * The same, with the model's bone hierarchy kept for working out which bone
  * an unnamed one hangs from.
  */
-export function skinnedBody(source: THREE.Object3D, part: (bone: string, rest: V3, from: V3) => number, colour: (part: number) => THREE.Color, id: (part: number) => THREE.Color): SkinnedBody {
+export function skinnedBody(source: THREE.Object3D, part: (bone: string, from: V3, along: number) => number, colour: (part: number) => THREE.Color, id: (part: number) => THREE.Color): SkinnedBody {
   const body = new SkinnedBody(source, part, colour, id);
   let src: THREE.SkinnedMesh | null = null;
   source.traverse((o) => {

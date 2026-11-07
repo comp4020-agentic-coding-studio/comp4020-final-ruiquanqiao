@@ -20,7 +20,7 @@ process.env.TMP = process.env.TEMP = resolve(".cache");
 mkdirSync(".frames", { recursive: true });
 
 const BLOWS: Record<string, string[]> = {
-  punch: ["ride.R", "punch~draw.R", "punch~load.R", "punch~strike.R", "punchOut.R", "punch~return.R"],
+  punch: ["ride.R", "punch~return.R", "punchOut.R"],
   chain: ["rideChain.R", "chain~raise.R", "chainUp.R", "chain~sweep1.R", "chain~sweep2.R", "chainOut.R", "chain~return.R"],
   club: ["rideClub.R", "club~raise.R", "clubUp.R", "club~sweep1.R", "club~sweep2.R", "clubOut.R", "club~return.R"],
   kick: ["ride.R", "kick~strike.R", "kick.R", "kick~return.R"],

@@ -82,10 +82,11 @@ their own browsers.
   play, because a backhand had poses of its own that no list named. A frame
   no rule looks at fails `spec/motion.test.ts`. There is now one swing
   wherever the opponent is; whether it lands is the reach, not the pose.
-- **Spacing is checked as well as the path.** A blow is a load, a strike and
-  a recovery; the load is held three to four times as long as the strike (as the
-  recording's punch is, read frame by frame) and the
-  fist moves at least three times faster through the strike. The chain's
+- **Spacing is checked as well as the path, and fewer frames beat more.** A
+  fist goes out and back through one frame halfway: a load and a strike frame
+  of its own, each measured against the recording, still swung the elbow
+  round between them and read as cranked. An in-between pose is added only
+  when the arc it gives is one the sheet shows is missing. The chain's
   rules came from a correction worded as a coach would word it ("the upper
   arm level, the forearm turning about the elbow on one axis, from the chest
   through half a circle"); the earlier rules passed while the forearm swept

@@ -107,17 +107,17 @@ export const TUNE = {
   // and copied, it rode as a warm-up swing with the hit arriving late; a
   // weapon still draws back (weaponWindup), since that is when it is snatched
   windup: 0.07, // s from key to contact, for a kick
-  // A fist is loaded before it goes, then driven out. Thrown from the bar
-  // with no load (0.07 s, as a kick) it read as an elbow thrown first and the
-  // fist after. Timed off the recording frame by frame at 25 fps (RRVID
-  // 91.90-92.62, two punches at a police rider): loaded 3 to 4 frames, straight
-  // out on the next, held out 6 to 8, back to the bar in one, and the next
-  // punch 11 frames after the first. So 0.14 s loading, 0.035 s out, held
-  // 0.22 s, 0.045 s back: 0.44 s in all (punchCooldown). At 0.10 s loading,
-  // 0.03 s out and held 0.12 s, the fist read as flicked, not thrown
-  fistWindup: 0.175,
-  /** of a fist's windup, the part spent drawing back; the rest drives it out */
-  fistDrawBack: 0.14,
+  // A fist goes straight out from the bar through the one frame halfway it
+  // comes back through, and is out 0.12 s after the key: three frames at 25
+  // fps, as the recording's fist leaves the bar and is out within four. At
+  // 0.07 s, as a kick, the field swung at a player 5.2 times a race against
+  // 7.0 (eight seeds, scripts/fights.ts), under the floor of 6. It
+  // was loaded first, drawn back and down beside the bike (0.14 s) and driven
+  // out through a strike frame of its own: the elbow swung round through the
+  // three in-between poses, and the arm read as being cranked rather than
+  // thrown. Held out 6 to 8 frames at 25 fps and the next punch 11 frames on,
+  // as the recording's two punches at a police rider are (RRVID 91.90-92.62)
+  fistWindup: 0.12,
   /** s a fist stays out after it lands, then s it takes to come back to the bar */
   fistHold: 0.22,
   fistReturn: 0.045,

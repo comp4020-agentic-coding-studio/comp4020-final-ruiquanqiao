@@ -318,26 +318,16 @@ for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
   const [A, B, C] = [RIGHT[rest], RIGHT[back], RIGHT[out]];
   if (STRIKES.has(blow)) {
     // the arm is straight early, so its frame sits nearer the bar than halfway
-    if (blow !== "kick") {
-      // loaded as the recording loads it (RRVID 91.94-92.02, 92.38-92.46): the
-      // upper arm drawn back behind the shoulder, foreshortened from behind,
-      // the elbow bent to about 110 degrees and the fist dropped down and out
-      // beside the bike at the height of the tail lamp, ready to be swung up
-      // and out. The fist tucked in by the shoulder with the elbow under it
-      // was a load of my own, and nothing in the recording looks like it
-      RIGHT[`${blow}~load`] = ride({ pitch: 0.45, roll: -0.05, handR: [-0.62, 0.95, -0.32], elbowR: [-1.0, 1.4, -0.9] });
-      RIGHT[`${blow}~draw`] = between(A, RIGHT[`${blow}~load`], 0.5);
-      RIGHT[`${blow}~strike`] = { ...between(RIGHT[`${blow}~load`], C, 0.35), elbowR: [-0.2, 0.2, -0.8] };
-    } else RIGHT[`${blow}~strike`] = between(A, C, 0.5);
-    RIGHT[`${blow}~return`] = between(C, A, 0.5);
-    if (blow !== "kick") {
-      // the fist drives and the elbow follows down behind it. Interpolated
-      // with everything else, the elbow's aim went from the bar's (down) to
-      // full stretch's (up), so on the frame between the elbow swung up and
-      // out as far as the fist: an elbow strike, then a punch
-      RIGHT[`${blow}~strike`].elbowR = ELBOW_DOWN;
-      RIGHT[`${blow}~return`].elbowR = ELBOW_DOWN;
-    }
+    // a fist goes out and comes back through one and the same frame halfway
+    // (ride, return, out, return). It was loaded first, drawn down beside the
+    // bike and driven out through a strike frame of its own, and the elbow
+    // swung round through those three poses: the arm read as cranked
+    if (blow === "kick") RIGHT[`${blow}~strike`] = between(A, C, 0.5);
+    RIGHT[`${blow}~return`] = between(C, A, blow === "kick" ? 0.5 : 0.6);
+    // the elbow follows down behind the fist. Interpolated with everything
+    // else, its aim went from the bar's (down) to full stretch's (up), and on
+    // the frame between it swung up and out as far as the fist: an elbow strike
+    if (blow !== "kick") RIGHT[`${blow}~return`].elbowR = ELBOW_DOWN;
     continue;
   }
   if (blow === "chain") {
@@ -466,24 +456,27 @@ export const useHuman = (scene: THREE.Object3D): void => {
   human = scene;
 };
 
-/** Which atlas part a vertex of the human is, from its bone and where it sits at rest. */
-function humanPart(bone: string, rest: THREE.Vector3, from: THREE.Vector3): number {
+/**
+ * Which atlas part a vertex of the human is, from the bone that moves it
+ * most, where it sits round that bone (`from`, the bone's own line taken out)
+ * and how far along it (0 at its root, 1 where the next bone starts).
+ */
+function humanPart(bone: string, from: THREE.Vector3, along: number): number {
   if (/^(hand|thumb|index|middle|ring|pinky)_/.test(bone)) return PART.fixed;
-  // the gauntlet's cuff, a hand's width up the forearm
-  if (/^lowerarm_/.test(bone) && Math.abs(rest.x) > 0.6) return PART.fixed;
+  // the gauntlet's cuff, the last quarter of the forearm
+  if (/^lowerarm_/.test(bone) && along > 0.75) return PART.fixed;
   if (/^(foot|ball)_/.test(bone)) return PART.fixed;
-  // the boot's shaft, up the shin
-  if (/^calf_/.test(bone) && rest.y < 0.3) return PART.fixed;
-  if (/^(neck|Head)/.test(bone)) return PART.fixed;
+  // the boot's shaft, the lower third of the shin
+  if (/^calf_/.test(bone) && along > 0.65) return PART.fixed;
+  if (/^(neck|head|Head)/.test(bone)) return PART.fixed;
   // two-tone as the recording's riders are: the second colour over the
   // shoulders and back, the first on the seat; and the sleeves and trouser
   // legs two-tone along their length (413.82, 57.32), the first colour over
   // the top of the arm and the outside of the leg, the second underneath and
-  // on the inside. At rest the model stands arms out, so under an arm is
-  // below its bone, and the inside of a leg is towards the other leg
+  // on the inside, towards the other leg
   if (/^(spine_02|spine_03|clavicle)/.test(bone)) return PART.trim;
   if (/^(upperarm|lowerarm)_/.test(bone)) return from.y < -0.01 ? PART.trim : PART.main;
-  if (/^(thigh|calf)_/.test(bone)) return from.x * Math.sign(rest.x - from.x) < -0.02 ? PART.trim : PART.main;
+  if (/^(thigh|calf)_/.test(bone)) return from.x * (bone.endsWith("_l") ? 1 : -1) < -0.02 ? PART.trim : PART.main;
   return PART.main;
 }
 
@@ -1159,9 +1152,8 @@ export function frameFor(r: Rider): string {
   const [, back, out] = BLOWS[blow];
   const w = windupOf(r, a);
   const t = a.t;
-  // a fist: drawn back slowly (draw, load), then driven out in one frame (strike)
-  const drawn = TUNE.fistDrawBack;
-  if (blow === "punch") return `${t < drawn * 0.4 ? "punch~draw" : t < drawn ? "punch~load" : t < w ? "punch~strike" : t < w + TUNE.fistHold ? out : "punch~return"}.${side}`;
+  // a fist: out through the frame it comes back through, held, and back
+  if (blow === "punch") return `${t < w ? "punch~return" : t < w + TUNE.fistHold ? out : "punch~return"}.${side}`;
   if (STRIKES.has(blow)) return `${t < w ? `${blow}~strike` : t < w + 0.12 ? out : `${blow}~return`}.${side}`;
   const name =
     t < 0.3 * w ? `${blow}~raise`

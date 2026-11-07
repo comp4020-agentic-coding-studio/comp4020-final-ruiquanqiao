@@ -160,7 +160,7 @@ export function buildBike(paint: string, trim: string): THREE.Group {
 // ---- the rider ----
 
 let riderAsset: Promise<GLTF> | null = null;
-export const loadRider = (): Promise<GLTF> => (riderAsset ??= new GLTFLoader().loadAsync("/assets/models/rider.glb"));
+export const loadRider = (): Promise<GLTF> => (riderAsset ??= new GLTFLoader().loadAsync("/assets/models/human.glb"));
 
 // Which colour each bone's skin wears: jacket, contrast panels, gloves, boots.
 function region(bone: string): "main" | "trim" | "glove" | "boot" {

@@ -23,7 +23,7 @@ beforeAll(async () => {
   const g = globalThis as unknown as Record<string, unknown>;
   g.self ??= globalThis;
   g.createImageBitmap ??= async () => ({});
-  const buf = readFileSync("client/public/assets/models/rider.glb");
+  const buf = readFileSync("client/public/assets/models/human.glb");
   const gltf = await new GLTFLoader().parseAsync(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer, "");
   useHuman(gltf.scene);
 });

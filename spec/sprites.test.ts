@@ -21,7 +21,7 @@ describe("rider frames", () => {
       r.attack.t = t;
       if (seen.at(-1) !== frameFor(r)) seen.push(frameFor(r));
     }
-    expect(seen).toEqual(["punch~draw.R", "punch~load.R", "punch~strike.R", "punchOut.R", "punch~return.R"]);
+    expect(seen).toEqual(["punch~return.R", "punchOut.R", "punch~return.R"]);
     r.attack.t = TUNE.fistWindup;
     expect(frameFor(r)).toBe("punchOut.R");
     r.attack.side = -1;
@@ -30,7 +30,7 @@ describe("rider frames", () => {
 
   it("puts a strike's one in-between pose where the fist is halfway out, so it moves in two even steps", () => {
     // the fist, from straight behind, in helmet widths, from drawn back to out
-    const path = ["punch~load.R", "punch~strike.R", "punchOut.R"].map((f) => measure(f).hand);
+    const path = ["ride.R", "punch~return.R", "punchOut.R"].map((f) => measure(f).hand);
     const steps = path.slice(1).map((p, i) => Math.hypot(p[0] - path[i][0], p[1] - path[i][1]));
     const whole = Math.hypot(path[2][0] - path[0][0], path[2][1] - path[0][1]);
     // halfway by the joints' straight lines put the fist 1.67 of 2.24 out in
@@ -86,8 +86,6 @@ const POSES: [frame: string, at: string, joint: keyof Measure, x: number | null,
   ["punchCock.R", "247.44", "tailLamp", null, -2.85],
   ["punchCock.R", "247.44", "hand", 1.45, -0.4],
   ["punchCock.R", "247.44", "elbow", 1.8, -0.9],
-  ["punch~load.R", "92.42", "elbow", 1.7, -1.2],
-  ["punch~load.R", "92.42", "hand", 2.2, -2.3],
   ["punchOut.R", "247.64", "tailLamp", 0.4, -2.85],
   ["punchOut.R", "247.64", "hand", 3.4, -0.6],
   ["chainOut.R", "247.64", "hand", 3.4, -0.6],
@@ -177,7 +175,7 @@ describe("how finely the frames are drawn", () => {
     expect(desk.tile).toBe(224);
     expect(desk.perRow * desk.tile).toBeLessThanOrEqual(4096);
     expect(desk.rows * desk.tile).toBeLessThanOrEqual(4096);
-    expect(desk.pages * desk.rows * desk.perRow).toBeGreaterThanOrEqual(desk.pages > 0 ? 540 : 0); // 760 before fists and kicks lost their drawn-back frames, 702 before the backhand lost its own
+    expect(desk.pages * desk.rows * desk.perRow).toBeGreaterThanOrEqual(desk.pages > 0 ? 504 : 0); // 760 before fists and kicks lost their drawn-back frames, 702 before the backhand lost its own, 540 before the punch lost its load
     // two bytes a texel; the one RGBA page before the in-between frames was 4032 x 4032 x 4
     const bytes = desk.pages * desk.rows * desk.tile * desk.perRow * desk.tile * 2;
     expect(bytes).toBeLessThanOrEqual(4032 * 4032 * 4 * 1.35);

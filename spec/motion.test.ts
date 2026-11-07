@@ -19,7 +19,7 @@ const dot = (a: P, b: P): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const out = (p: P, shoulder: P): number => shoulder[0] - p[0];
 
 describe("a punch is thrown fist first", () => {
-  const frames = ["punch~strike.R", "punchOut.R", "punch~return.R"];
+  const frames = ["punchOut.R", "punch~return.R"];
 
   it.each(frames)("%s: the elbow trails the fist, never out ahead of it", (f) => {
     // a jab drives the fist and the elbow follows behind it; an elbow out as
@@ -36,13 +36,9 @@ describe("a punch is thrown fist first", () => {
     expect(j.elbow[1] - lineY, "elbow above the shoulder-fist line, m").toBeLessThanOrEqual(0.02);
   });
 
-  it("goes out in one movement from the load: the fist only ever rises and comes forward until it lands", () => {
-    const path = ["punch~load.R", "punch~strike.R", "punchOut.R"].map((f) => joints(f));
-    for (let i = 1; i < path.length; i++) {
-      expect(path[i].hand[1], "fist rises").toBeGreaterThan(path[i - 1].hand[1] + 0.1);
-      expect(path[i].hand[2], "fist comes forward").toBeGreaterThan(path[i - 1].hand[2]);
-      expect(out(path[i].hand, path[i].shoulder), "fist never comes back in").toBeGreaterThanOrEqual(out(path[i - 1].hand, path[i - 1].shoulder) - 0.01);
-    }
+  it("goes out in one movement: the fist only ever moves further out until it lands", () => {
+    const path = ["ride.R", "punch~return.R", "punchOut.R"].map((f) => joints(f));
+    for (let i = 1; i < path.length; i++) expect(out(path[i].hand, path[i].shoulder)).toBeGreaterThan(out(path[i - 1].hand, path[i - 1].shoulder) + 0.1);
   });
 });
 
@@ -136,18 +132,13 @@ describe("a chain is whipped from the elbow", () => {
   });
 });
 
-// A fist is loaded before it is thrown, as the recording loads it, read
-// frame by frame at 25 fps (RRVID 91.90-92.62, two punches at a police rider):
-// the upper arm drawn back, the elbow bent, and the fist dropped down and out
-// beside the bike, behind the shoulder; then the arm is straight out at
-// shoulder height on the very next frame. The load is held three or four
-// frames, the strike takes one, the arm stays out six to eight, and one punch
-// follows the next eleven frames apart. The first load here was my own idea
-// of one, the fist tucked in by the shoulder with the elbow under it, timed
-// 0.10 s back and 0.03 s out with the arm out 0.12 s: nothing in the
-// recording looks like it, and the punch read as a flick. Timed from
-// frameFor, the frames as the race steps through them.
-describe("a punch is loaded, then driven", () => {
+// A fist goes straight out from the bar and straight back, through one and
+// the same frame halfway: ride, return, out, return. It was loaded first,
+// drawn down beside the bike and driven out through a strike frame of its
+// own, five frames in all, and the elbow swung round through the three
+// in-between poses: the arm read as cranked, not thrown. The hold and the
+// beat between punches are the recording's (RRVID 91.90-92.62).
+describe("a punch goes out and comes back through one frame", () => {
   const rider = (): Rider => startRace(makeTrack(1), 1, [{ id: 0, name: "me", human: true }], 1).riders[0];
   const shown = (): { frame: string; t: number }[] => {
     const r = rider();
@@ -160,48 +151,19 @@ describe("a punch is loaded, then driven", () => {
     }
     return seen;
   };
-  const held = (frame: string): number => {
-    const seen = shown();
-    const k = seen.findIndex((s) => s.frame === frame);
-    return (seen[k + 1]?.t ?? TUNE.punchCooldown) - seen[k].t;
-  };
 
-  it("drops the fist down and out beside the bike, behind the shoulder, with the elbow bent, before it goes out", () => {
-    const j = joints("punch~load.R");
-    const upper = sub(j.elbow, j.shoulder);
-    const fore = sub(j.hand, j.elbow);
-    const bend = (Math.acos(dot(upper, fore) / len(upper) / len(fore)) * 180) / Math.PI;
-    expect(j.hand[1], "fist below the elbow, m").toBeLessThan(j.elbow[1] - 0.15);
-    expect(j.hand[2], "fist behind the shoulder, m").toBeLessThan(j.shoulder[2] - 0.1);
-    expect(out(j.hand, j.shoulder), "fist out beside the bike, m").toBeGreaterThan(0.35);
-    expect(bend, "elbow bent, degrees off straight").toBeGreaterThan(40);
-    expect(bend).toBeLessThan(110);
+  it("shows nothing but the frame halfway, out, and the frame halfway again", () => {
+    expect(shown().map((s) => s.frame)).toEqual(["punch~return.R", "punchOut.R", "punch~return.R"]);
   });
 
-  it("holds the load three to four times as long as the strike, and the arm out longer than both", () => {
+  it("is out within four frames of the key at 25 fps, and holds out at least 0.2 s", () => {
     const seen = shown();
-    const load = held("punch~draw.R") + held("punch~load.R");
-    const strike = held("punch~strike.R");
-    expect(seen.map((s) => s.frame)).toEqual(["punch~draw.R", "punch~load.R", "punch~strike.R", "punchOut.R", "punch~return.R"]);
-    expect(load / strike, `loaded ${load.toFixed(3)} s, struck ${strike.toFixed(3)} s`).toBeGreaterThanOrEqual(3);
-    expect(load / strike).toBeLessThanOrEqual(4.5);
-    expect(held("punchOut.R"), "out, s").toBeGreaterThanOrEqual(0.2);
-    expect(held("punchOut.R")).toBeGreaterThan(load);
-  });
-
-  it("drives the fist out at least three times as fast as it was drawn back", () => {
-    const path = ["ride.R", "punch~draw.R", "punch~load.R"].map((f) => joints(f).hand);
-    const back = path.slice(1).reduce((n, p, k) => n + len(sub(p, path[k])), 0);
-    const drive = ["punch~load.R", "punch~strike.R", "punchOut.R"].map((f) => joints(f).hand);
-    const going = drive.slice(1).reduce((n, p, k) => n + len(sub(p, drive[k])), 0);
-    const backSpeed = back / (held("punch~draw.R") + held("punch~load.R"));
-    const driveSpeed = going / held("punch~strike.R");
-    expect(driveSpeed, `fist ${backSpeed.toFixed(1)} m/s back, ${driveSpeed.toFixed(1)} m/s out`).toBeGreaterThan(3 * backSpeed);
+    expect(seen[1].t, "out after, s").toBeLessThanOrEqual(0.16);
+    expect(seen[2].t - seen[1].t, "out, s").toBeGreaterThanOrEqual(0.2);
   });
 
   it("comes round again eleven frames after the last, as the recording's two punches do", () => {
     expect(TUNE.punchCooldown * 25).toBeCloseTo(11, 0);
-    expect(TUNE.fistWindup + TUNE.fistHold + TUNE.fistReturn).toBeCloseTo(TUNE.punchCooldown, 5);
   });
 });
 
@@ -212,7 +174,7 @@ describe("a punch is loaded, then driven", () => {
 describe("every frame a blow can show is one these rules look at", () => {
   const ruled = new Set([
     "ride", "rideClub", "rideChain",
-    "punch~draw", "punch~load", "punch~strike", "punchOut", "punch~return",
+    "punchOut", "punch~return",
     "chain~raise", "chainUp", "chain~sweep1", "chain~sweep2", "chainOut", "chain~return",
     "club~raise", "clubUp", "club~sweep1", "club~sweep2", "clubOut", "club~return",
     "kick~strike", "kick", "kick~return",
