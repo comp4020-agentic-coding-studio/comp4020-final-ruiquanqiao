@@ -1,4 +1,4 @@
-# Enforced, and judged
+# Which claims are tested, and which are judged
 
 What the [README](../README.md) claims, and what holds each claim. A test is run by `pnpm check`; a script is run against the deployed app.
 
@@ -11,6 +11,7 @@ What the [README](../README.md) claims, and what holds each claim. A test is run
 | The leaderboard, qualifications and log survive a restart | `spec/persistence.test.ts` |
 | Every page passes axe, and every link here opens | `spec/a11y.test.ts`, `spec/readme.test.ts` |
 | A blow moves like one on every frame, not only its key poses | `spec/motion.test.ts`, and a contact sheet before it ships |
+| A punch lands with weight | Judged by playing it and reading the contact sheet; the tests reach only "not wrong" |
 | Every helmet goes with its leathers | `spec/liveries.test.ts` |
 | It looks like the original | Judged frame beside frame against 137 screenshots, each in a commit |
 | It handles like the original | Ridden, then pinned as numbers in `spec/feel.test.ts` |

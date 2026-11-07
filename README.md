@@ -2,38 +2,35 @@
 
 Knuckle Road remakes the arcade mode of *Road Rash* (EA, 1996 Windows port,
 known in China as 暴力摩托 and the version I played) as one race shared by whoever
-is on the road right now. It is a racing game in which you can also punch and
-kick whoever is riding beside you. W rides, A and D steer, J punches and K
+is on the road right now. While you race, you can punch and kick whoever
+rides beside you. W rides, A and D steer, J punches and K
 kicks; on a phone the left thumb rides a stick and the right thumb fights.
 
 To race another person, each of you presses the gold **Humans only** button,
-then **Accept**. The room leaves ten seconds after the last of you joins, time
-enough to reach a second window. **Race with NPCs** is for riding alone and
-leaves five seconds after the first press.
+then **Accept**. The race leaves ten seconds after the last of you joins.
+**Race with NPCs** is for riding alone.
 
 ## What good means here
 
 A good race is a few friends in one room on one road. It races like a race,
-the road and the riders look right, a punch lands with weight, each road's
-music sets its mood, and nothing strange pulls anyone out of it.
+the road and the riders look right, a punch lands with weight, the music
+sets each road's mood, and nothing strange pulls anyone out of it.
 
 Right means the game I played. Remakes usually keep a game's story and replace
 its mechanics (Neill Hoch, 2020); I kept the mechanics, because the original is
 no longer sold (Video Game History Foundation, 2023). My first plan, written
 from memory, left out the police and both weapons, so every mechanic now has a
 sourced row in [the ledger](docs/ledger.md) saying whether I copied, adapted or
-left it out. The look is matched against 137 screenshots, the speed against
-the original's dial.
+left it out. The look is matched against 137 screenshots.
 
 A punch has weight only if it starts on the keypress. Bernier (2001) calls
 deciding whose screen is believed "a game design decision", and I made Valve's
 choice, as Gambetta describes: your browser runs the server's simulation for
 your own rider and draws everyone else slightly behind. The cost, in
 [decision 1](docs/decisions/0001-whose-word-counts.md), is that you punch where
-the server says a rider is, a little off from where you saw them. Every frame
-of a blow is checked for how it moves, and a club cracks on a helmet with a
-recorded sound. Each road plays its own recorded rock track; the synthesised
-loop it replaced sounded thin and made the five roads blur together.
+the server says a rider is, a little off from where you saw them. A club cracks on a
+helmet with a recorded sound. Each road plays its own recorded rock track, in place of a
+synthesised loop that sounded thin and made the five roads blur together.
 
 Strange means what a player would notice: two bikes inside each other, a rider
 stuttering as you pass, a race lost to a slow network. The first two are tests
@@ -47,19 +44,20 @@ fill only the empty seats, and your browser is your rider, with no account
 GO, anyone can watch at `/live`, whoever knocks you off is named the next time
 you meet, and `/leaderboard` keeps everyone who has raced.
 
-## Enforced, and judged
+## Which claims are tested, and which are judged
 
 A test in `spec/` or a script on the deployed app holds every claim above
-except the look and the music, which are judged: the look frame beside frame
-against 137 screenshots, the music by ear. [The checks](docs/checks.md) list
-which test or script holds which claim.
+except three, which are judged: the look, frame beside frame against 137
+screenshots; the music, by ear; and a punch's weight, by playing it and
+reading every frame on a contact sheet. The tests catch a blow that moves
+wrongly, but no test can say whether it feels heavy. [The checks](docs/checks.md) list which test or script holds
+which claim.
 
 ## What I left out
 
 - The career mode's money, shop and repair bills, because a five-minute race
   should not leave you in debt the next day.
-- Accounts. The cost is that if you clear your browser, your qualifications go
-  with it.
+- Accounts. The cost: clear your browser and your qualifications go with it.
 - Free-text chat, because a public site would need someone to moderate it.
 - EA's names, music and art.
 

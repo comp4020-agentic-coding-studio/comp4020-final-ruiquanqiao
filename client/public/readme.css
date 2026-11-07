@@ -1,6 +1,6 @@
 :root { color-scheme: dark; font-family: Georgia, "Times New Roman", serif; color: #f4ecdc; background: #1b1720; }
 body { margin: 0; }
-main { max-width: 42rem; margin: 0 auto; padding: 2rem 1.2rem 4rem; line-height: 1.6; font-size: 1.05rem; }
+main { overflow-wrap: break-word; max-width: 42rem; margin: 0 auto; padding: 2rem 1.2rem 4rem; line-height: 1.6; font-size: 1.05rem; }
 h1, h2, h3 { font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif; line-height: 1.2; }
 h1 { color: #e0493a; font-style: italic; text-transform: uppercase; }
 h2 { color: #ecc846; margin-top: 2rem; }

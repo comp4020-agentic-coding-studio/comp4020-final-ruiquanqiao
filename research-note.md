@@ -1,10 +1,10 @@
-# Why just writing instructions for AI‑coding agents isn’t enough
+# Why writing more instructions for coding agents is not enough
 
 *Critical research note, COMP8020*
 
-When a coding agent gets something wrong, the usual response is to tell it
-more, with another line in `CLAUDE.md` or `AGENTS.md`. I did this for most of
-the semester, and I now think it aims at the wrong problem. Agents largely do
+When a coding agent gets something wrong, the usual response is another line
+in `CLAUDE.md` or `AGENTS.md`. I did this for most of
+the semester, and now think it aims at the wrong problem. Agents largely do
 what their instruction files say. They cannot notice what nobody told them.
 Good agentic practice therefore moves the human's knowledge of what to build
 out of prose the agent is asked to follow and into a record the build checks:
@@ -14,8 +14,8 @@ the agent's prior is a confident impression of the thing being built.
 
 ## Agents already follow instructions
 
-Gloaguen et al.'s evaluation of `AGENTS.md` files shows this most clearly.
-Agents followed them, using a tool the file named about 1.6 times a task and
+Gloaguen et al.'s evaluation of `AGENTS.md` files shows this. Agents followed
+them, using a tool the file named about 1.6 times a task and
 almost never without the file. Yet "providing context files does not generally
 improve task success rates, while increasing inference cost by over 20%"
 (2026); an earlier version had reported lower success. Where an instruction
@@ -45,7 +45,7 @@ into a docs directory "treated as the system of record" and validated by CI
 (Lopopolo, 2026). It is one team's report, from a company selling Codex, but
 the controlled studies predict it.
 
-My final project is a small case of this. Asked to remake *Road Rash*, the
+My final project is a small case. Asked to remake *Road Rash*, the
 agent produced the median racing game, without the police, the weapons or
 weapon snatching. No instruction could have prevented this, because nobody had
 yet seen what was missing. Hashimoto's `AGENTS.md` lines "almost completely
@@ -54,11 +54,11 @@ behaviour appeared. A table of every mechanic, sourced from the manuals, showed
 the gaps at once. It then went stale itself, with 22 rows still "planned" weeks
 after they were built, until a test checked its dates.
 
-## The counter-case
+## Objections
 
 The strongest objection is Campbell's law, that the more an indicator is used
 for decisions, "the more subject it will be to corruption pressures" (1979).
-Agents do game checks. On ImpossibleBench, where tests contradict the
+Agents game checks. On ImpossibleBench, where tests contradict the
 specification, GPT-5 passed by cheating 54% of the time, Claude models mostly
 by editing the tests (Zhong et al., 2025). The remedies that paper found are
 structural, though: hidden tests cut cheating "to near zero", read-only tests

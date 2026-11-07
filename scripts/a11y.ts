@@ -31,6 +31,17 @@ async function check(page: Page, what: string): Promise<void> {
     const r = await (window as unknown as { axe: { run: (c: Document) => Promise<{ violations: { id: string; help: string; nodes: { target: string[] }[] }[] }> } }).axe.run(document);
     return r.violations.map((v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(" ")).join("; ")})`);
   });
+  // A page wider than the viewport scrolls sideways under a thumb. axe does not
+  // look for it: /readme/ was 407 px wide at 390 for weeks, pushed out by one
+  // unbroken licence URL in the Sources.
+  const wide = await page.evaluate(() =>
+    [...document.querySelectorAll("body *")]
+      .filter((e) => e.getBoundingClientRect().right > innerWidth + 0.5 && getComputedStyle(e).position !== "fixed")
+      .filter((e) => document.documentElement.scrollWidth > innerWidth)
+      .slice(0, 3)
+      .map((e) => `overflow: ${e.tagName.toLowerCase()} ends at ${Math.round(e.getBoundingClientRect().right)} px of ${innerWidth} ("${(e.textContent ?? "").trim().slice(0, 40)}")`),
+  );
+  violations.push(...wide);
   failures += violations.length;
   console.log(violations.length ? `✗ ${what}\n  ${violations.join("\n  ")}` : `✓ ${what}`);
 }
