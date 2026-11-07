@@ -125,7 +125,7 @@ export class SkinnedBody {
    * `source` is the loaded character; `part` says which atlas part a vertex
    * belongs to from the bone that moves it most and where it sits at rest.
    */
-  constructor(source: THREE.Object3D, part: (bone: string, from: V3, along: number) => number, colour: (part: number) => THREE.Color, id: (part: number) => THREE.Color) {
+  constructor(source: THREE.Object3D, part: (bone: string, from: V3, along: number, at: V3) => number, colour: (part: number) => THREE.Color, id: (part: number) => THREE.Color) {
     let found: THREE.SkinnedMesh | null = null;
     source.updateMatrixWorld(true);
     source.traverse((o) => {
@@ -147,10 +147,15 @@ export class SkinnedBody {
     this.bind = src.skeleton.boneInverses.map((m) => m.clone().invert());
     for (const [name, i] of this.index) this.rest[name] = new THREE.Vector3().setFromMatrixPosition(this.bind[i]);
 
-    const geo = src.geometry.clone();
+    let geo = src.geometry.clone();
     // bound once, in the model's rest space; the mesh itself sits at the body's origin
     geo.applyMatrix4(src.bindMatrix);
     smooth(geo, 4, 0.5);
+    // every triangle its own three vertices, so a triangle is all one part:
+    // coloured per shared vertex, a triangle with corners in two parts was
+    // blended across the edge. The smoothed normals are kept, so the surface
+    // still shades round
+    geo = geo.toNonIndexed();
     // the model's back is 0.70 m across at the shoulders (measured over its
     // vertices, arms left out): a bodybuilder's lats
     this.across = SHOULDERS / 0.7;
@@ -163,17 +168,25 @@ export class SkinnedBody {
     const ids = new Float32Array(pos.count * 3);
     const p = new THREE.Vector3();
     for (let v = 0; v < pos.count; v++) {
-      let best = 0;
-      for (let k = 1; k < 4; k++) if (sw.getComponent(v, k) > sw.getComponent(v, best)) best = k;
-      const bone = bones[si.getComponent(v, best)].name;
-      p.fromBufferAttribute(pos, v);
+      // the triangle's panel, decided once at its first corner from its middle
+      if (v % 3) {
+        col.copyWithin(v * 3, v * 3 - 3, v * 3);
+        ids.copyWithin(v * 3, v * 3 - 3, v * 3);
+        continue;
+      }
+      // the bone that moves the triangle most, over its three corners
+      const weigh = new Map<number, number>();
+      for (let c = v; c < v + 3; c++) for (let k = 0; k < 4; k++) weigh.set(si.getComponent(c, k), (weigh.get(si.getComponent(c, k)) ?? 0) + sw.getComponent(c, k));
+      const top = [...weigh].sort((a, b) => b[1] - a[1])[0][0];
+      const bone = bones[top].name;
+      p.fromBufferAttribute(pos, v).add(new THREE.Vector3().fromBufferAttribute(pos, v + 1)).add(new THREE.Vector3().fromBufferAttribute(pos, v + 2)).divideScalar(3);
       // where it sits round its bone, with the bone's own line taken out: the
       // model stands with its arms angled down, so "below the bone" in the
       // world would take in the whole of an arm
       const from = p.clone().sub(this.rest[bone]);
       // and how far along the bone it is, 0 at its root and 1 at its child
       let along = 0;
-      const child = src.skeleton.bones[si.getComponent(v, best)].children.find((c) => (c as THREE.Bone).isBone);
+      const child = src.skeleton.bones[top].children.find((c) => (c as THREE.Bone).isBone);
       if (child) {
         const d = this.rest[child.name].clone().sub(this.rest[bone]);
         const L = d.length();
@@ -181,7 +194,7 @@ export class SkinnedBody {
         along = from.dot(d) / L;
         from.addScaledVector(d, -from.dot(d));
       }
-      const n = part(bone, from, along);
+      const n = part(bone, from, along, p);
       colour(n).toArray(col, v * 3);
       id(n).toArray(ids, v * 3);
     }
@@ -313,7 +326,7 @@ export class SkinnedBody {
  * The same, with the model's bone hierarchy kept for working out which bone
  * an unnamed one hangs from.
  */
-export function skinnedBody(source: THREE.Object3D, part: (bone: string, from: V3, along: number) => number, colour: (part: number) => THREE.Color, id: (part: number) => THREE.Color): SkinnedBody {
+export function skinnedBody(source: THREE.Object3D, part: (bone: string, from: V3, along: number, at: V3) => number, colour: (part: number) => THREE.Color, id: (part: number) => THREE.Color): SkinnedBody {
   const body = new SkinnedBody(source, part, colour, id);
   let src: THREE.SkinnedMesh | null = null;
   source.traverse((o) => {
@@ -381,3 +394,4 @@ function smooth(geo: THREE.BufferGeometry, rounds: number, step: number): void {
   for (let i = 0; i < pos.count; i++) pos.setXYZ(i, p[id[i] * 3], p[id[i] * 3 + 1], p[id[i] * 3 + 2]);
   geo.computeVertexNormals();
 }
+

@@ -467,25 +467,26 @@ export const useHuman = (scene: THREE.Object3D): void => {
 
 /**
  * Which atlas part a vertex of the human is, from the bone that moves it
- * most, where it sits round that bone (`from`, the bone's own line taken out)
- * and how far along it (0 at its root, 1 where the next bone starts).
+ * most, how far along it (0 at its root, 1 where the next bone starts) and
+ * where it is in the model's rest pose.
+ *
+ * One colour for the suit, the second only on the shoulders and upper back,
+ * whole pieces bounded by the joints, so every edge between them runs round
+ * the body where the suit's own seams are, never across a panel. A back panel
+ * and stripes cut by a line through the mesh, copied from the recording's
+ * leathers, stepped along the suit's triangles and came out ragged at the
+ * atlas's size, however finely the mesh was split.
  */
-function humanPart(bone: string, from: THREE.Vector3, along: number): number {
+function humanPart(bone: string, _from: THREE.Vector3, along: number, _at: THREE.Vector3): number {
   if (/^(hand|thumb|index|middle|ring|pinky)_/.test(bone)) return PART.fixed;
-  // the gauntlet's cuff, the last quarter of the forearm
-  if (/^lowerarm_/.test(bone) && along > 0.75) return PART.fixed;
+  // the gauntlet's cuff, the last fifth of the forearm
+  if (/^lowerarm_/.test(bone) && along > 0.8) return PART.fixed;
   if (/^(foot|ball)_/.test(bone)) return PART.fixed;
-  // the boot's shaft, the lower third of the shin
-  if (/^calf_/.test(bone) && along > 0.65) return PART.fixed;
+  // the boot: the suit's leg ends a little above the ankle
+  if (/^calf_/.test(bone) && along > 0.78) return PART.fixed;
   if (/^(neck|head|Head)/.test(bone)) return PART.fixed;
-  // two-tone as the recording's riders are: the second colour over the
-  // shoulders and back, the first on the seat; and the sleeves and trouser
-  // legs two-tone along their length (413.82, 57.32), the first colour over
-  // the top of the arm and the outside of the leg, the second underneath and
-  // on the inside, towards the other leg
-  if (/^(spine_02|spine_03|clavicle)/.test(bone)) return PART.trim;
-  if (/^(upperarm|lowerarm)_/.test(bone)) return from.y < -0.01 ? PART.trim : PART.main;
-  if (/^(thigh|calf)_/.test(bone)) return from.x * (bone.endsWith("_l") ? 1 : -1) < -0.02 ? PART.trim : PART.main;
+  // the yoke: the upper chest and back and the tops of the shoulders
+  if (/^(spine_03|clavicle_)/.test(bone)) return PART.trim;
   return PART.main;
 }
 
