@@ -16,7 +16,7 @@ import { ACTIONS, type Action, DEFAULT_KEYS, actionOf, keyName, loadKeys, rebind
 import { RaceScene } from "./scene.ts";
 import { type StickKeys, knobAt, stickKeys } from "./stick.ts";
 import { drawFrames } from "./sprites.ts";
-import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, walkInto, windingAt, windupOf } from "../game/sim.ts";
+import { BIKE, DT, type Input, KMH, MPH, NO_INPUT, TUNE, type Race, type Rider, beginAttack, cap, kicked, nearest, onFoot, separate, packInput, positionOf, ride, shuntOf, startRace, topSpeed, walkInto, swingOver, windingAt, windupOf } from "../game/sim.ts";
 import { Handover, Prediction, Timeline } from "./netview.ts";
 import { walkerAt } from "../game/walkers.ts";
 import { NetWatch, pingLabel } from "./netwatch.ts";
@@ -213,7 +213,7 @@ function onSnap(msg: Extract<ToClient, { t: "snap" }>): void {
     c.prediction.reset();
     // drawn where it was, and let go over the next steps (Handover)
     if (easeHandover) c.handover.take(was.z, was.x, r.z, r.x);
-    if (!r.attack && swing && mine[8] === "riding" && swing.t < windupOf(r, swing) + 0.2) r.attack = swing;
+    if (!r.attack && swing && mine[8] === "riding" && !swingOver(r, swing)) r.attack = swing;
   } else {
     // the error it had then is eased out over the next steps (Prediction)
     {
@@ -1236,7 +1236,7 @@ function frame(): void {
           keepOff(c, r, now);
           if (r.attack) {
             r.attack.t += DT;
-            if (r.attack.t >= windupOf(r, r.attack) + 0.2) r.attack = null;
+            if (swingOver(r, r.attack)) r.attack = null;
           }
           c.prediction.record(c.steps, r.z, r.x);
         }
@@ -1487,7 +1487,7 @@ window.__rash = {
   press: (k: keyof Input, down: boolean) => setKey(k, down),
   scene: () => roadScene,
   /** a contact sheet of the named frames, for scripts/blows.ts */
-  frames: (names: string[], labels?: string[]) => roadScene && drawFrames(roadScene.renderer, names, 240, labels).toDataURL("image/png"),
+  frames: (names: string[], labels?: string[], size = 240) => roadScene && drawFrames(roadScene.renderer, names, size, labels).toDataURL("image/png"),
   heard: () => heard,
   /** the music and the recorded hits: what is loaded and playing */
   sound: () => soundState(),

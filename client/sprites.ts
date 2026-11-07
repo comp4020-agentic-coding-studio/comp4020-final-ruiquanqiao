@@ -40,6 +40,14 @@ type V = [number, number, number];
 
 /** upper arm and forearm, m */
 const ARM = 0.35;
+/**
+ * pelvis to the base of the neck along the spine, m. At 0.46 the arm (two
+ * lengths of ARM) was 1.64 times the trunk from hip to shoulder where a
+ * person's is nearer 1.2, and the rider read as short in the waist and long
+ * in the arm; at 0.54 it is 1.37. The arm itself stays: shorter (0.33), the
+ * chain no longer reached where the recording has it at 247.64
+ */
+const TRUNK = 0.54;
 
 type Pose = {
   /** pelvis, in bike space (or in body space when off the bike) */
@@ -125,7 +133,8 @@ const RIGHT: Record<string, Pose> = {
   // then the whole arm straight out sideways at shoulder height (5 frames)
   punchOut: ride({ pitch: 0.4, roll: -0.1, handR: [-1.2, 1.42, 0.05], elbowR: [-0.5, 1.8, -0.2] }),
   // the kick chambered: knee out, foot drawn back by the tail (6 frames)
-  kickCock: ride({ pitch: 0.42, roll: -0.12, footR: [-0.95, 0.72, -0.45], kneeR: [-0.9, 1.3, 0.3] }),
+  // the foot 8 cm higher than first set, since the longer back lifts the helmet it is measured from
+  kickCock: ride({ pitch: 0.42, roll: -0.12, footR: [-0.95, 0.8, -0.45], kneeR: [-0.9, 1.3, 0.3] }),
   // then the leg straight out sideways just over the tail: the hips slide
   // across the seat towards it and the body leans off it (5 frames)
   kick: ride({ pelvis: [-0.12, 0.96, -0.36], pitch: 0.38, roll: -0.2, footR: [-1.5, 0.84, -0.25], kneeR: [-0.6, 1.5, -0.25] }),
@@ -383,7 +392,7 @@ function whip(rest: Pose): void {
 function shoulderOf(p: Pose, sign: number): THREE.Vector3 {
   const right = new THREE.Vector3(-1, 0, 0);
   const spine = new THREE.Vector3(0, 1, 0).applyAxisAngle(right, -p.pitch).applyAxisAngle(new THREE.Vector3(0, 0, 1), p.roll);
-  const chest = new THREE.Vector3(...p.pelvis).addScaledVector(spine, 0.46);
+  const chest = new THREE.Vector3(...p.pelvis).addScaledVector(spine, TRUNK);
   return chest.addScaledVector(right, sign * 0.22).addScaledVector(spine, -0.03);
 }
 
@@ -575,7 +584,7 @@ class Puppet {
     const spine = new THREE.Vector3(0, 1, 0).applyAxisAngle(right, -p.pitch).applyAxisAngle(new THREE.Vector3(0, 0, 1), p.roll);
     const fwd = new THREE.Vector3(0, 0, 1).applyAxisAngle(right, -p.pitch);
     const pelvis = v(p.pelvis);
-    const chest = pelvis.clone().addScaledVector(spine, 0.46);
+    const chest = pelvis.clone().addScaledVector(spine, TRUNK);
     const across = right.clone();
     const blob = (m: THREE.Mesh, at: THREE.Vector3, s: V, up = spine): void => {
       m.position.copy(at);

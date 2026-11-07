@@ -289,6 +289,15 @@ export const windupOf = (r: Rider, a: Attack): number => (a.kind === "kick" ? TU
 /** Seconds a blow lasts after it lands: out, then back to the bar. */
 export const attackAfter = (r: Rider, a: Attack): number => (a.kind === "punch" && !r.weapon ? TUNE.fistHold + TUNE.fistReturn : 0.2);
 
+/**
+ * Whether a blow is over and the rider is back on the bar. The server and the
+ * browser predicting its own rider both end a swing here: the browser once
+ * ended every swing 0.2 s after it landed, a fist 0.065 s before the server
+ * did, so the arm dropped to the bar mid-hold and the next snapshot put it
+ * back out, and the fist flickered.
+ */
+export const swingOver = (r: Rider, a: Attack): boolean => a.t >= windupOf(r, a) + attackAfter(r, a);
+
 export type Rider = {
   id: number;
   name: string;
@@ -1054,7 +1063,7 @@ function resolveAttack(race: Race, r: Rider): void {
       break;
     }
   }
-  if (a.t >= windup + attackAfter(r, a)) r.attack = null;
+  if (swingOver(r, a)) r.attack = null;
 }
 
 function hit(race: Race, by: Rider, on: Rider, move: AttackKind): void {

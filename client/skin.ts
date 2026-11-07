@@ -236,7 +236,10 @@ export class SkinnedBody {
     const hips = j.hipL.clone().sub(j.hipR);
     const restAcross = r("upperarm_l").sub(r("upperarm_r"));
     const across = j.shoulderL.clone().sub(j.shoulderR);
-    const lower = carry(r("pelvis"), restShoulders, restHips, j.pelvis, shoulders, hips);
+    // the waist and seat filled out to a rider's: 0.77 of the shoulders'
+    // width from behind as modelled, against about 0.9 in the recording
+    // (247.64), where the leathers hang straight from the back to the seat
+    const lower = carry(r("pelvis"), restShoulders, restHips, j.pelvis, shoulders, hips, 1.15);
     const upper = carry(r("pelvis"), restShoulders, restAcross, j.pelvis, shoulders, across, this.across);
     for (const n of ["root", "Root", "pelvis", "spine_01"]) A.set(n, lower);
     for (const n of ["spine_02", "spine_03", "clavicle_l", "clavicle_r"]) A.set(n, upper);

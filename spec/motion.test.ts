@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { frameFor, joints } from "../client/sprites.ts";
-import { type Rider, TUNE, startRace } from "../game/sim.ts";
+import { readFileSync } from "node:fs";
+import { type Rider, TUNE, attackAfter, startRace, swingOver, windupOf } from "../game/sim.ts";
 import { makeTrack } from "../game/track.ts";
 
 // The movement of a blow, checked frame by frame in 3D. spec/sprites.test.ts
@@ -160,6 +161,22 @@ describe("a punch goes out and comes back through one frame", () => {
     const seen = shown();
     expect(seen[1].t, "out after, s").toBeLessThanOrEqual(0.16);
     expect(seen[2].t - seen[1].t, "out, s").toBeGreaterThanOrEqual(0.2);
+  });
+
+  // The browser predicting its own rider ended every swing 0.2 s after it
+  // landed, 0.065 s before the server ended a fist: the arm dropped to the bar
+  // halfway through the hold, the next snapshot put it back out, and it
+  // flickered. In the recording (92.42-92.74) the fist is out for 5 frames
+  // and back on the bar the next.
+  it("is ended by the browser exactly when the server ends it", () => {
+    const r = rider();
+    const a = { kind: "punch" as const, side: 1 as const, t: windupOf(r, { kind: "punch", side: 1, t: 0, target: -1, landed: false }) + TUNE.fistHold - 0.01, target: -1, landed: true };
+    expect(swingOver(r, a), "still held out").toBe(false);
+    a.t = windupOf(r, a) + attackAfter(r, a);
+    expect(swingOver(r, a), "back on the bar").toBe(true);
+    const main = readFileSync("client/main.ts", "utf8");
+    const ends = main.split("\n").filter((l) => /attack/.test(l) && /windupOf\([^)]*\)\s*\+/.test(l));
+    expect(ends, "client/main.ts timing a swing's end by hand").toEqual([]);
   });
 
   it("comes round again eleven frames after the last, as the recording's two punches do", () => {
