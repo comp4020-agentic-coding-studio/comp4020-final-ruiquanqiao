@@ -62,6 +62,7 @@ whoever you raced is still there the next day.
 | It handles like the original | Judged by riding, then pinned as numbers in `spec/feel.test.ts` |
 | It holds up over a bad network | Ridden at 300 ms with 3% loss, and with 8 scripted people |
 | It works from the keyboard alone, and survives a resize mid-race | `scripts/rough.ts` on the deployed app |
+| Two people who follow this page end up in one race and on the leaderboard | `scripts/marker.ts` on the deployed app, two browsers sharing no cookies, one at each marking viewport |
 
 ## What I left out
 
