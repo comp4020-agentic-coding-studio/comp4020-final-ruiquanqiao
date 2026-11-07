@@ -10,26 +10,27 @@ import { makeTrack } from "../game/track.ts";
 const rider = (): Rider => startRace(makeTrack(1), 1, [{ id: 0, name: "me", human: true }], 1).riders[0];
 
 describe("rider frames", () => {
-  it("throws a punch straight out from the bar, out at full stretch the moment it lands, on the side it is thrown", () => {
-    // drawn back first, through raise, cocked and two sweep frames, it read
-    // as an arm wound round for a warm-up; now one frame halfway, then out
+  it("draws a punch back to the shoulder, drives it out, and is at full stretch the moment it lands, on the side it is thrown", () => {
+    // drawn back through raise, cocked and two sweep frames, it read as an arm
+    // wound round for a warm-up; thrown from the bar with no draw-back at all,
+    // as an elbow strike. Now drawn in to the shoulder, then one frame out
     const r = rider();
     r.attack = { kind: "punch", side: 1, t: 0, target: -1, landed: false };
     const seen: string[] = [];
-    for (let t = 0; t < TUNE.windup + 0.2; t += 1 / 120) {
+    for (let t = 0; t < TUNE.fistWindup + 0.2; t += 1 / 120) {
       r.attack.t = t;
       if (seen.at(-1) !== frameFor(r)) seen.push(frameFor(r));
     }
-    expect(seen).toEqual(["punch~strike.R", "punchOut.R", "punch~return.R"]);
-    r.attack.t = TUNE.windup;
+    expect(seen).toEqual(["punch~draw.R", "punch~load.R", "punch~strike.R", "punchOut.R", "punch~return.R"]);
+    r.attack.t = TUNE.fistWindup;
     expect(frameFor(r)).toBe("punchOut.R");
     r.attack.side = -1;
     expect(frameFor(r)).toBe("punchOut.L");
   });
 
   it("puts a strike's one in-between pose where the fist is halfway out, so it moves in two even steps", () => {
-    // the fist, from straight behind, in helmet widths, from the bar to out
-    const path = ["ride.R", "punch~strike.R", "punchOut.R"].map((f) => measure(f).hand);
+    // the fist, from straight behind, in helmet widths, from drawn back to out
+    const path = ["punch~load.R", "punch~strike.R", "punchOut.R"].map((f) => measure(f).hand);
     const steps = path.slice(1).map((p, i) => Math.hypot(p[0] - path[i][0], p[1] - path[i][1]));
     const whole = Math.hypot(path[2][0] - path[0][0], path[2][1] - path[0][1]);
     // halfway by the joints' straight lines put the fist 1.67 of 2.24 out in
@@ -90,7 +91,6 @@ const POSES: [frame: string, at: string, joint: keyof Measure, x: number | null,
   ["clubOut.R", "247.64", "hand", 3.4, -0.6],
   ["clubUp.R", "355.32", "tailLamp", null, -2.4],
   ["clubUp.R", "355.32", "hand", 1.4, 0],
-  ["chainUp.R", "355.32", "hand", 1.4, 0],
   ["kickCock.R", "57.08", "tailLamp", 0.45, -2.8],
   ["kickCock.R", "57.08", "knee", 2.2, -2.2],
   ["kickCock.R", "57.08", "foot", 3.2, -2.85],

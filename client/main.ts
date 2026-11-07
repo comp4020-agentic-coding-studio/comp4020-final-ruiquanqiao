@@ -1487,7 +1487,7 @@ window.__rash = {
   press: (k: keyof Input, down: boolean) => setKey(k, down),
   scene: () => roadScene,
   /** a contact sheet of the named frames, for scripts/blows.ts */
-  frames: (names: string[]) => roadScene && drawFrames(roadScene.renderer, names).toDataURL("image/png"),
+  frames: (names: string[], labels?: string[]) => roadScene && drawFrames(roadScene.renderer, names, 240, labels).toDataURL("image/png"),
   heard: () => heard,
   /** the music and the recorded hits: what is loaded and playing */
   sound: () => soundState(),

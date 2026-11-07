@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, inject, it } from "vitest";
 import { type Entry, LOAD_MIN, type ToClient } from "../game/protocol.ts";
 import { NO_INPUT, type Race, beginAttack, startRace, step } from "../game/sim.ts";
 import { ROADS, bake, makeTrack } from "../game/track.ts";
@@ -299,14 +299,18 @@ describe("the end of a race (V19)", () => {
 });
 
 describe("the bulletin board (V18)", () => {
-  it("pins a postcard of each road's own country, bent the way it first bends, and names its length", () => {
+  it("pins a photograph of each road, taken in the game, and names its length", async () => {
+    // drawn as SVG colour fields, the five cards showed nothing of the roads
     const cards = ROADS.map((_, i) => postcard(makeTrack(1, i)));
-    // five roads, five different cards, each with the road's name for a screen reader
     expect(new Set(cards).size).toBe(5);
-    ROADS.forEach((r, i) => expect(cards[i]).toContain(`aria-label="Postcard: ${r.name}"`));
-    // the coast road has the sea on it, and the pine road its snow line
-    expect(cards[1]).toContain("#2f6aa8");
-    expect(cards[0]).toContain('stroke="#f4f4f4"');
+    for (const [i, r] of ROADS.entries()) {
+      expect(cards[i]).toContain(`alt="Postcard: ${r.name}`);
+      const src = cards[i].match(/src="([^"]+)"/)![1];
+      const res = await fetch(new URL(src, inject("baseUrl")));
+      expect(res.status, src).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/image\/jpeg/);
+      // a photograph, not a blank or a placeholder: tens of kilobytes
+      expect((await res.arrayBuffer()).byteLength, src).toBeGreaterThan(15000);
+    }
     expect(TAGLINES).toHaveLength(ROADS.length);
-  });
-});
+  });});

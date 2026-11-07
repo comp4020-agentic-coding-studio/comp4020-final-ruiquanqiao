@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { joints } from "../client/sprites.ts";
+import { frameFor, joints } from "../client/sprites.ts";
+import { type Rider, TUNE, startRace } from "../game/sim.ts";
+import { makeTrack } from "../game/track.ts";
 
 // The movement of a blow, checked frame by frame in 3D. spec/sprites.test.ts
 // holds each blow's key poses against the recording, and every one of those
@@ -81,20 +83,102 @@ describe("a chain is swung like a whip", () => {
     expect(len(sub(c.at(-1)!, c[0]))).toBeGreaterThan(0.85 * length);
   });
 
-  it("leads with the elbow and lets the hand follow: the arm unfolds from the shoulder out", () => {
-    // a whip is thrown base first: the elbow gets most of the way out while
-    // the hand is still back, then the forearm and the chain snap through. The
-    // hand getting out first, the elbow trailing, reads as an arm turned on a crank
-    const progress = (pick: (j: ReturnType<typeof joints>) => P, i: number): number => {
-      const a = pick(at[1]);
-      const b = pick(at[4]);
-      return dot(sub(pick(at[i]), a), sub(b, a)) / dot(sub(b, a), sub(b, a));
-    };
-    expect(progress((j) => j.elbow, 2), "elbow progress at the first sweep frame").toBeGreaterThan(progress((j) => j.hand, 2) + 0.2);
-  });
-
   it("keeps the elbow under the hand at the hit, so the arm whips rather than turns", () => {
     const j = at[4];
     expect(j.elbow[1]).toBeLessThanOrEqual(j.hand[1] + 0.02);
+  });
+});
+
+// The swing as a coach describes it (Ruiquan, against the contact sheet of
+// ca9385e): the upper arm level and all but still, the forearm turning about
+// the elbow on one axis, from the chest out through half a circle. The first
+// chain passed every rule above and still read as an arm cranked round a
+// cone: the elbow rose and fell 37 cm and moved 31 cm front to back between
+// frames, because each frame aimed it afresh.
+describe("a chain is whipped from the elbow", () => {
+  const swing = ["chainUp.R", "chain~sweep1.R", "chain~sweep2.R", "chainOut.R"];
+  const at = swing.map((f) => joints(f));
+  const fore = at.map((j) => sub(j.hand, j.elbow));
+  const unit = (a: P): P => [a[0] / len(a), a[1] / len(a), a[2] / len(a)];
+  const cross = (a: P, b: P): P => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const angle = (a: P, b: P): number => (Math.acos(Math.max(-1, Math.min(1, dot(unit(a), unit(b))))) * 180) / Math.PI;
+
+  it("holds the upper arm level through the swing, within 15 degrees of flat", () => {
+    for (const [i, j] of at.entries()) {
+      const upper = sub(j.elbow, j.shoulder);
+      expect((Math.asin(Math.abs(upper[1]) / len(upper)) * 180) / Math.PI, `${swing[i]}: upper arm off level, degrees`).toBeLessThan(15);
+    }
+  });
+
+  it("keeps the elbow where it is: no frame of the swing moves it 6 cm from another", () => {
+    for (let a = 0; a < at.length; a++)
+      for (let b = a + 1; b < at.length; b++) expect(len(sub(at[a].elbow, at[b].elbow)), `${swing[a]} to ${swing[b]}, m`).toBeLessThan(0.06);
+  });
+
+  it("turns the forearm about one axis: every frame of it in one plane, all the same way round", () => {
+    const n = unit(cross(fore[0], fore[1]));
+    for (const [i, f] of fore.entries()) expect(Math.abs(dot(unit(f), n)), `${swing[i]}: forearm out of the plane`).toBeLessThan(Math.sin((8 * Math.PI) / 180));
+    for (let i = 1; i < fore.length; i++) expect(dot(cross(fore[i - 1], fore[i]), n), `${swing[i]} turns back`).toBeGreaterThan(0);
+  });
+
+  it("starts with the fist at the chest and opens through at least 150 degrees", () => {
+    expect(out(at[0].hand, at[0].shoulder), "fist out past the shoulder when drawn back, m").toBeLessThan(0.05);
+    expect(angle(fore[0], fore.at(-1)!)).toBeGreaterThanOrEqual(150);
+  });
+
+  it("speeds up: each frame turns the forearm further than the one before", () => {
+    const steps = fore.slice(1).map((f, i) => angle(fore[i], f));
+    for (let i = 1; i < steps.length; i++) expect(steps[i], `steps ${steps.map((s) => s.toFixed(0)).join(", ")} degrees`).toBeGreaterThan(steps[i - 1]);
+  });
+});
+
+// A fist is loaded before it is thrown: the elbow goes back and down and the
+// fist comes in to the shoulder, slowly, then the fist is driven out fast.
+// Thrown straight from the bar it had no load at all, and the elbow swung
+// out ahead of the fist on the way. Timed from frameFor, the frames as the
+// race steps through them.
+describe("a punch is loaded, then driven", () => {
+  const rider = (): Rider => startRace(makeTrack(1), 1, [{ id: 0, name: "me", human: true }], 1).riders[0];
+  const shown = (kind: "punch" | "backhand"): { frame: string; t: number }[] => {
+    const r = rider();
+    r.attack = { kind, side: 1, t: 0, target: -1, landed: false };
+    const seen: { frame: string; t: number }[] = [];
+    for (let t = 0; t <= TUNE.fistWindup + 1e-9; t += 1 / 480) {
+      r.attack.t = t;
+      const f = frameFor(r);
+      if (seen.at(-1)?.frame !== f) seen.push({ frame: f, t });
+    }
+    return seen;
+  };
+
+  it.each(["punch", "backhand"] as const)("%s: draws the elbow back and down before the fist goes out", (kind) => {
+    const seen = shown(kind);
+    // loaded: the fist in by the shoulder, the elbow under it and behind it,
+    // and further back than it rides (the rider sits up to strike, so the
+    // shoulder itself goes back; the elbow is judged against the fist)
+    const ridden = joints("ride.R").elbow;
+    const loaded = seen.map((s) => joints(s.frame)).filter((j) => j.elbow[1] < j.shoulder[1] - 0.15 && j.elbow[2] < j.hand[2] - 0.08 && j.elbow[2] < ridden[2] - 0.05 && out(j.hand, j.shoulder) < 0.15);
+    expect(loaded.length, `frames: ${seen.map((s) => s.frame).join(", ")}`).toBeGreaterThan(0);
+  });
+
+  it.each(["punch", "backhand"] as const)("%s: the draw-back is slow and the drive is fast", (kind) => {
+    const seen = shown(kind);
+    const fists = seen.map((s) => joints(s.frame));
+    // the turn: the frame where the fist is least far out
+    let k = 0;
+    for (let i = 1; i < fists.length; i++) if (out(fists[i].hand, fists[i].shoulder) < out(fists[k].hand, fists[k].shoulder)) k = i;
+    const rest = joints("ride.R");
+    const path = [rest, ...fists];
+    const travel = (a: number, b: number): number => path.slice(a + 1, b + 1).reduce((n, j, i) => n + len(sub(j.hand, path[a + i].hand)), 0);
+    const drawTime = seen[k + 1]?.t ?? TUNE.fistWindup;
+    const driveTime = TUNE.fistWindup - drawTime;
+    // a fist that never comes in has nothing to drive from
+    expect(k, `frames: ${seen.map((s) => s.frame).join(", ")}`).toBeGreaterThan(0);
+    expect(driveTime).toBeGreaterThan(0.02);
+    expect(drawTime, `drawn back for ${drawTime.toFixed(3)} s, driven for ${driveTime.toFixed(3)} s`).toBeGreaterThanOrEqual(2 * driveTime);
+    const out_ = joints(kind === "punch" ? "punchOut.R" : "backhand.R");
+    const drawSpeed = travel(0, k + 1) / drawTime;
+    const driveSpeed = (travel(k + 1, path.length - 1) + len(sub(out_.hand, path.at(-1)!.hand))) / driveTime;
+    expect(driveSpeed, `fist ${drawSpeed.toFixed(1)} m/s back, ${driveSpeed.toFixed(1)} m/s out`).toBeGreaterThan(3 * drawSpeed);
   });
 });

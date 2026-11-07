@@ -16,7 +16,7 @@
 // Bike space: metres, +z forward, +y up, the rider's right is -x.
 
 import * as THREE from "three";
-import { type Rider, windupOf } from "../game/sim.ts";
+import { type Rider, TUNE, windupOf } from "../game/sim.ts";
 import { type Prim, meshBody } from "./body.ts";
 import { buildBike } from "./models.ts";
 
@@ -35,6 +35,9 @@ const PARTS = 8;
 const ID_STEP = 28;
 
 type V = [number, number, number];
+
+/** upper arm and forearm, m */
+const ARM = 0.35;
 
 type Pose = {
   /** pelvis, in bike space (or in body space when off the bike) */
@@ -322,7 +325,12 @@ for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
   const [A, B, C] = [RIGHT[rest], RIGHT[back], RIGHT[out]];
   if (STRIKES.has(blow)) {
     // the arm is straight early, so its frame sits nearer the bar than halfway
-    RIGHT[`${blow}~strike`] = between(A, C, blow === "kick" ? 0.5 : STRIKE_ARM);
+    if (blow !== "kick") {
+      // loaded: the fist in by the shoulder, the elbow back and down
+      RIGHT[`${blow}~load`] = ride({ pitch: 0.45, roll: -0.05, handR: [-0.24, 1.36, 0.14], elbowR: [-0.28, 0.3, -1.2] });
+      RIGHT[`${blow}~draw`] = between(A, RIGHT[`${blow}~load`], 0.5);
+      RIGHT[`${blow}~strike`] = { ...between(RIGHT[`${blow}~load`], C, 0.35), elbowR: [-0.2, 0.2, -0.8] };
+    } else RIGHT[`${blow}~strike`] = between(A, C, 0.5);
     RIGHT[`${blow}~return`] = between(C, A, 0.5);
     if (blow !== "kick") {
       // the fist drives and the elbow follows down behind it. Interpolated
@@ -335,6 +343,10 @@ for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
     continue;
   }
   if (blow === "chain") {
+    whip(A);
+    continue;
+  }
+  if (blow === "chain_old") {
     // a whip, base first: the elbow drives out while the hand is still back
     // by the helmet and the chain trails, then the forearm snaps through and
     // the chain cracks out straight. Interpolated between cocked and out, the
@@ -359,6 +371,52 @@ for (const [blow, [rest, back, out]] of Object.entries(BLOWS)) {
   RIGHT[`${blow}~sweep1`] = between(B, C, f1);
   RIGHT[`${blow}~sweep2`] = between(B, C, f2);
   RIGHT[`${blow}~return`] = between(C, A, 0.5);
+}
+
+/**
+ * The chain's swing, from the elbow. The upper arm is held level and out to
+ * the side and stays put; the forearm turns about one upright axis through
+ * the elbow, from the fist at the chest out through 170 degrees to straight,
+ * a little further each frame than the last, and the chain trails the fist's
+ * path until it cracks out straight at the hit. Interpolated between a pose
+ * by the helmet and one at full stretch, every frame aimed the elbow afresh:
+ * it rose and fell 37 cm through the swing and the forearm swept a cone.
+ */
+function whip(rest: Pose): void {
+  const lean = { pitch: 0.4, roll: -0.1 };
+  const S = shoulderOf({ ...rest, ...lean }, 1);
+  const upper = new THREE.Vector3(-0.8, 0, 0.6).normalize();
+  const E = S.clone().addScaledVector(upper, ARM);
+  const at = (deg: number): { hand: V; trail: THREE.Vector3 } => {
+    const a = (deg * Math.PI) / 180;
+    const f = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+    // the way the fist is going is round the circle; the chain hangs back from it
+    const going = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
+    return { hand: E.clone().addScaledVector(f, ARM).toArray() as V, trail: going.negate() };
+  };
+  const pose = (deg: number, from: V, to: V): Pose => {
+    const { hand } = at(deg);
+    return ride({ ...lean, handR: hand, elbowR: E.toArray() as V, weapon: chain(from, to) });
+  };
+  const tr = (deg: number, down: number): V => {
+    const t = at(deg).trail;
+    return [t.x, -down, t.z];
+  };
+  RIGHT["chain~raise"] = { ...between(rest, pose(10, [0, -1, 0], [0, -1, 0]), 0.5), weapon: chain([0.1, -0.9, -0.3], [0, -1, -0.2]) };
+  // drawn back: the fist at the chest, the chain hanging down behind it
+  RIGHT.chainUp = pose(10, [0.3, -0.8, -0.5], [0.1, -1, -0.2]);
+  RIGHT["chain~sweep1"] = pose(35, tr(35, -0.2), [0.1, -1, 0.5]);
+  RIGHT["chain~sweep2"] = pose(85, tr(85, 0.3), [0.4, -0.8, -0.6]);
+  RIGHT.chainOut = pose(180, [-1, -0.08, 0], [-1, -0.08, 0]);
+  RIGHT["chain~return"] = between(RIGHT.chainOut, rest, 0.5);
+}
+
+/** Where a pose puts the shoulder, side 1 the right: as Puppet.set builds it. */
+function shoulderOf(p: Pose, sign: number): THREE.Vector3 {
+  const right = new THREE.Vector3(-1, 0, 0);
+  const spine = new THREE.Vector3(0, 1, 0).applyAxisAngle(right, -p.pitch).applyAxisAngle(new THREE.Vector3(0, 0, 1), p.roll);
+  const chest = new THREE.Vector3(...p.pelvis).addScaledVector(spine, 0.46);
+  return chest.addScaledVector(right, sign * 0.22).addScaledVector(spine, -0.03);
 }
 
 /** Every frame in the atlas, by name: "punchOut.R", "kick.L", "run2", ... */
@@ -417,7 +475,7 @@ type Part = THREE.Mesh & { userData: { part: number } };
 // Upper and lower limb lengths, m. The recording's riders reach 3.4 helmet
 // widths with a fist and 4.2 with a boot; at 0.3 and 0.44 the puppet's limbs
 // fell well short of both, so the blows read as nudges.
-const ARM = 0.35;
+
 const LEG = 0.5;
 
 class Puppet {
@@ -855,7 +913,8 @@ export class AtlasBuilder {
     const t = new THREE.DataArrayTexture(this.data, this.W, this.H, pages);
     t.format = THREE.RGFormat;
     t.type = THREE.UnsignedByteType;
-    // big square texels near the camera, as the original's sprites (V4)
+    // read texel by texel in the shader (texelFetch), which blends them itself:
+    // the part ids must never be averaged between two parts
     t.magFilter = THREE.NearestFilter;
     t.minFilter = THREE.NearestFilter;
     t.unpackAlignment = 1;
@@ -882,41 +941,77 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
+// Each pixel blends the four texels round it, as a photograph is sampled:
+// the brightness, the part's tint and whether anything is there at all, so
+// the outline and the silhouette come out smooth and the shading graded.
+// Sampled nearest, each texel was drawn as a square block about three
+// screen pixels across with a stepped black line round it, which read as a
+// low resolution chosen on purpose (ledger V4).
 const FRAG = `
 precision highp sampler2DArray;
 uniform sampler2DArray map;
 uniform float page;
 uniform vec4 tile;
-uniform vec2 texel;
+uniform vec2 size;
 uniform float flip;
 uniform vec3 tints[${PARTS}];
 uniform float shade;
 varying vec2 vUv;
+ivec2 lo;
+ivec2 hi;
 int idAt(vec4 c) { return c.g < 0.05 ? -1 : int(floor(c.g * 255.0 / ${ID_STEP}.0 + 0.5)) - 1; }
-vec4 at(vec2 uv) { return texture(map, vec3(uv, page)); }
-vec4 near(vec2 uv, vec2 d) { return at(clamp(uv + d * texel, tile.xy + texel * 0.5, tile.xy + tile.zw - texel * 0.5)); }
+vec4 px(ivec2 q) { return texelFetch(map, ivec3(clamp(q, lo, hi), int(page)), 0); }
+vec3 tintOf(int id) {
+  vec3 t = vec3(1.0);
+  for (int i = 1; i < ${PARTS}; i++) if (i == id) t = tints[i];
+  return t;
+}
+/** how much of the figure covers texel-space point p, blended from the four texels round it */
+float cover(vec2 p) {
+  ivec2 i = ivec2(floor(p));
+  vec2 f = fract(p);
+  float a = idAt(px(i)) >= 0 ? 1.0 : 0.0;
+  float b = idAt(px(i + ivec2(1, 0))) >= 0 ? 1.0 : 0.0;
+  float c = idAt(px(i + ivec2(0, 1))) >= 0 ? 1.0 : 0.0;
+  float d = idAt(px(i + ivec2(1, 1))) >= 0 ? 1.0 : 0.0;
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
 void main() {
   vec2 uv = vUv;
   if (flip > 0.5) uv.x = 1.0 - uv.x;
-  uv = tile.xy + uv * tile.zw;
-  vec4 c = at(uv);
-  int id = idAt(c);
-  int l = idAt(near(uv, vec2(-1.0, 0.0)));
-  int r = idAt(near(uv, vec2(1.0, 0.0)));
-  int u = idAt(near(uv, vec2(0.0, 1.0)));
-  int d = idAt(near(uv, vec2(0.0, -1.0)));
-  // a dark line one texel wide round the whole figure, as the original's
-  // hand-drawn sprites have
-  if (id < 0) {
-    if (max(max(l, r), max(u, d)) < 0) discard;
-    gl_FragColor = vec4(0.06, 0.05, 0.07, 1.0);
-    return;
+  lo = ivec2(tile.xy * size + 0.5);
+  hi = lo + ivec2(tile.zw * size + 0.5) - 1;
+  vec2 p = (tile.xy + uv * tile.zw) * size - 0.5;
+  // the figure is where the blended coverage passes a half: its contour runs
+  // diagonally across texels instead of round their squares. The line round
+  // it is the same contour of a wider blend, a little further out. Each edge
+  // is antialiased over one screen pixel
+  float body = cover(p);
+  float wide = 0.25 * (cover(p + vec2(0.8, 0.8)) + cover(p + vec2(-0.8, 0.8)) + cover(p + vec2(0.8, -0.8)) + cover(p + vec2(-0.8, -0.8)));
+  float edge = max(body, wide);
+  float lineA = clamp((edge - 0.1) / max(fwidth(edge), 1e-4) + 0.5, 0.0, 1.0);
+  if (lineA <= 0.0) discard;
+  float bodyA = clamp((body - 0.5) / max(fwidth(body), 1e-4) + 0.5, 0.0, 1.0);
+  ivec2 i = ivec2(floor(p));
+  vec2 f = fract(p);
+  vec3 col = vec3(0.0);
+  float cov = 0.0;
+  for (int k = 0; k < 4; k++) {
+    ivec2 o = ivec2(k & 1, k >> 1);
+    vec4 c = px(i + o);
+    int id = idAt(c);
+    if (id < 0) continue;
+    float w = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);
+    // a softer line where one part meets another of a different colour
+    int l = idAt(px(i + o - ivec2(1, 0)));
+    int u = idAt(px(i + o + ivec2(0, 1)));
+    float seam = (l >= 0 && l != id) || (u >= 0 && u != id) ? 0.7 : 1.0;
+    col += w * c.r * tintOf(id) * seam;
+    cov += w;
   }
-  vec3 t = vec3(1.0);
-  for (int i = 1; i < ${PARTS}; i++) if (i == id) t = tints[i];
-  // and a softer one where one part meets another of a different colour
-  float seam = (l >= 0 && l != id) || (u >= 0 && u != id) ? 0.62 : 1.0;
-  gl_FragColor = vec4(vec3(c.r) * t * shade * seam, 1.0);
+  vec3 inside = cov > 0.0 ? col / cov * shade : vec3(0.0);
+  vec3 line = vec3(0.06, 0.05, 0.07);
+  gl_FragColor = vec4(mix(line, inside, bodyA), lineA);
 }`;
 
 export type Tile = { col: number; flip: boolean };
@@ -946,7 +1041,7 @@ export function tileFor(view: number, last: Tile): Tile {
 /** A billboard showing one rider's frames in their own colours. */
 export class RiderSprite {
   readonly mesh: THREE.Mesh;
-  private u: { tile: { value: THREE.Vector4 }; page: { value: number }; texel: { value: THREE.Vector2 }; flip: { value: number }; shade: { value: number } };
+  private u: { tile: { value: THREE.Vector4 }; page: { value: number }; size: { value: THREE.Vector2 }; flip: { value: number }; shade: { value: number } };
 
   private atlas: Atlas;
   private tile: Tile = { col: 0, flip: false };
@@ -962,11 +1057,14 @@ export class RiderSprite {
     // the lamp glows red and the club is wood, whoever holds it
     const tints = [new THREE.Vector3(1, 1, 1), srgb(look.main), srgb(look.trim), srgb(look.helmet), srgb(look.paint), srgb(look.paintTrim), srgb("#ff3018"), srgb("#a8723e")];
     const img = atlas.texture.image as { width: number; height: number };
-    this.u = { tile: { value: new THREE.Vector4() }, page: { value: 0 }, texel: { value: new THREE.Vector2(1 / img.width, 1 / img.height) }, flip: { value: 0 }, shade: { value: 1 } };
+    this.u = { tile: { value: new THREE.Vector4() }, page: { value: 0 }, size: { value: new THREE.Vector2(img.width, img.height) }, flip: { value: 0 }, shade: { value: 1 } };
     const mat = new THREE.ShaderMaterial({
       uniforms: { map: { value: atlas.texture }, tints: { value: tints }, ...this.u },
       vertexShader: VERT,
       fragmentShader: FRAG,
+      // the edge's partial coverage, through the canvas's multisampling: smooth
+      // without sorting the sprites back to front
+      alphaToCoverage: true,
     });
     // the tile's ground line sits at the mesh's origin, so lean turns it
     // about the tyre's contact patch
@@ -1014,6 +1112,9 @@ export function frameFor(r: Rider): string {
   const [, back, out] = BLOWS[blow];
   const w = windupOf(r, a);
   const t = a.t;
+  // a fist: drawn back slowly (draw, load), then driven out in one frame (strike)
+  const drawn = TUNE.fistDrawBack;
+  if (blow !== "kick" && STRIKES.has(blow)) return `${t < drawn * 0.4 ? `${blow}~draw` : t < drawn ? `${blow}~load` : t < w ? `${blow}~strike` : t < w + 0.12 ? out : `${blow}~return`}.${side}`;
   if (STRIKES.has(blow)) return `${t < w ? `${blow}~strike` : t < w + 0.12 ? out : `${blow}~return`}.${side}`;
   const name =
     t < 0.3 * w ? `${blow}~raise`
@@ -1055,10 +1156,13 @@ export const frameNames = (): string[] => FRAMES.map(([n]) => n);
  * the chase camera sees it), from the side and from above. scripts/blows.ts
  * lays them out as a contact sheet.
  */
-export function drawFrames(renderer: THREE.WebGLRenderer, names: string[], size = 240): HTMLCanvasElement {
+export function drawFrames(renderer: THREE.WebGLRenderer, names: string[], size = 240, labels: string[] = names): HTMLCanvasElement {
   const views: [string, THREE.Vector3][] = [["behind", new THREE.Vector3(0.3, 1.6, -3.2)], ["side", new THREE.Vector3(-3.4, 1.3, 0)], ["above", new THREE.Vector3(-0.2, 4.2, -0.5)]];
   const out = document.createElement("canvas");
-  out.width = names.length * size;
+  // one column per frame, and a last one tracing the elbow (blue), the fist
+  // (red) and a chain's tip (yellow) through every frame: the arcs an
+  // animator checks, smooth and spaced wider where it is fast
+  out.width = (names.length + 1) * size;
   out.height = views.length * size;
   const g = out.getContext("2d")!;
   g.fillStyle = "#3b3f46";
@@ -1088,7 +1192,35 @@ export function drawFrames(renderer: THREE.WebGLRenderer, names: string[], size 
     }
     g.fillStyle = "#fff";
     g.font = "13px sans-serif";
-    g.fillText(n, i * size + 6, 16);
+    g.fillText(labels[i] ?? n, i * size + 6, 16);
   }
+  const x0 = names.length * size;
+  const paths = names.filter((n) => FRAMES.some(([f]) => f === n)).map((n) => joints(n));
+  for (const [j, [, at]] of views.entries()) {
+    cam.position.copy(at);
+    cam.lookAt(-0.35, 1.15, 0);
+    cam.updateMatrixWorld();
+    const px = (p: [number, number, number]): [number, number] => {
+      const q = new THREE.Vector3(...p).project(cam);
+      return [x0 + ((q.x + 1) / 2) * size, j * size + ((1 - q.y) / 2) * size];
+    };
+    for (const [pick, colour] of [[(k: Joints) => k.elbow, "#4aa3ff"], [(k: Joints) => k.hand, "#ff5a4a"], [(k: Joints) => k.tip, "#ffd84a"]] as const) {
+      const pts = paths.map(pick).filter((p): p is [number, number, number] => !!p).map(px);
+      g.strokeStyle = colour;
+      g.fillStyle = colour;
+      g.lineWidth = 1.5;
+      g.beginPath();
+      pts.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.stroke();
+      pts.forEach(([x, y], k) => {
+        g.beginPath();
+        g.arc(x, y, 3.5, 0, 7);
+        g.fill();
+        g.fillText(String(k + 1), x + 5, y - 4);
+      });
+    }
+  }
+  g.fillStyle = "#fff";
+  g.fillText("paths: elbow, fist, tip", x0 + 6, 16);
   return out;
 }

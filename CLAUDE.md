@@ -69,9 +69,20 @@ their own browsers.
   straight at the hit, with the elbow leading the hand.
 - **A change to a blow is looked at as a contact sheet before it ships.**
   `node scripts/blows.ts <url>` draws every frame of every blow from behind,
-  the side and above into `.frames/blow-*.png`. A new rule that a sheet
-  shows is missing goes into `spec/motion.test.ts` first, and must fail on
-  the old frames before the poses change.
+  the side and above into `.frames/blow-*.png`, each labelled with how many
+  milliseconds the race holds it, and a last column tracing the elbow, fist
+  and chain tip through every frame. That is what an animator checks: the
+  timing chart (slow into the load, fast through the strike) and the arcs
+  (an elbow that stays put draws a dot, a fist on one axis draws an arc).
+  A new rule that a sheet shows is missing goes into `spec/motion.test.ts`
+  first, and must fail on the old frames before the poses change.
+- **Spacing is checked as well as the path.** A blow is a load, a strike and
+  a recovery; the load is held at least twice as long as the strike and the
+  fist moves at least three times faster through the strike. The chain's
+  rules came from a correction worded as a coach would word it ("the upper
+  arm level, the forearm turning about the elbow on one axis, from the chest
+  through half a circle"); the earlier rules passed while the forearm swept
+  a cone, because none of them held the elbow still.
 
 ## Feel is tuned by riding, not by reasoning
 

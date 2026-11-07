@@ -102,7 +102,15 @@ export const TUNE = {
   // no drawing back. The original draws back for 6 frames at 25 fps (0.22 s),
   // and copied, it rode as a warm-up swing with the hit arriving late; a
   // weapon still draws back (weaponWindup), since that is when it is snatched
-  windup: 0.07, // s from key to contact
+  windup: 0.07, // s from key to contact, for a kick
+  // A fist is drawn back before it goes, elbow back and down, then driven
+  // out. Thrown from the bar with no draw-back (0.07 s, as a kick) it read as
+  // an elbow thrown first and the fist after. The draw-back is slow and the
+  // drive fast (spec/motion.test.ts): 0.10 s back, 0.03 s out. The whole
+  // 0.22 s of the recording's draw-back still rode as a warm-up
+  fistWindup: 0.13,
+  /** of a fist's windup, the part spent drawing back; the rest drives it out */
+  fistDrawBack: 0.1,
   punchCooldown: 0.44,
   // duels (C11, O5): how readily a rider picks a fight per second, scaled by
   // its aggression, with whoever is level with it for its place, and with
@@ -266,7 +274,7 @@ export type Attack = { kind: AttackKind; side: -1 | 1; t: number; target: number
 export type Weapon = "club" | "chain";
 
 /** Seconds from the key to the blow: a weapon is drawn back first (C6). */
-export const windupOf = (r: Rider, a: Attack): number => (r.weapon && a.kind !== "kick" ? TUNE.weaponWindup : TUNE.windup);
+export const windupOf = (r: Rider, a: Attack): number => (a.kind === "kick" ? TUNE.windup : r.weapon ? TUNE.weaponWindup : TUNE.fistWindup);
 
 export type Rider = {
   id: number;

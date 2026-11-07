@@ -66,3 +66,9 @@ Each is trimmed of its leading silence, so the crack lands on the frame the
 blow does, cut to 0.3 s and saved as mono 16-bit WAV: an MP3 would start
 about 26 ms late. Every other sound in the game is synthesised in
 `client/audio.ts`.
+
+## Postcards
+
+| Files | What it is | Source |
+|---|---|---|
+| `postcards/road0.jpg` to `road4.jpg` | One photograph of each road, for the sign-up board | Taken in this game by `node scripts/postcards.ts <url>`, which rides each road with real keys and cuts the road canvas to 600 x 400. Mine, like the rest of the game |
