@@ -373,6 +373,20 @@ async function leaderboard(): Promise<void> {
       td.textContent = text;
       tr.append(td);
     }
+    // the rider's number, as the log names people (Name#rider): a browser is a
+    // rider, so two people who chose one name are still told apart (N12)
+    // the name alone is cut short when the column is narrow; the number never is
+    const cell = tr.children[1];
+    const name = document.createElement("span");
+    name.className = "rider-name";
+    name.textContent = r.name;
+    const no = document.createElement("span");
+    no.className = "rider-no";
+    no.textContent = `#${r.id}`;
+    const both = document.createElement("span");
+    both.className = "rider";
+    both.append(name, no);
+    cell.replaceChildren(both);
     body.append(tr);
   }
 }

@@ -441,7 +441,11 @@ th, td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(
 .table-wrap { overflow-x: auto; background: var(--panel); border: 2px solid var(--edge); border-radius: 6px; margin-top: 1rem; }
 #leaderboard th, #leaderboard td { white-space: nowrap; font-variant-numeric: tabular-nums; }
 #leaderboard th:nth-child(n+3), #leaderboard td:nth-child(n+3) { text-align: right; }
-#leaderboard td:nth-child(2) { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
+#leaderboard td:nth-child(2) { max-width: 12rem; }
+#leaderboard .rider { display: flex; align-items: baseline; gap: 0.35em; }
+#leaderboard .rider-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#leaderboard .rider-no { flex: none; }
 #leaderboard td:nth-child(3) { color: var(--gold); font-weight: bold; }
+#leaderboard .rider-no { color: var(--dim); font-size: 0.85em; }
 #leaderboard tbody tr:nth-child(-n+3) td:first-child { color: var(--gold); font-weight: bold; }
 #leaderboard tr.me td { background: #3a2226; }
